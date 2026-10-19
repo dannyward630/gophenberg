@@ -32,6 +32,10 @@ func TestSiteSendsAListingPageToTheOneAddressItAnswersAt(t *testing.T) {
 		{"/page/1?utm_source=feed", "/?utm_source=feed"},
 		{"/page/02?utm_source=feed", "/page/2?utm_source=feed"},
 		{"/pages/page/1", "/pages"},
+		{"/pages/", "/pages"},
+		{"/pages/page/2/", "/pages/page/2"},
+		{"/page/2/", "/page/2"},
+		{"/categories/news/", "/categories/news"},
 		{"/pages/page/007", "/pages/page/7"},
 		{"/categories/news/page/1", "/categories/news"},
 		{"/categories/news/page/03", "/categories/news/page/3"},
@@ -59,7 +63,7 @@ func TestSiteKeepsTheAddressesAListingAlreadyAnswersAt(t *testing.T) {
 	handler, _ := siteWith(append(manyPosts(25), news, nested)...)
 
 	for _, address := range []string{
-		"/", "/page/2", "/pages", "/pages/", "/pages/page/2", "/pages/page/1",
+		"/", "/page/2", "/pages", "/pages/page/2", "/pages/page/1",
 		"/categories/news", "/categories/news/page/2",
 	} {
 		recorder := get(t, handler, address)

@@ -11,9 +11,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -170,7 +168,7 @@ func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // elsewhere returns the one address a listing page answers at when the request names it another way, such as
-// page 1 or a number with leading zeros, and empty otherwise.
+// page 1, a number with leading zeros or a trailing slash, and empty otherwise.
 func elsewhere(requested string, held content.Address) string {
 	var listing string
 	switch held.Kind {
@@ -185,7 +183,7 @@ func elsewhere(requested string, held content.Address) string {
 	if held.Page > 1 {
 		canonical = numberedPage(listing, held.Page)
 	}
-	if "/"+strings.Trim(path.Clean("/"+requested), "/") == canonical {
+	if requested == canonical {
 		return ""
 	}
 	return canonical
