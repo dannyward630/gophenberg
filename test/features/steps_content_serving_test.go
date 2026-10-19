@@ -118,6 +118,33 @@ func theAddressAnswersNotFound(ctx context.Context, address string) error {
 	return w.expect(http.StatusNotFound)
 }
 
+// theAddressMovesTo asserts the address sends a visitor on to the target for good.
+func theAddressMovesTo(ctx context.Context, address, target string) error {
+	w, err := worldOf(ctx)
+	if err != nil {
+		return err
+	}
+	if err := w.running(); err != nil {
+		return err
+	}
+	request, err := http.NewRequest(http.MethodGet, w.site.URL+address, nil)
+	if err != nil {
+		return fmt.Errorf("building the GET %s request: %w", address, err)
+	}
+	staying := *w.client
+	staying.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	if w.answer, err = w.answerFrom(&staying, request); err != nil {
+		return err
+	}
+	if err := w.expect(http.StatusMovedPermanently); err != nil {
+		return fmt.Errorf("reading %q: %w", address, err)
+	}
+	if moved := w.answer.header.Get("Location"); moved != target {
+		return fmt.Errorf("%q moves to %q, want %q", address, moved, target)
+	}
+	return nil
+}
+
 // aVisitorResolvesNothingAt asks the resolver about an address nothing holds.
 func aVisitorResolvesNothingAt(ctx context.Context, address string) error {
 	w, err := visit(ctx, "/api/content/v1/resolve?path="+address)
@@ -163,6 +190,7 @@ func initializeContentServing(sc *godog.ScenarioContext) {
 	sc.Then(`^"([^"]*)" answers with "([^"]*)"$`, theAddressAnswersWith)
 	sc.Then(`^"([^"]*)" lists "([^"]*)"$`, theAddressLists)
 	sc.Then(`^"([^"]*)" answers not found$`, theAddressAnswersNotFound)
+	sc.Then(`^"([^"]*)" moves for good to "([^"]*)"$`, theAddressMovesTo)
 	sc.Then(`^the answer is never cached$`, theAnswerIsNeverCached)
 	sc.When(`^a visitor reads the content handshake$`, aVisitorReadsTheContentHandshake)
 	sc.When(`^a visitor resolves "([^"]*)"$`, aVisitorResolves)

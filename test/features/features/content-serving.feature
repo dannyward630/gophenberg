@@ -23,11 +23,14 @@ Feature: Serving content by address
   Scenario: An archive root lists its own type
     Then "/pages" lists "About"
 
-  Scenario: The front page paginates behind the page word
-    Then "/page/1" lists "Hello World"
+  Scenario: The first page of the front page answers at the front page
+    Then "/page/1" moves for good to "/"
 
-  Scenario: An archive paginates behind the page word
-    Then "/pages/page/1" lists "About"
+  Scenario: The first page of an archive answers at the archive root
+    Then "/pages/page/1" moves for good to "/pages"
+
+  Scenario: A padded page number answers at the plain number
+    Then "/page/02" moves for good to "/page/2"
 
   Scenario: Exact content beats pagination
     Given the published page "Page"
