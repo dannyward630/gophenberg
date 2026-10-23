@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { MenuItem } from '@gopherium/godmin/router'
 import type { AnyRoute } from '@tanstack/react-router'
-import type { ComponentProps, ComponentType, ReactElement } from 'react'
-
-import type { Capability } from './capabilities'
 
 export type {
 	BulkRun,
@@ -19,26 +17,24 @@ export type {
 	RunSettled,
 	ToasterHandle,
 } from '@gopherium/godmin'
-export { ConfirmBody, FormBody, RenameBody, RunConfirm, useBulkRun, useListRun, useToaster } from '@gopherium/godmin'
-
-declare module '@tanstack/react-router' {
-	interface StaticDataRouteOption {
-		Sidebar?: ComponentType
-		capability?: Capability
-	}
-}
-
-export interface NavItem {
-	label: string
-	to: string
-	icon: ReactElement<ComponentProps<'svg'>>
-	capability?: Capability
-}
+export {
+	ConfirmBody,
+	FormBody,
+	MenuCount,
+	NavigationScreen,
+	RenameBody,
+	RunConfirm,
+	useBulkRun,
+	useListRun,
+	useToaster,
+} from '@gopherium/godmin'
+export type { MenuItem } from '@gopherium/godmin/router'
+export { DrilldownItem, NavigationItem, NavigationList } from '@gopherium/godmin/router'
 
 export interface FrontendPlugin {
 	id: string
 	routes: (parent: AnyRoute) => AnyRoute[]
-	nav: NavItem[]
+	nav: MenuItem[]
 }
 
 export {
@@ -61,13 +57,20 @@ export {
 	commentAuthorAvatar as authorIcon,
 	chevronLeft as backIcon,
 	backup as backupIcon,
+	brush as brushIcon,
+	category as categoryIcon,
 	closeSmall as closeIcon,
+	customPostType as customPostTypeIcon,
 	chevronDown as downIcon,
+	language as languageIcon,
+	list as listIcon,
 	listView as listViewIcon,
 	media as mediaIcon,
+	page as pageIcon,
 	post as postIcon,
 	redo as redoIcon,
 	cloudUpload as saveIcon,
+	settings as settingsIcon,
 	drawerRight as sidebarIcon,
 	drawerLeft as sidebarRtlIcon,
 	trash as trashIcon,

@@ -3,24 +3,29 @@
 import { setLocaleData } from '@wordpress/i18n'
 import { expect, test } from 'vitest'
 
-import { typesNavItem } from '../../content/nav'
-import { languageNavItem } from '../../i18n/nav'
-import { mediaNavItem } from '../../media/nav'
-import { themesNavItem } from '../../themes/nav'
+import { groupsMenuItem, typesMenuItem } from '../../content/nav'
+import { languageMenuItem } from '../../i18n/nav'
+import { mediaMenuItem } from '../../media/nav'
+import { settingsMenuItem } from '../../settings/nav'
+import { themesMenuItem } from '../../themes/nav'
 
 setLocaleData(
 	{
 		'admin section\u0004Media': ['Medios'],
-		Themes: ['Temas'],
-		'Content Types': ['Tipos de contenido'],
-		Language: ['Idioma'],
+		'admin section\u0004Themes': ['Temas'],
+		'admin section\u0004Content Types': ['Tipos de contenido'],
+		'admin section\u0004Field Groups': ['Grupos de campos'],
+		'admin section\u0004Language': ['Idioma'],
+		'admin section\u0004Settings': ['Ajustes'],
 	},
 	'gophenberg',
 )
 
-test('every core nav label follows the catalogue the reader loaded', () => {
-	expect(mediaNavItem.label).toBe('Medios')
-	expect(themesNavItem.label).toBe('Temas')
-	expect(typesNavItem.label).toBe('Tipos de contenido')
-	expect(languageNavItem.label).toBe('Idioma')
+test('every core menu label follows the catalogue the reader loaded, under the admin section context', () => {
+	expect(mediaMenuItem.label).toBe('Medios')
+	expect(themesMenuItem.label).toBe('Temas')
+	expect(typesMenuItem.label).toBe('Tipos de contenido')
+	expect(groupsMenuItem.label).toBe('Grupos de campos')
+	expect(languageMenuItem.label).toBe('Idioma')
+	expect(settingsMenuItem.label).toBe('Ajustes')
 })
