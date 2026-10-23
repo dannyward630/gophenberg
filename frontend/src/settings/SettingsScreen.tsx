@@ -124,6 +124,7 @@ export function SettingsScreen() {
 	return (
 		<Page
 			title={__('Settings', 'gophenberg')}
+			headingLevel={2}
 			subtitle={__('Choose how the site serves its content.', 'gophenberg')}
 		>
 			{settingsBody(held)}

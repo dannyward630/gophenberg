@@ -448,7 +448,7 @@ test('reports a run that settles after the list moved to another type in its toa
 	await act(async () => {
 		await router.navigate({ to: '/content/$typeKey', params: { typeKey: 'page' } })
 	})
-	await screen.findByRole('heading', { name: 'Pages', level: 1 })
+	await screen.findByRole('heading', { name: 'Pages', level: 2 })
 	answer.release()
 
 	expect(await screen.findByText('1 item could not be restored.', { selector: '.godmin-toast' })).toBeInTheDocument()

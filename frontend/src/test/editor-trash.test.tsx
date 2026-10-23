@@ -325,7 +325,7 @@ test('closes the confirm at once and shows the trash running on Move to trash, a
 	expect(trigger).toHaveAttribute('aria-disabled', 'true')
 	expect(trashed).toEqual([])
 	answer.release()
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 })
 
 test('asks nothing more when Move to trash is pressed while the trash runs', async () => {
@@ -342,7 +342,7 @@ test('asks nothing more when Move to trash is pressed while the trash runs', asy
 
 	expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 	answer.release()
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 	expect(trashed).toEqual([storedPost.id])
 })
 
@@ -356,7 +356,7 @@ test('gives the focus back to Move to trash as the confirm closes for the trash'
 	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 	expect(trigger).toHaveFocus()
 	answer.release()
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 })
 
 test('keeps the reader on a post opened while the trash ran, naming the trashed post in a toast', async () => {
@@ -380,7 +380,7 @@ test('keeps the reader on a post opened while the trash ran, naming the trashed 
 		.toBeInTheDocument()
 	expect(trashed).toEqual([storedPost.id])
 	expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('A second post')
-	expect(screen.queryByRole('heading', { name: 'Posts', level: 1 })).not.toBeInTheDocument()
+	expect(screen.queryByRole('heading', { name: 'Posts', level: 2 })).not.toBeInTheDocument()
 })
 
 test('trashes the post once confirmed', async () => {
@@ -407,7 +407,7 @@ test('lands on the list of the type it left', async () => {
 
 	await userEvent.click(await screen.findByRole('button', { name: 'Move to trash' }))
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 })
 
 test('names the post it trashed in a toast carried to the list, with no undo', async () => {
@@ -572,7 +572,7 @@ test('speaks nothing when the reader left before the restore failed', async () =
 	await act(async () => {
 		await router.navigate({ to: '/content/$typeKey', params: { typeKey: 'post' } })
 	})
-	await screen.findByRole('heading', { name: 'Posts', level: 1 })
+	await screen.findByRole('heading', { name: 'Posts', level: 2 })
 
 	answer.release()
 
@@ -616,7 +616,7 @@ test('opens a post trashed from the editor as a reading view', async () => {
 	const { router } = renderRoutedAt(EDITOR_PATH)
 	await userEvent.click(await screen.findByRole('button', { name: 'Move to trash' }))
 	await userEvent.click(await screen.findByRole('button', { name: 'Move to trash' }))
-	await screen.findByRole('heading', { name: 'Posts', level: 1 })
+	await screen.findByRole('heading', { name: 'Posts', level: 2 })
 
 	await openEditor(router, storedPost.id)
 

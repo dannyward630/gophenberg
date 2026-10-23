@@ -211,7 +211,7 @@ test('never shows the rows of one type while the list of another loads', async (
 		await router.navigate({ to: '/content/$typeKey', params: { typeKey: 'page' } })
 	})
 
-	expect(await screen.findByRole('heading', { level: 1, name: 'Pages' })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { level: 2, name: 'Pages' })).toBeInTheDocument()
 	expect(screen.queryByText('Welcome to Gophenberg')).not.toBeInTheDocument()
 	pages.release()
 	expect(await screen.findByText('About Us')).toBeInTheDocument()

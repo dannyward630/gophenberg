@@ -15,7 +15,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useFocusOnList } from '../lists/focusOnList'
 import type { ListSettings } from '../settings/api'
 import { useListSettings } from '../settings/useListSettings'
-import { typesNavItem, typesQueryKey } from './nav'
+import { typesMenuItem, typesQueryKey } from './nav'
 import { TYPE_COLUMNS, TYPE_PHONE_COLUMNS, TYPE_SORT, TYPE_VIEW_GUARD, originsOf, typeFields } from './typeFields'
 import { useTypeActions } from './typeActions'
 import { AddTypeDialog } from './TypeModals'
@@ -100,7 +100,7 @@ function TypesTable(props: {
 			data={shown.data}
 			paginationInfo={shown.paginationInfo}
 			config={{ perPageSizes: props.settings?.list_page_sizes ?? [] }}
-			empty={<ListEmpty icon={typesNavItem.icon} title={__('No content types found.', 'gophenberg')} />}
+			empty={<ListEmpty icon={typesMenuItem.icon} title={__('No content types found.', 'gophenberg')} />}
 			fields={fields}
 			actions={props.actions}
 			view={view}
@@ -147,6 +147,7 @@ export function TypesScreen() {
 	return (
 		<Page
 			title={__('Content Types', 'gophenberg')}
+			headingLevel={2}
 			subtitle={__('Every kind of content this site holds.', 'gophenberg')}
 			actions={<AddType />}
 			list

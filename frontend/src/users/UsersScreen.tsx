@@ -26,6 +26,7 @@ export function UsersScreen() {
 	return (
 		<Page
 			title={__('Users', 'gophenberg')}
+			headingLevel={2}
 			actions={
 				<Button variant="solid" size="compact" render={<Link to="/users/new" />}>
 					{__('Add User', 'gophenberg')}

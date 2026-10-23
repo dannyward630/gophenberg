@@ -133,6 +133,7 @@ export function ThemesScreen() {
 	return (
 		<Page
 			title={__('Themes', 'gophenberg')}
+			headingLevel={2}
 			subtitle={servingLine(themes.data)}
 			actions={<UploadTheme onOutcome={report} />}
 		>

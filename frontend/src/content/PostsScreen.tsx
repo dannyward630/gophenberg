@@ -324,6 +324,7 @@ export function PostsScreen() {
 	return (
 		<Page
 			title={pluralOf(listed)}
+			headingLevel={2}
 			subtitle={waiting ? undefined : subtitleOf(listed)}
 			actions={
 				<>

@@ -98,21 +98,21 @@ test('leaves a role carrying only the themes capability on the themes screen it 
 test('answers a deep link into a gated screen by opening the default list', async () => {
 	renderAt('/users', holding('author', []))
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 	await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users' })).toBeNull())
 })
 
 test('returns a role named admin that carries no capability from a deep link the same way', async () => {
 	renderAt('/users', holding('admin', []))
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 	await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users' })).toBeNull())
 })
 
 test('answers a deep link into the new user form the same way', async () => {
 	renderAt('/users/new', holding('editor', [CHANGE_OTHERS_WORK]))
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 })
 
 test('leaves an administrator on the gated screen it asked for', async () => {
