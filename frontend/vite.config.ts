@@ -22,9 +22,10 @@ const testFiles = [
 /** The test files that replace a module or leave module state behind, each needing its own worker. */
 const moduleStateFiles = [
 	'src/test/plugin-wiring.test.tsx',
+	'src/test/drilldown.test.tsx',
 	'src/test/errors.test.ts',
 	'src/test/role-navigation.test.tsx',
-	'src/test/route-pending.test.tsx',
+	'src/test/route-preload.test.tsx',
 ]
 
 // The workers @wordpress/upload-media reaches for, stubbed out until the media cycle ships.

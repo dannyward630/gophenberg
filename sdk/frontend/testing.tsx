@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import '@testing-library/jest-dom/vitest'
+import { Frame } from '@gopherium/godmin'
+import { Navigation, useFrameLocation } from '@gopherium/godmin/router'
 import { installTestEnvironment as installGodminTestEnvironment } from '@gopherium/godmin/testing'
+import { can, sessionQueryKey, useSession } from '@gopherium/react-auth'
 import { installTestEnvironment as installAuthTestEnvironment, seedSession } from '@gopherium/react-auth/testing'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -12,11 +15,10 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
-	useRouterState,
 } from '@tanstack/react-router'
 import { render } from '@testing-library/react'
 
-import type { FrontendPlugin, Session } from './index'
+import type { FrontendPlugin, MenuItem, Session } from './index'
 
 export { HttpResponse, http, server } from '@gopherium/react-auth/testing'
 
@@ -29,6 +31,30 @@ export function installTestEnvironment() {
 }
 
 /**
+ * Renders the frame the admin draws around a plugin's screens: the sidebar holding the plugin's rows, and the canvas.
+ * @param props - The rows the plugin adds to the menu.
+ * @returns The frame element.
+ */
+function TestHost({ nav }: { nav: readonly MenuItem[] }) {
+	const session = useSession().data
+	return (
+		<Frame.Root location={useFrameLocation()}>
+			<Frame.Sidebar>
+				<Navigation
+					title="Test host"
+					items={nav}
+					home={<Link to="/" />}
+					can={(capability) => can(session, capability)}
+				/>
+			</Frame.Sidebar>
+			<Frame.Canvas>
+				<Outlet />
+			</Frame.Canvas>
+		</Frame.Root>
+	)
+}
+
+/**
  * Renders the given frontend plugin mounted at a specific route path, with the signed in account the test seeds.
  * @param plugin - The frontend plugin whose nav and routes are mounted.
  * @param path - The initial router path to render at.
@@ -36,28 +62,8 @@ export function installTestEnvironment() {
  */
 export function renderPluginAt(plugin: FrontendPlugin, path: string, options: { session?: Session | null } = {}) {
 	const rootRoute = createRootRoute({
-		component: function TestHost() {
-			const matches = useRouterState({ select: (state) => state.matches })
-			const sidebarMatch = [...matches]
-				.reverse()
-				.find((match) => match.staticData.Sidebar)
-			const Sidebar = sidebarMatch?.staticData.Sidebar
-			return (
-				<>
-					<nav aria-label="Navigation">
-						{Sidebar ? (
-							<Sidebar />
-						) : (
-							plugin.nav.map((item) => (
-								<Link key={item.to} to={item.to}>
-									{item.label}
-								</Link>
-							))
-						)}
-					</nav>
-					<Outlet />
-				</>
-			)
+		component: function TestHostFrame() {
+			return <TestHost nav={plugin.nav} />
 		},
 	})
 	const homeRoute = createRoute({
@@ -79,6 +85,7 @@ export function renderPluginAt(plugin: FrontendPlugin, path: string, options: { 
 		defaultOptions: { queries: { retry: false } },
 	})
 	if (options.session !== undefined) {
+		client.setQueryDefaults(sessionQueryKey, { staleTime: Infinity })
 		seedSession(client, options.session)
 	}
 	render(

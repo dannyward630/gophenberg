@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
-import { render, screen, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
-import type { ComponentType } from 'react'
 
 import { typesQueryKey } from '../content/nav'
 import { coreNav } from '../menu/coreNav'
@@ -45,7 +44,7 @@ test('mounts the application under the admin basepath', () => {
 test('opens the list of the default content type at the root path', async () => {
 	const { router } = renderRoutedAt('/')
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 	expect(router.state.location.pathname).toBe('/content/post')
 })
 
@@ -57,14 +56,14 @@ test('opens whichever type is the default, not the first one listed', async () =
 	)
 	const { router } = renderRoutedAt('/')
 
-	expect(await screen.findByRole('heading', { name: 'Pages', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Pages', level: 2 })).toBeInTheDocument()
 	expect(router.state.location.pathname).toBe('/content/page')
 })
 
 test('leaves the root out of the history, so going back never lands on it', async () => {
 	const { router } = renderRoutedAt('/')
 
-	await screen.findByRole('heading', { name: 'Posts', level: 1 })
+	await screen.findByRole('heading', { name: 'Posts', level: 2 })
 
 	expect(router.history.length).toBe(1)
 })
@@ -81,7 +80,7 @@ test('holds the loading ghost at the root until the type registry answers', asyn
 
 	expect(await screen.findByRole('status')).toHaveTextContent('Loading the screen.')
 	registry.release()
-	await screen.findByRole('heading', { name: 'Posts', level: 1 })
+	await screen.findByRole('heading', { name: 'Posts', level: 2 })
 	expect(router.state.location.pathname).toBe('/content/post')
 })
 
@@ -93,15 +92,16 @@ test('reports a type registry it could not read in place of the list the root op
 	expect(await screen.findByRole('alert')).toHaveTextContent('The content types could not be loaded.')
 })
 
-test('keeps one first level heading over a type registry the root could not read', async () => {
+test('titles a type registry the root could not read at the second level, under the sidebar title', async () => {
 	vi.spyOn(console, 'error').mockImplementation(() => {})
 	server.use(http.get('/api/types', () => HttpResponse.json({}, { status: 500 })))
 	renderAt('/')
 
 	await screen.findByRole('alert')
 	const main = screen.getByRole('main')
-	expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
-	expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent('Content')
+	expect(within(main).getAllByRole('heading', { level: 2 })).toHaveLength(1)
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Content')
+	expect(within(main).queryAllByRole('heading', { level: 1 })).toHaveLength(0)
 })
 
 test('opens the default list from the types it holds even when their last refresh failed', async () => {
@@ -114,21 +114,22 @@ test('opens the default list from the types it holds even when their last refres
 
 	await router.navigate({ to: '/' })
 
-	expect(await screen.findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
 	expect(router.state.location.pathname).toBe('/content/post')
 })
 
-test('leaves the heading rank to the screen, not the masthead', async () => {
+test('names the site in plain text at the head of the sidebar, as the Site Editor titles its own', async () => {
 	renderAt('/')
 
-	expect(await screen.findByRole('link', { name: 'Gophenberg' })).toBeInTheDocument()
-	expect(screen.queryByRole('heading', { name: 'Gophenberg' })).toBeNull()
+	const nav = await screen.findByRole('region', { name: 'Navigation' })
+	expect(within(nav).getByRole('heading', { name: 'Gophenberg' })).toBeInTheDocument()
+	expect(screen.queryByRole('link', { name: 'Gophenberg' })).toBeNull()
 })
 
 test('renders a navigation entry for every active type, core and plugin section', async () => {
 	renderAt('/')
 
-	const nav = await screen.findByRole('navigation', { name: 'Navigation' })
+	const nav = await screen.findByRole('region', { name: 'Navigation' })
 	await within(nav).findByRole('link', { name: 'Posts' })
 	expect(within(nav).queryAllByRole('link')).toHaveLength(
 		1 + coreNav.length + plugins.flatMap((plugin) => plugin.nav).length,
@@ -138,7 +139,7 @@ test('renders a navigation entry for every active type, core and plugin section'
 test('offers the field groups a way in from the menu', async () => {
 	renderAt('/')
 
-	const nav = await screen.findByRole('navigation', { name: 'Navigation' })
+	const nav = await screen.findByRole('region', { name: 'Navigation' })
 
 	expect(within(nav).getByRole('link', { name: 'Field Groups' })).toHaveAttribute(
 		'href',
@@ -150,22 +151,17 @@ test('frames the active route inside the main content region', async () => {
 	renderAt('/')
 
 	const main = await screen.findByRole('main')
-	expect(await within(main).findByRole('heading', { name: 'Posts', level: 1 })).toBeInTheDocument()
-	expect(within(main).queryByRole('navigation', { name: 'Navigation' })).toBeNull()
+	expect(await within(main).findByRole('heading', { name: 'Posts', level: 2 })).toBeInTheDocument()
+	expect(within(main).queryByRole('region', { name: 'Navigation' })).toBeNull()
 })
 
-test('holds a loading ghost for routes whose chunk is still arriving', () => {
-	const Pending = createAppRouter().options.defaultPendingComponent as ComponentType
-	render(<Pending />)
-
-	const status = screen.getByRole('status')
-	expect(status).toHaveTextContent('Loading the screen.')
-	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
+test('sets the router to preload a screen on intent, as the new WordPress admin does', () => {
+	expect(createAppRouter().options.defaultPreload).toBe('intent')
 })
 
-test('holds the previous screen briefly and never holds the ghost', () => {
-	const options = createAppRouter().options
+test('sets no pending screen on the router or on any route', () => {
+	const router = createAppRouter()
 
-	expect(options.defaultPendingMs).toBe(200)
-	expect(options.defaultPendingMinMs).toBe(0)
+	expect(router.options.defaultPendingComponent).toBeUndefined()
+	expect(Object.values(router.routesById).filter((route) => route.options.pendingComponent)).toEqual([])
 })

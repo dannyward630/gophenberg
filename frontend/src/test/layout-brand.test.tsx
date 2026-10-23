@@ -12,11 +12,11 @@ beforeEach(() => {
 })
 
 /**
- * Returns the bar a narrow viewport draws in place of the rail.
+ * Returns the bar a narrow viewport draws in place of the sidebar.
  * @returns The top bar element.
  */
 async function topBar(): Promise<HTMLElement> {
-	const menu = await screen.findByRole('button', { name: 'Open navigation' })
+	const menu = await screen.findByRole('button', { name: 'Open navigation panel' })
 	return menu.closest('.godmin-layout__topbar') as HTMLElement
 }
 

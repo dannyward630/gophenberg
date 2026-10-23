@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
+import { LIST_CHROME_DOMAIN, listChromeCatalogFor } from '@gopherium/godmin'
 import { screen, within } from '@testing-library/react'
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
 import { beforeEach, expect, onTestFinished, test } from 'vitest'
@@ -57,26 +58,36 @@ beforeEach(() => {
 test('lists a navigation row for every active type', async () => {
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navigation' })
+	const menu = await screen.findByRole('region', { name: 'Navigation' })
 
 	expect(await within(menu).findByRole('link', { name: 'Posts' })).toBeInTheDocument()
 	expect(await within(menu).findByRole('link', { name: 'Pages' })).toBeInTheDocument()
 })
 
-test('names the built-in types in the words of WordPress es_ES for a Spanish reader', async () => {
+/**
+ * Loads the Spanish words of the admin and of godmin for one test, as the admin loads them at boot.
+ */
+async function readSpanish() {
 	setLocaleData(await catalogFor('es-ES'), 'gophenberg')
-	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
+	setLocaleData(await listChromeCatalogFor('es-ES'), LIST_CHROME_DOMAIN)
+	onTestFinished(() => {
+		resetLocaleData({}, 'gophenberg')
+		resetLocaleData({}, LIST_CHROME_DOMAIN)
+	})
+}
+
+test('names the built-in types in the words of WordPress es_ES for a Spanish reader', async () => {
+	await readSpanish()
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navegación' })
+	const menu = await screen.findByRole('region', { name: 'Navegación' })
 
 	expect(await within(menu).findByRole('link', { name: 'Entradas' })).toBeInTheDocument()
 	expect(within(menu).getByRole('link', { name: 'Páginas' })).toBeInTheDocument()
 })
 
 test('names a built-in type a person renamed as they typed it for a Spanish reader', async () => {
-	setLocaleData(await catalogFor('es-ES'), 'gophenberg')
-	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
+	await readSpanish()
 	server.use(
 		http.get('/api/types', () =>
 			HttpResponse.json({ items: [{ ...POST_TYPE, plural_label: 'Articles' }, PAGE_TYPE] }),
@@ -84,7 +95,7 @@ test('names a built-in type a person renamed as they typed it for a Spanish read
 	)
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navegación' })
+	const menu = await screen.findByRole('region', { name: 'Navegación' })
 
 	expect(await within(menu).findByRole('link', { name: 'Articles' })).toBeInTheDocument()
 	expect(within(menu).queryByRole('link', { name: 'Entradas' })).not.toBeInTheDocument()
@@ -96,7 +107,7 @@ test('puts the type that answers at the root first', async () => {
 	)
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navigation' })
+	const menu = await screen.findByRole('region', { name: 'Navigation' })
 	await within(menu).findByRole('link', { name: 'Pages' })
 
 	const rows = within(menu)
@@ -108,7 +119,7 @@ test('puts the type that answers at the root first', async () => {
 test('leaves an inactive type out of the navigation', async () => {
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navigation' })
+	const menu = await screen.findByRole('region', { name: 'Navigation' })
 	await within(menu).findByRole('link', { name: 'Pages' })
 
 	expect(within(menu).queryByRole('link', { name: 'Guides' })).not.toBeInTheDocument()
@@ -117,7 +128,7 @@ test('leaves an inactive type out of the navigation', async () => {
 test('keeps the sections that do not come from the registry', async () => {
 	renderAt('/')
 
-	const menu = await screen.findByRole('navigation', { name: 'Navigation' })
+	const menu = await screen.findByRole('region', { name: 'Navigation' })
 	await within(menu).findByRole('link', { name: 'Pages' })
 
 	expect(within(menu).getByRole('link', { name: 'Media' })).toBeInTheDocument()

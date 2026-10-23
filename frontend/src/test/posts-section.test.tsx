@@ -14,44 +14,44 @@ beforeEach(() => {
 })
 
 /**
- * Returns the rail once the posts list has drawn its heading.
- * @returns The navigation landmark of the rail.
+ * Returns the sidebar once the posts list has drawn its heading.
+ * @returns The sidebar region, named Navigation.
  */
-async function railBesidePosts(): Promise<HTMLElement> {
-	await screen.findByRole('heading', { name: 'Posts', level: 1 })
-	return screen.getByRole('navigation', { name: 'Navigation' })
+async function sidebarBesidePosts(): Promise<HTMLElement> {
+	await screen.findByRole('heading', { name: 'Posts', level: 2 })
+	return screen.getByRole('region', { name: 'Navigation' })
 }
 
 test('the main menu offers the posts section', async () => {
 	renderAt('/content/post')
 
-	expect(await within(await railBesidePosts()).findByRole('link', { name: 'Posts' })).toBeInTheDocument()
+	expect(await within(await sidebarBesidePosts()).findByRole('link', { name: 'Posts' })).toBeInTheDocument()
 })
 
-test('keeps the main menu in the rail while the posts list shows', async () => {
+test('keeps the main menu in the sidebar while the posts list shows', async () => {
 	renderAt('/content/post')
 
-	const rail = await railBesidePosts()
+	const sidebar = await sidebarBesidePosts()
 
-	expect(await within(rail).findByRole('link', { name: 'Users' })).toBeInTheDocument()
-	expect(within(rail).queryByRole('link', { name: 'Back' })).not.toBeInTheDocument()
+	expect(await within(sidebar).findByRole('link', { name: 'Users' })).toBeInTheDocument()
+	expect(within(sidebar).queryByRole('link', { name: 'Back' })).not.toBeInTheDocument()
 })
 
 test('marks the posts row as the current page while its list shows', async () => {
 	renderAt('/content/post')
 
-	const row = await within(await railBesidePosts()).findByRole('link', { name: 'Posts' })
+	const row = await within(await sidebarBesidePosts()).findByRole('link', { name: 'Posts' })
 
 	expect(row).toHaveAttribute('aria-current', 'page')
 })
 
-test('adds from the list header alone, the rail offering no row of its own', async () => {
+test('adds from the list header alone, the sidebar offering no row of its own', async () => {
 	renderAt('/content/post')
 
-	const rail = await railBesidePosts()
-	await within(rail).findByRole('link', { name: 'Posts' })
+	const sidebar = await sidebarBesidePosts()
+	await within(sidebar).findByRole('link', { name: 'Posts' })
 
-	expect(within(rail).queryByRole('link', { name: 'All Posts' })).not.toBeInTheDocument()
-	expect(within(rail).queryByRole('button', { name: 'Add Post' })).not.toBeInTheDocument()
+	expect(within(sidebar).queryByRole('link', { name: 'All Posts' })).not.toBeInTheDocument()
+	expect(within(sidebar).queryByRole('button', { name: 'Add Post' })).not.toBeInTheDocument()
 	expect(within(screen.getByRole('main')).getByRole('button', { name: 'Add Post' })).toBeInTheDocument()
 })

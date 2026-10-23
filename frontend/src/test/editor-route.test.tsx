@@ -24,8 +24,8 @@ test('the editor route carries none of the admin chrome', async () => {
 
 	await screen.findByTitle('Editor canvas')
 
-	expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
-	expect(screen.queryByRole('link', { name: 'Gophenberg' })).not.toBeInTheDocument()
+	expect(screen.queryByRole('region', { name: 'Navigation' })).not.toBeInTheDocument()
+	expect(screen.queryByRole('heading', { name: 'Gophenberg' })).not.toBeInTheDocument()
 	expect(document.querySelector('.godmin-layout')).toBeNull()
 	expect(document.querySelector('.godmin-layout__canvas')).toBeNull()
 })
@@ -33,7 +33,7 @@ test('the editor route carries none of the admin chrome', async () => {
 test('framed routes still render the admin chrome', async () => {
 	renderAt('/')
 
-	expect(await screen.findByRole('navigation', { name: 'Navigation' })).toBeInTheDocument()
+	expect(await screen.findByRole('region', { name: 'Navigation' })).toBeInTheDocument()
 	expect(document.querySelector('.godmin-layout')).not.toBeNull()
 })
 
