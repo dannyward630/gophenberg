@@ -329,9 +329,6 @@ msgstr "Mover todas las direcciones"
 msgid "Move to trash"
 msgstr "Mover a la papelera"
 
-msgid "Navigation"
-msgstr "Navegación"
-
 msgid "Nests"
 msgstr "Anida"
 
@@ -409,9 +406,6 @@ msgstr "Aquí solo se puede colocar un archivo."
 
 msgid "Only the content type at the root of your site may go without a route word. Give this type one and try again."
 msgstr "Solo el tipo de contenido que está en la raíz de tu sitio puede ir sin palabra de ruta de URL. Dale una a este tipo e inténtalo de nuevo."
-
-msgid "Open navigation"
-msgstr "Abrir la navegación"
 
 msgid "Parent"
 msgstr "Elemento superior"
@@ -2164,8 +2158,30 @@ msgid "Role"
 msgstr "Rol"
 
 msgctxt "admin section"
+msgid "Content Types"
+msgstr "Tipos de contenido"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Field Groups"
+msgstr "Grupos de campos"
+
+msgctxt "admin section"
+msgid "Language"
+msgstr "Idioma"
+
+msgctxt "admin section"
 msgid "Media"
 msgstr "Medios"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Settings"
+msgstr "Ajustes"
+
+msgctxt "admin section"
+msgid "Themes"
+msgstr "Temas"
 
 msgctxt "column"
 msgid "Date"

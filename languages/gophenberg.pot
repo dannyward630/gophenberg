@@ -1038,9 +1038,6 @@ msgstr ""
 msgid "Name updated."
 msgstr ""
 
-msgid "Navigation"
-msgstr ""
-
 msgid "Nests"
 msgstr ""
 
@@ -1159,9 +1156,6 @@ msgid "Only the content type at the root of your site may go without a route wor
 msgstr ""
 
 msgid "Open %(field)s in a new tab"
-msgstr ""
-
-msgid "Open navigation"
 msgstr ""
 
 msgid "Order stored."
@@ -1941,7 +1935,27 @@ msgid "Duplicate…"
 msgstr ""
 
 msgctxt "admin section"
+msgid "Content Types"
+msgstr ""
+
+msgctxt "admin section"
+msgid "Field Groups"
+msgstr ""
+
+msgctxt "admin section"
+msgid "Language"
+msgstr ""
+
+msgctxt "admin section"
 msgid "Media"
+msgstr ""
+
+msgctxt "admin section"
+msgid "Settings"
+msgstr ""
+
+msgctxt "admin section"
+msgid "Themes"
 msgstr ""
 
 msgctxt "column"
