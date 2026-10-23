@@ -6,7 +6,7 @@ import { dateI18n, getDate, getSettings, setSettings } from '@wordpress/date'
 import { __, getLocaleData, resetLocaleData } from '@wordpress/i18n'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 
-import { usersNavItem } from '@gopherium/react-auth/wpds'
+import { usersMenuItem } from '@gopherium/react-auth/wpds'
 
 import { displayLocale } from '@gopherium/gottext'
 import { DOMAIN, startLocale } from '../i18n/start'
@@ -221,5 +221,5 @@ test('loads the brick catalogue so its screens speak the same language', async (
 
 	await startLocale()
 
-	expect(usersNavItem.label).toBe('Usuarios')
+	expect(usersMenuItem.label).toBe('Usuarios')
 })

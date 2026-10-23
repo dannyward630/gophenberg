@@ -754,10 +754,6 @@ msgid "Move to trash"
 msgstr "Déplacer dans la corbeille"
 
 #, fuzzy
-msgid "Navigation"
-msgstr "Navigation"
-
-#, fuzzy
 msgid "Nests"
 msgstr "Imbriqué"
 
@@ -880,10 +876,6 @@ msgstr "Un seul fichier peut être placé ici."
 #, fuzzy
 msgid "Only the content type at the root of your site may go without a route word. Give this type one and try again."
 msgstr "Seul le type de contenu à la racine de votre site peut se passer de mot de route. Donnez-en un à ce type et réessayez."
-
-#, fuzzy
-msgid "Open navigation"
-msgstr "Ouvrir la navigation"
 
 #, fuzzy
 msgid "Open %(field)s in a new tab"
@@ -1772,8 +1764,33 @@ msgstr "État"
 
 #, fuzzy
 msgctxt "admin section"
+msgid "Content Types"
+msgstr "Types de contenu"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Field Groups"
+msgstr "Groupes de champs"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Language"
+msgstr "Langue"
+
+#, fuzzy
+msgctxt "admin section"
 msgid "Media"
 msgstr "Médias"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Settings"
+msgstr "Réglages"
+
+#, fuzzy
+msgctxt "admin section"
+msgid "Themes"
+msgstr "Thèmes"
 
 #, fuzzy
 msgctxt "column"

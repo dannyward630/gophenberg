@@ -11,7 +11,7 @@ setup('signs the proof reader in and stores their language', async ({ page }) =>
 	await page.getByLabel('Password').fill(proofCredentials.password)
 	await page.getByRole('button', { name: 'Log in' }).click()
 
-	await expect(page.locator('.gophenberg-rail__account').getByText(proofCredentials.name)).toBeVisible()
+	await expect(page.locator('.godmin-sidebar__footer').getByText(proofCredentials.name)).toBeVisible()
 
 	const stored = await page.request.patch('/api/locale', {
 		data: { locale: proofLocale.locale },

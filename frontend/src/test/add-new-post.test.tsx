@@ -44,7 +44,7 @@ function captureCreate(): { bodies: unknown[] } {
 }
 
 /**
- * Returns the add button the list header holds, apart from the rail's.
+ * Returns the add button the list header holds, apart from the sidebar's.
  * @param name - The words the button shows, Add Post unless a test names others.
  * @returns The header's add button.
  */
@@ -160,7 +160,7 @@ test('draws no add button until the type registry answers, then drafts on its de
 	const recorded = captureCreate()
 	renderAt('/content/post')
 	const main = await screen.findByRole('main')
-	await within(main).findByRole('heading', { level: 1, name: 'Content' })
+	await within(main).findByRole('heading', { level: 2, name: 'Content' })
 
 	expect(within(main).queryByRole('button', { name: 'Add Content' })).not.toBeInTheDocument()
 	expect(within(main).queryByRole('button', { name: 'Add Post' })).not.toBeInTheDocument()

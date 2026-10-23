@@ -310,7 +310,7 @@ test('offers no Empty Trash from the trash of another type while an empty trash 
 		await router.navigate({ to: '/content/$typeKey', params: { typeKey: 'page' }, search: { status: 'trash' } })
 	})
 
-	expect(await screen.findByRole('heading', { level: 1, name: 'Pages' })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { level: 2, name: 'Pages' })).toBeInTheDocument()
 	expect(screen.queryByRole('button', { name: 'Empty Trash' })).not.toBeInTheDocument()
 	pages.release()
 	expect(await screen.findByText('No items found.')).toBeInTheDocument()

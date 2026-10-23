@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { ErrorNotice, LoadingScreen, Page } from '@gopherium/godmin'
-import { listSearch } from '@gopherium/godmin/router'
-import { useQuery } from '@tanstack/react-query'
+import { listSearch, routerDefaults } from '@gopherium/godmin/router'
 import {
 	Navigate,
 	createRootRoute,
@@ -19,9 +18,8 @@ import { adminBasepath } from './basepath'
 import { CapabilityGate } from './CapabilityGate'
 import { Layout } from './Layout'
 import { plugins } from './plugins'
-import { typesQueryKey } from './content/nav'
+import { useDefaultType } from './content/nav'
 import { statusSearch } from './content/StatusTabs'
-import { listTypes } from './content/types'
 
 const rootRoute = createRootRoute()
 
@@ -36,19 +34,18 @@ const framedRoute = createRoute({
  * @returns The redirect once a default type is held, else the registry failure under a title, or the loading ghost.
  */
 function DefaultList() {
-	const types = useQuery({ queryKey: typesQueryKey, queryFn: listTypes })
-	const landing = types.data?.find((registered) => registered.isDefault)
-	if (landing !== undefined) {
+	const landing = useDefaultType()
+	if (landing.key !== undefined) {
 		return <Navigate to="/content/$typeKey" params={{ typeKey: landing.key }} replace />
 	}
-	if (types.isError) {
+	if (landing.failed) {
 		return (
-			<Page title={__('Content', 'gophenberg')}>
+			<Page title={__('Content', 'gophenberg')} headingLevel={2}>
 				<ErrorNotice>{__('The content types could not be loaded.', 'gophenberg')}</ErrorNotice>
 			</Page>
 		)
 	}
-	return <RoutePending />
+	return <LoadingScreen label={__('Loading the screen.', 'gophenberg')} />
 }
 
 const homeRoute = createRoute({
@@ -151,26 +148,16 @@ const routeTree = rootRoute.addChildren([
 ])
 
 /**
- * Renders the ghost a route shows while its chunk or data arrives.
- * @returns The pending element.
- */
-function RoutePending() {
-	return <LoadingScreen label={__('Loading the screen.', 'gophenberg')} />
-}
-
-/**
  * Creates the application router with the assembled route tree.
  * @param history - Optional router history instance for controlling navigation state.
  * @returns The configured TanStack router bound to the route tree.
  */
 export function createAppRouter(history?: RouterHistory) {
 	return createRouter({
+		...routerDefaults(),
 		routeTree,
 		history,
 		basepath: adminBasepath,
-		defaultPendingComponent: RoutePending,
-		defaultPendingMs: 200,
-		defaultPendingMinMs: 0,
 	})
 }
 

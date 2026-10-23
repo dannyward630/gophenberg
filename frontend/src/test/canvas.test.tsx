@@ -21,7 +21,7 @@ import { versionQueryKey } from '../version'
 
 const BLEED = 'godmin-layout__canvas--bleed'
 
-const RAIL_TOKEN = '--wpds-color-background-surface-neutral-weak'
+const SIDEBAR_TOKEN = '--wpds-color-background-surface-neutral-weak'
 
 const LINE_TOKEN = '--wpds-color-stroke-surface-neutral-weak'
 
@@ -78,12 +78,12 @@ function tokenAround(element: Element, token: string): string {
 }
 
 /**
- * Returns the rail and canvas line colours of the frame on screen.
- * @returns The rail background and the canvas line colour.
+ * Returns the sidebar and canvas line colours of the frame on screen.
+ * @returns The sidebar background and the canvas line colour.
  */
-function frameColours(): { rail: string, line: string } {
+function frameColours(): { sidebar: string, line: string } {
 	return {
-		rail: tokenAround(document.querySelector('.godmin-layout') as Element, RAIL_TOKEN),
+		sidebar: tokenAround(document.querySelector('.godmin-layout') as Element, SIDEBAR_TOKEN),
 		line: tokenAround(canvas(), LINE_TOKEN),
 	}
 }

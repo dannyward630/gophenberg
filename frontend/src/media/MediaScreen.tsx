@@ -252,6 +252,7 @@ export function MediaScreen() {
 	return (
 		<Page
 			title={title}
+			headingLevel={2}
 			subtitle={__('Manage the images and files this site holds.', 'gophenberg')}
 			actions={
 				<FileButton multiple icon={uploadIcon} busy={busy} inputLabel={uploadLabel} onChoose={upload}>

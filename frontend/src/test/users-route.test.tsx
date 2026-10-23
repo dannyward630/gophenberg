@@ -31,7 +31,7 @@ test('keeps the users heading while the accounts are on their way', async () => 
 
 	const main = await screen.findByRole('main')
 
-	expect(await within(main).findByRole('heading', { level: 1 })).toHaveTextContent('Users')
+	expect(await within(main).findByRole('heading', { level: 2 })).toHaveTextContent('Users')
 	const status = await within(main).findByRole('status')
 	expect(status).toHaveTextContent('Loading users.')
 	expect(status.closest('.godmin-loading-rows')).not.toBeNull()
@@ -53,17 +53,17 @@ test('keeps the users heading when the accounts cannot be loaded', async () => {
 
 	expect(alert).toHaveTextContent(/could not be loaded/i)
 	const main = screen.getByRole('main')
-	expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent('Users')
-	expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Users')
+	expect(within(main).getAllByRole('heading', { level: 2 })).toHaveLength(1)
 })
 
-test('names the add user screen with its only first level heading, as WordPress does', async () => {
+test('names the add user screen with its only second level heading, under the sidebar title', async () => {
 	renderAt('/users/new')
 
 	const main = await screen.findByRole('main')
 
-	expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent('Add User')
-	expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Add User')
+	expect(within(main).getAllByRole('heading', { level: 2 })).toHaveLength(1)
 })
 
 test('names the add user screen as WordPress es_ES does for a Spanish reader', async () => {
@@ -71,7 +71,7 @@ test('names the add user screen as WordPress es_ES does for a Spanish reader', a
 	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
 	renderAt('/users/new')
 
-	expect(await screen.findByRole('heading', { level: 1, name: 'Añadir usuario' })).toBeInTheDocument()
+	expect(await screen.findByRole('heading', { level: 2, name: 'Añadir usuario' })).toBeInTheDocument()
 })
 
 test('serves the users screen at /users', async () => {

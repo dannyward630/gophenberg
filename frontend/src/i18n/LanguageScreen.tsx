@@ -64,6 +64,7 @@ export function LanguageScreen() {
 	return (
 		<Page
 			title={__('Language', 'gophenberg')}
+			headingLevel={2}
 			subtitle={__('Choose the language the admin reads in.', 'gophenberg')}
 		>
 			<Stack direction="column" gap="md">

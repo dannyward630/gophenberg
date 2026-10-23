@@ -94,7 +94,7 @@ The fix is to read the string when it is used rather than when the file
 loads.
 
 ```tsx
-export const mediaNavItem = {
+export const mediaMenuItem = {
 	get label() {
 		return _x('Media', 'admin section', 'gophenberg')
 	},

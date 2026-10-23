@@ -2,6 +2,7 @@
 
 import { Badge } from '@gophenberg/frontend-sdk'
 import type { Field, Filter } from '@gophenberg/frontend-sdk/dataviews'
+import { HUGE_BREAKPOINT } from '@gopherium/godmin'
 import type { ViewGuard } from '@gopherium/godmin'
 import { listDate } from '@gopherium/godmin/dates'
 import { formatDate } from '@gopherium/gottext'
@@ -143,7 +144,7 @@ export const PHONE_COLUMNS = ['status', 'date']
 export const TABLE_LAYOUT = { layout: { styles: { author: { align: 'start', maxWidth: '15ch' } } } } as const
 
 /** The viewports below WordPress's huge breakpoint, where a table opens on its built-in columns alone. */
-export const BELOW_HUGE_QUERY = '(max-width: 1439px)'
+export const BELOW_HUGE_QUERY = `(max-width: ${HUGE_BREAKPOINT - 1}px)`
 
 /**
  * Returns the ids of the columns a list shows before a reader picks any, the fields a type marks for the list last.

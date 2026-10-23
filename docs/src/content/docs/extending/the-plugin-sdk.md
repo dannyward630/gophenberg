@@ -461,10 +461,12 @@ export const plugin = {
 ```
 
 `make generate` wires it in: routes mount inside the admin layout
-and nav rows appear after the built-in ones. No built-in plugin
-uses this path yet, so expect to be the first through it.
+and the rows of `nav` appear in the sidebar after the built-in ones.
+Each row is a `MenuItem`: the `label` it shows, the address `to`, and
+an optional `icon` and `capability`. No built-in plugin uses this path
+yet, so expect to be the first through it.
 
-A nav row naming a `capability` shows only to an account whose role
+A row naming a `capability` shows only to an account whose role
 carries it. The screen still opens from a pasted link, so the Go
 routes your plugin serves must check `session.Can` themselves, as
 [the signed-in account](#the-signed-in-account) shows. In the
@@ -479,12 +481,79 @@ const session = useSession().data
 const manages = can(session, 'hello.manage')
 ```
 
+A row can open a sub menu of its own, as the Site Editor's Navigation
+row opens the list of menus. Give the route a `staticData.Sidebar`
+component that draws a `NavigationScreen`. The admin swaps the main
+menu for it, slides it in, and puts Back at its top, which leads to
+the list the admin opens on. Put its rows in a `NavigationList`, each
+one a `NavigationItem`. A sub menu on a parent route stays while the
+reader moves between the screens under it:
+
+```tsx
+import { NavigationItem, NavigationList, NavigationScreen } from '@gophenberg/frontend-sdk'
+import { createRoute } from '@tanstack/react-router'
+import type { AnyRoute } from '@tanstack/react-router'
+
+function HelloSidebar() {
+	return (
+		<NavigationScreen title="Hello">
+			<NavigationList>
+				<NavigationItem to="/hello/drafts">Drafts</NavigationItem>
+				<NavigationItem to="/hello/archive">Archive</NavigationItem>
+			</NavigationList>
+		</NavigationScreen>
+	)
+}
+
+export const plugin = {
+	id: 'hello',
+	routes: (parent: AnyRoute) => [
+		createRoute({
+			getParentRoute: () => parent,
+			path: '/hello',
+			staticData: { Sidebar: HelloSidebar },
+		}),
+	],
+	nav: [{ label: 'Hello', to: '/hello' }],
+}
+```
+
+Leave out the screen's `back`, so Back goes where the admin's own sub
+menus go. `NavigationList` also takes `items`, rows as `MenuItem`
+data, and hides a row whose `capability` the reader lacks. A
+`NavigationItem` hides itself when its address opens a route the
+reader may not open. `DrilldownItem` draws a row that opens a further
+sub menu, with a chevron, and `MenuCount` draws a number at the end of
+a row, such as the updates waiting.
+
+`renderPluginAt` from `@gophenberg/frontend-sdk/testing` mounts your
+plugin inside the admin's real sidebar, with Back, the focus moves and
+the phone drawer. Pass `session` to seed the account a test reads, or
+`null` for none. A row that names a `capability` shows only when that
+account carries it. Leave `session` out and the test asks the server
+for the account at `/api/auth/session`, so serve that address with
+`http` and `server` from the same entry.
+
+**To move** a plugin written for Gophenberg v0.19.0 or earlier:
+
+1. Replace the type `NavItem` with `MenuItem` from
+   `@gophenberg/frontend-sdk`. `NavItem` is gone, with no alias.
+2. If a route declares `staticData.Sidebar`, draw it as a
+   `NavigationScreen` with its rows in a `NavigationList`, so it gets
+   its title, Back and the focus the admin moves to it.
+3. In a test through `renderPluginAt`, seed a session that carries
+   the capability a row names, or serve the session address. The test
+   host now hides a row the reader cannot open, and asks the server
+   for the session when the test seeds none.
+
 The frontend SDK, `@gophenberg/frontend-sdk`, passes on a few icons
 from `@wordpress/icons`, each named after the job it does in the
-admin: `authorIcon`, `backIcon`, `backupIcon`, `closeIcon`,
-`downIcon`, `listViewIcon`, `mediaIcon`, `postIcon`, `redoIcon`,
-`saveIcon`, `sidebarIcon`, `sidebarRtlIcon`, `trashIcon`,
-`undoIcon`, `upIcon` and `uploadIcon`. `authorIcon` is the one an
+admin: `authorIcon`, `backIcon`, `backupIcon`, `brushIcon`,
+`categoryIcon`, `closeIcon`, `customPostTypeIcon`, `downIcon`,
+`languageIcon`, `listIcon`, `listViewIcon`, `mediaIcon`, `pageIcon`,
+`postIcon`, `redoIcon`, `saveIcon`, `settingsIcon`, `sidebarIcon`,
+`sidebarRtlIcon`, `trashIcon`, `undoIcon`, `upIcon` and
+`uploadIcon`. `authorIcon` is the one an
 author cell shows when the site shows no avatars, `postIcon` the one
 an empty content list shows, `mediaIcon` the one an empty media
 library shows, and `uploadIcon` the one an upload button carries.
@@ -492,6 +561,12 @@ library shows, and `uploadIcon` the one an upload button carries.
 `sidebarRtlIcon` its mirror for a language written right to left.
 `saveIcon` is the one Save draft shows on a phone, and `closeIcon`
 the one a panel's close button carries.
+The sidebar rows carry the icons WordPress draws for the same rows:
+`postIcon` for Posts and every type a site adds, `pageIcon` for
+Pages, `categoryIcon` for Categories, `mediaIcon` for Media,
+`brushIcon` for Themes, `customPostTypeIcon` for Content Types,
+`listIcon` for Field Groups, `languageIcon` for Language and
+`settingsIcon` for Settings.
 Import them from the SDK, so the admin keeps one copy of the icon set:
 
 ```ts

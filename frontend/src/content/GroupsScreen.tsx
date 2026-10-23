@@ -137,69 +137,58 @@ export interface Shadowing {
  */
 export function shadowings(groups: PlacedGroup[], types: NamedType[]): Shadowing[] {
 	const active = groups.filter((held) => held.active)
-	const found: Shadowing[] = []
 	const noted = new Map<string, Shadowing>()
 	for (const listed of types) {
-		collectOverlaps(active, listed, noted, found)
+		const reaching = active.filter((held) => matchesType(held.location, listed.key))
+		for (const overlap of overlapsAmong(reaching)) {
+			noteOverlap(noted, overlap, pluralOf(listed))
+		}
 	}
-	return found
+	return [...noted.values()]
+}
+
+/** One field key two groups on the same type both hold. */
+interface Overlap {
+	key: string
+	winner: PlacedGroup
+	loser: PlacedGroup
 }
 
 /**
- * Adds every overlap one type carries to the overlaps already found.
- * @param active - The active groups in listing order.
- * @param listed - The type walked.
- * @param noted - The overlaps already found, by key and pair.
- * @param found - The overlaps in the order they were found.
+ * Returns every field key a later group holds while an earlier one serves it.
+ * @param reaching - The active groups that reach one type, in listing order.
+ * @returns The overlaps in the order they were found.
  */
-function collectOverlaps(
-	active: PlacedGroup[],
-	listed: NamedType,
-	noted: Map<string, Shadowing>,
-	found: Shadowing[],
-) {
+function overlapsAmong(reaching: PlacedGroup[]): Overlap[] {
 	const winners = new Map<string, PlacedGroup>()
-	for (const held of active) {
-		if (!matchesType(held.location, listed.key)) {
-			continue
-		}
+	const overlaps: Overlap[] = []
+	for (const held of reaching) {
 		for (const f of held.fields) {
 			const winner = winners.get(f.key)
 			if (winner === undefined) {
 				winners.set(f.key, held)
-				continue
+			} else {
+				overlaps.push({ key: f.key, winner, loser: held })
 			}
-			noteOverlap(noted, found, f.key, winner, held, pluralOf(listed))
 		}
 	}
+	return overlaps
 }
 
 /**
  * Records the overlap between two groups on one type.
- * @param noted - The overlaps already found, by key and pair.
- * @param found - The overlaps in the order they were found.
- * @param key - The field key both groups hold.
- * @param winner - The group serving the key.
- * @param loser - The group holding the key without showing it.
+ * @param noted - The overlaps already found, by key and pair, in the order they were found.
+ * @param overlap - The field key and the two groups holding it.
  * @param label - The plural label of the type both reach.
  */
-function noteOverlap(
-	noted: Map<string, Shadowing>,
-	found: Shadowing[],
-	key: string,
-	winner: PlacedGroup,
-	loser: PlacedGroup,
-	label: string,
-) {
+function noteOverlap(noted: Map<string, Shadowing>, { key, winner, loser }: Overlap, label: string) {
 	const at = `${key}:${winner.id}:${loser.id}`
 	const known = noted.get(at)
 	if (known !== undefined) {
 		known.where.push(label)
 		return
 	}
-	const fresh = { key, winner: winner.title, loser: loser.title, loserID: loser.id, where: [label] }
-	noted.set(at, fresh)
-	found.push(fresh)
+	noted.set(at, { key, winner: winner.title, loser: loser.title, loserID: loser.id, where: [label] })
 }
 
 /**
@@ -261,6 +250,7 @@ export function GroupsScreen() {
 	return (
 		<Page
 			title={__('Field Groups', 'gophenberg')}
+			headingLevel={2}
 			subtitle={__('Bundles of fields, shown where their rules place them.', 'gophenberg')}
 			actions={
 				<>

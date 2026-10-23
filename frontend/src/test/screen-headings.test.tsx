@@ -43,24 +43,26 @@ function serveOnly(row: Record<string, unknown>) {
 	server.use(http.get('/api/types', () => HttpResponse.json({ items: [row] })))
 }
 
-test('names the list the root opens with its only first level heading', async () => {
+test('names the list the root opens with its only second level heading, beside the sidebar', async () => {
 	servePosts()
 
 	renderAt('/')
 
 	const main = await screen.findByRole('main')
-	expect(await within(main).findByRole('heading', { level: 1 })).toHaveTextContent('Posts')
-	expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
+	await within(main).findByRole('heading', { level: 3, name: 'No items yet.' })
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Posts')
+	expect(within(main).queryAllByRole('heading', { level: 1 })).toHaveLength(0)
 })
 
-test('names the posts screen with its only first level heading', async () => {
+test('names the posts screen with its only second level heading, beside the sidebar', async () => {
 	servePosts()
 
 	renderAt('/content/post')
 
 	const main = await screen.findByRole('main')
-	expect(await within(main).findByRole('heading', { level: 1 })).toHaveTextContent('Posts')
-	expect(within(main).getAllByRole('heading', { level: 1 })).toHaveLength(1)
+	await within(main).findByRole('heading', { level: 3, name: 'No items yet.' })
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Posts')
+	expect(within(main).queryAllByRole('heading', { level: 1 })).toHaveLength(0)
 })
 
 test('says under the posts title what the type describes itself as', async () => {
@@ -79,7 +81,7 @@ test('names the posts list in the words of WordPress es_ES and says what it is f
 	renderAt('/content/post')
 
 	const main = await screen.findByRole('main')
-	expect(await within(main).findByRole('heading', { level: 1 })).toHaveTextContent('Entradas')
+	expect(await within(main).findByRole('heading', { level: 2, name: 'Entradas' })).toBeInTheDocument()
 	expect(await screen.findByText('Gestiona las entradas de este sitio.')).toHaveClass('godmin-page__subtitle')
 	expect(screen.getByRole('region', { name: 'Entradas' })).toBeInTheDocument()
 	expect(screen.getByRole('searchbox', { name: 'Buscar entradas…' })).toBeInTheDocument()
@@ -101,7 +103,7 @@ test('keeps the list of a plugin type under a built-in key in the plugin words f
 
 	renderAt('/content/page')
 
-	await screen.findByRole('heading', { level: 1, name: 'Pages' })
+	await screen.findByRole('heading', { level: 2, name: 'Pages' })
 	expect(await screen.findByText('Manage the pages on this site.')).toHaveClass('godmin-page__subtitle')
 })
 
@@ -123,7 +125,7 @@ test('shows a description a person wrote for posts as they typed it to a Spanish
 
 	renderAt('/content/post')
 
-	await screen.findByRole('heading', { level: 1, name: 'Entradas' })
+	await screen.findByRole('heading', { level: 2, name: 'Entradas' })
 	expect(await screen.findByText('Everything the team writes.')).toHaveClass('godmin-page__subtitle')
 })
 
@@ -133,7 +135,7 @@ test('says what a list is for in words of its own when the type describes nothin
 
 	renderAt('/content/post')
 
-	await screen.findByRole('heading', { level: 1, name: 'Posts' })
+	await screen.findByRole('heading', { level: 2, name: 'Posts' })
 	expect(screen.getByText('Manage the items of this content type.')).toHaveClass('godmin-page__subtitle')
 })
 
@@ -149,19 +151,22 @@ test('says nothing under the posts title until the type registry answers', async
 
 	renderAt('/content/post')
 
-	await screen.findByRole('heading', { level: 1, name: 'Content' })
+	await screen.findByRole('heading', { level: 2, name: 'Content' })
 	expect(screen.queryByText('Manage the items of this content type.')).not.toBeInTheDocument()
 	registry.release()
 	expect(await screen.findByText('Manage the posts on this site.')).toHaveClass('godmin-page__subtitle')
 })
 
-test('leaves the rail out of the heading outline', async () => {
+test('titles the sidebar with the site name, the only first level heading of the page', async () => {
 	servePosts()
 
 	renderAt('/')
 
-	await screen.findByRole('heading', { level: 1, name: 'Posts' })
-	expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+	await screen.findByRole('heading', { level: 2, name: 'Posts' })
+	const sidebar = screen.getByRole('region', { name: 'Navigation' })
+	expect(within(sidebar).getAllByRole('heading')).toHaveLength(1)
+	expect(within(sidebar).getByRole('heading', { level: 1 })).toHaveTextContent('Gophenberg')
+	expect(screen.getAllByRole('heading', { level: 1 })).toEqual([within(sidebar).getByRole('heading')])
 })
 
 test('announces a posts listing it could not load in place of the list', async () => {
@@ -182,5 +187,5 @@ test('keeps the posts heading when the listing fails', async () => {
 
 	await screen.findByRole('alert')
 	const main = screen.getByRole('main')
-	expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent('Posts')
+	expect(within(main).getByRole('heading', { level: 2 })).toHaveTextContent('Posts')
 })

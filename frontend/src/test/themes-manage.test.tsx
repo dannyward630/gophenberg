@@ -53,14 +53,15 @@ beforeEach(() =>
  * Returns a theme as the screen models it.
  * @param name - The theme name.
  * @param active - Whether it is the chosen theme.
- * @param broken - The reason it will not load, empty when it loads.
- * @param version - The version its manifest declares.
- * @param serving - Whether the public site is answered by it.
- * @param startFailed - Whether its supervisor stopped trying to start it.
+ * @param state - What differs from a theme that loads, declares 1.0.0 and answers the site while chosen.
  * @returns The theme.
  */
-function theme(name: string, active: boolean, broken = '', version = '1.0.0', serving = active, startFailed = false) {
-	return { name, version, broken, active, serving, startFailed }
+function theme(
+	name: string,
+	active: boolean,
+	state: { broken?: string, version?: string, serving?: boolean, startFailed?: boolean } = {},
+) {
+	return { name, version: '1.0.0', broken: '', active, serving: active, startFailed: false, ...state }
 }
 
 test('names the theme serving the public site', async () => {
@@ -97,7 +98,7 @@ test('says the built-in renderer is serving when no theme is active', async () =
 })
 
 test('says the renderer is serving when the active theme will not load', async () => {
-	listing([theme('aurora', true, 'the manifest is missing', '1.0.0', false)])
+	listing([theme('aurora', true, { broken: 'the manifest is missing', serving: false })])
 	renderAt('/themes')
 
 	expect(
@@ -106,7 +107,7 @@ test('says the renderer is serving when the active theme will not load', async (
 })
 
 test('still offers to deactivate a chosen theme whose files are gone', async () => {
-	listing([theme('aurora', true, 'the theme is not installed', '', false)])
+	listing([theme('aurora', true, { broken: 'the theme is not installed', version: '', serving: false })])
 	renderAt('/themes')
 
 	const listed = await screen.findByRole('row', { name: /aurora/ })
@@ -134,20 +135,20 @@ test('phrases what is serving from the themes alone', () => {
 	expect(servingLine({ themes: [theme('aurora', true)], rollback: null })).toBe(
 		'aurora 1.0.0 is serving the public site.',
 	)
-	expect(servingLine({ themes: [theme('aurora', true, '', '')], rollback: null })).toBe(
+	expect(servingLine({ themes: [theme('aurora', true, { version: '' })], rollback: null })).toBe(
 		'aurora is serving the public site.',
 	)
 	expect(
 		servingLine({
-			themes: [theme('aurora', true, 'the manifest is missing')],
+			themes: [theme('aurora', true, { broken: 'the manifest is missing' })],
 			rollback: null,
 		}),
 	).toBe('aurora will not load, so the built-in renderer is serving.')
 	expect(
-		servingLine({ themes: [theme('aurora', true, '', '1.0.0', false)], rollback: null }),
+		servingLine({ themes: [theme('aurora', true, { serving: false })], rollback: null }),
 	).toBe('aurora is still starting, so the built-in renderer is serving.')
 	expect(
-		servingLine({ themes: [theme('aurora', true, '', '1.0.0', false, true)], rollback: null }),
+		servingLine({ themes: [theme('aurora', true, { serving: false, startFailed: true })], rollback: null }),
 	).toBe('aurora failed to start, so the built-in renderer is serving.')
 })
 
@@ -199,7 +200,7 @@ test('keeps the themes heading when the themes cannot be listed', async () => {
 	renderAt('/themes')
 
 	expect(await screen.findByRole('alert')).toHaveTextContent('Themes could not be loaded.')
-	expect(screen.getByRole('heading', { level: 1, name: 'Themes' })).toBeTruthy()
+	expect(screen.getByRole('heading', { level: 2, name: 'Themes' })).toBeTruthy()
 })
 
 test('serves the public site through a theme at the reader s request', async () => {

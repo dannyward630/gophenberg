@@ -8,7 +8,7 @@ test.describe('the admin read in the proof locale', () => {
 	test('names the main menu in the reader language', async ({ page }) => {
 		await page.goto('/admin/')
 
-		const nav = page.getByRole('navigation', { name: 'Navegación' })
+		const nav = page.getByRole('region', { name: 'Navegación' })
 		await expect(nav.getByRole('link', { name: 'Entradas' })).toBeVisible()
 		await expect(nav.getByRole('link', { name: 'Medios' })).toBeVisible()
 		await expect(nav.getByRole('link', { name: 'Temas' })).toBeVisible()
@@ -27,7 +27,7 @@ test.describe('the admin read in the proof locale', () => {
 	test('names the content list and its controls in the reader language', async ({ page }) => {
 		await page.goto('/admin/content/post')
 
-		await expect(page.getByRole('heading', { level: 1, name: 'Entradas' })).toBeVisible()
+		await expect(page.getByRole('heading', { level: 2, name: 'Entradas' })).toBeVisible()
 		await expect(page.getByText('Gestiona las entradas de este sitio.')).toBeVisible()
 		await expect(page.getByRole('main').getByRole('button', { name: 'Añadir entrada', exact: true })).toBeVisible()
 		await expect(page.getByRole('button', { name: 'Ver opciones' })).toBeVisible()

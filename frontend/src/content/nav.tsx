@@ -1,75 +1,92 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { NavItem } from '@gophenberg/frontend-sdk'
-import { __ } from '@wordpress/i18n'
+import { categoryIcon, customPostTypeIcon, listIcon, pageIcon, postIcon } from '@gophenberg/frontend-sdk'
+import type { MenuItem } from '@gophenberg/frontend-sdk'
+import { _x } from '@wordpress/i18n'
 import { useQuery } from '@tanstack/react-query'
 
 import { pluralOf } from './typeText'
 import { listTypes } from './types'
 import type { ContentType } from './types'
 
-const contentIcon = (
-	<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
-		<path d="M5 3h11l3 3v15H5V3zm2 2v14h10V7h-3V5H7zm2 4h6v2H9V9zm0 4h6v2H9v-2z" />
-	</svg>
-)
-
-const typesIcon = (
-	<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
-		<path
-			d="M4 4h7v7H4V4zm2 2v3h3V6H6zm7-2h7v7h-7V4zm2 2v3h3V6h-3zM4 13h7v7H4v-7zm2 2v3h3v-3H6zm7-2h7v7h-7v-7zm2 2v3h3v-3h-3z"
-		/>
-	</svg>
-)
-
 /** The registry section, which is not itself a content type. */
-export const typesNavItem: NavItem = {
+export const typesMenuItem = {
 	get label() {
-		return __('Content Types', 'gophenberg')
+		return _x('Content Types', 'admin section', 'gophenberg')
 	},
 	to: '/content-types',
-	icon: typesIcon,
-}
+	icon: customPostTypeIcon,
+} satisfies MenuItem
 
 /** The key the registry is cached under. */
 export const typesQueryKey = ['content-types']
 
-const groupsIcon = (
-	<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
-		<path d="M3 4h18v4H3V4zm2 2v0h14V6H5zm-2 5h18v4H3v-4zm2 2v0h14v0H5zm-2 5h18v4H3v-4z" />
-	</svg>
-)
-
 /** The field groups section, where fields live and their rules are set. */
-export const groupsNavItem: NavItem = {
+export const groupsMenuItem: MenuItem = {
 	get label() {
-		return __('Field Groups', 'gophenberg')
+		return _x('Field Groups', 'admin section', 'gophenberg')
 	},
 	to: '/field-groups',
-	icon: groupsIcon,
+	icon: listIcon,
+}
+
+/** The glyphs of the built-in types WordPress draws apart from posts, by type key. */
+const TYPE_GLYPHS = new Map([
+	['page', pageIcon],
+	['category', categoryIcon],
+])
+
+/**
+ * Returns the glyph of a type's row: WordPress's own for a built-in type no plugin declared, the Posts glyph otherwise.
+ * @param registered - The type the row stands for.
+ * @returns The glyph the row draws.
+ */
+function glyphOf(registered: ContentType): MenuItem['icon'] {
+	const shipped = (registered.origin ?? '') === '' ? TYPE_GLYPHS.get(registered.key) : undefined
+	return shipped ?? postIcon
 }
 
 /**
- * Returns the nav entry a content type is reached through.
- * @param registered - The type the entry stands for.
- * @returns The nav entry for that type.
+ * Returns the menu row a content type is reached through.
+ * @param registered - The type the row stands for.
+ * @returns The menu row for that type.
  */
-function typeNavItem(registered: ContentType): NavItem {
+function typeMenuItem(registered: ContentType): MenuItem {
 	return {
 		label: pluralOf(registered),
 		to: `/content/${registered.key}`,
-		icon: contentIcon,
+		icon: glyphOf(registered),
 	}
 }
 
 /**
- * Returns one nav entry per active content type, the root type first.
- * @returns The entries, empty until the registry answers.
+ * Returns one menu row per active content type, the root type first.
+ * @returns The rows, empty until the registry answers.
  */
-export function useContentNav(): NavItem[] {
+export function useContentNav(): MenuItem[] {
 	const types = useQuery({ queryKey: typesQueryKey, queryFn: listTypes })
 	return (types.data ?? [])
 		.filter((registered) => registered.active)
 		.sort((left, right) => Number(right.isDefault) - Number(left.isDefault))
-		.map(typeNavItem)
+		.map(typeMenuItem)
+}
+
+/** What the registry says of the type the root opens. */
+interface DefaultType {
+	/** The key of the default type, undefined until the registry answers or when it could not be read. */
+	key: string | undefined
+	/** Whether the registry could not be read. */
+	failed: boolean
+}
+
+/**
+ * Returns the type the root opens, read from the same registry the menu rows come from.
+ * @returns The default type's key once the registry answers, and whether it failed.
+ */
+export function useDefaultType(): DefaultType {
+	const types = useQuery({ queryKey: typesQueryKey, queryFn: listTypes })
+	return {
+		key: types.data?.find((registered) => registered.isDefault)?.key,
+		failed: types.isError,
+	}
 }
