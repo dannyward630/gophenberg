@@ -492,6 +492,7 @@ reader moves between the screens under it:
 ```tsx
 import { NavigationItem, NavigationList, NavigationScreen } from '@gophenberg/frontend-sdk'
 import { createRoute } from '@tanstack/react-router'
+import type { AnyRoute } from '@tanstack/react-router'
 
 function HelloSidebar() {
 	return (
@@ -504,11 +505,17 @@ function HelloSidebar() {
 	)
 }
 
-const helloRoute = createRoute({
-	getParentRoute: () => parent,
-	path: '/hello',
-	staticData: { Sidebar: HelloSidebar },
-})
+export const plugin = {
+	id: 'hello',
+	routes: (parent: AnyRoute) => [
+		createRoute({
+			getParentRoute: () => parent,
+			path: '/hello',
+			staticData: { Sidebar: HelloSidebar },
+		}),
+	],
+	nav: [{ label: 'Hello', to: '/hello' }],
+}
 ```
 
 Leave out the screen's `back`, so Back goes where the admin's own sub
