@@ -95,7 +95,7 @@ test('explains a role write refused after the reader lost the right to give role
 	await page.getByLabel('Email').fill(lowered.email)
 	await page.getByLabel('Password').fill(credentials.password)
 	await page.getByRole('button', { name: 'Log in' }).click()
-	await expect(page.getByRole('heading', { name: 'Posts', level: 1 })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Posts', level: 2 })).toBeVisible()
 	await page.goto('/admin/users')
 
 	await pickRole(page, kept, 'Editor')

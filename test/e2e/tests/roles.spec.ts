@@ -41,7 +41,7 @@ test.describe('an author', () => {
 
 	test('sees only the screens its role reaches', async ({ page }) => {
 		await page.goto('/admin/')
-		const menu = page.getByRole('navigation', { name: 'Navigation' })
+		const menu = page.getByRole('region', { name: 'Navigation' })
 
 		await expect(menu.getByRole('link', { name: 'Media' })).toBeVisible()
 		await expect(menu.getByRole('link', { name: 'Language' })).toBeVisible()
@@ -53,7 +53,7 @@ test.describe('an author', () => {
 	test('is returned to the default list from a pasted admin link', async ({ page }) => {
 		await page.goto('/admin/users')
 
-		await expect(page.getByRole('heading', { name: 'Posts', level: 1 })).toBeVisible()
+		await expect(page.getByRole('heading', { name: 'Posts', level: 2 })).toBeVisible()
 		await expect(page).toHaveURL(/\/admin\/content\/post$/)
 		await expect(page.getByRole('heading', { name: 'Users' })).toHaveCount(0)
 	})
@@ -95,7 +95,7 @@ test.describe('an editor', () => {
 
 	test('sees the content screens and not the keys to the site', async ({ page }) => {
 		await page.goto('/admin/')
-		const menu = page.getByRole('navigation', { name: 'Navigation' })
+		const menu = page.getByRole('region', { name: 'Navigation' })
 
 		await expect(menu.getByRole('link', { name: 'Media' })).toBeVisible()
 		await expect(menu.getByRole('link', { name: 'Users' })).toHaveCount(0)
@@ -128,7 +128,7 @@ test.describe('a member', () => {
 
 		await expect(page.getByText('Sorry, you are not allowed to access this page.')).toBeVisible()
 		await expect(page.getByRole('link', { name: 'Visit Site' })).toHaveAttribute('href', '/')
-		await expect(page.getByRole('navigation')).toHaveCount(0)
+		await expect(page.getByRole('region', { name: 'Navigation' })).toHaveCount(0)
 	})
 
 	test('is refused the content list by the API for the admin capability', async ({ request }) => {

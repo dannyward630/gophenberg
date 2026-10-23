@@ -11,7 +11,7 @@ setup('logs in as the seeded editor and stores the session', async ({ page }) =>
 	await page.getByLabel('Password').fill(seededRoles.editor.password)
 	await page.getByRole('button', { name: 'Log in' }).click()
 
-	await expect(page.getByRole('heading', { name: 'Posts', level: 1 })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Posts', level: 2 })).toBeVisible()
 	await page.context().storageState({ path: editorAuthFile })
 })
 
@@ -22,7 +22,7 @@ setup('logs in as the seeded author and stores the session', async ({ page }) =>
 	await page.getByLabel('Password').fill(seededRoles.author.password)
 	await page.getByRole('button', { name: 'Log in' }).click()
 
-	await expect(page.getByRole('heading', { name: 'Posts', level: 1 })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Posts', level: 2 })).toBeVisible()
 	await page.context().storageState({ path: authorAuthFile })
 })
 

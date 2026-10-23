@@ -18,7 +18,7 @@ test.beforeEach(async ({ request }) => {
 
 test('installs a theme, serves the site through it, and rolls back', async ({ page }) => {
 	await page.goto('/admin/themes')
-	await expect(page.getByRole('heading', { level: 1, name: 'Themes' })).toBeVisible()
+	await expect(page.getByRole('heading', { level: 2, name: 'Themes' })).toBeVisible()
 	await expect(
 		page.getByText(`${starterTheme.name} ${starterTheme.version} is serving the public site.`),
 	).toBeVisible()

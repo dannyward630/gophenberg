@@ -11,8 +11,8 @@ setup('logs in and stores the session', async ({ page }) => {
 	await page.getByLabel('Password').fill(credentials.password)
 	await page.getByRole('button', { name: 'Log in' }).click()
 
-	await expect(page.getByRole('heading', { name: 'Posts', level: 1 })).toBeVisible()
-	await expect(page.locator('.gophenberg-rail__account').getByText(credentials.name)).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'Posts', level: 2 })).toBeVisible()
+	await expect(page.locator('.godmin-sidebar__footer').getByText(credentials.name)).toBeVisible()
 
 	await page.context().storageState({ path: authFile })
 })
