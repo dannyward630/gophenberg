@@ -167,8 +167,11 @@ func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.serveTerm(w, r, held)
 }
 
-// redirectTarget returns the one address a listing page moves to, empty when it stays where it was asked.
+// redirectTarget returns the one address a read of a listing page moves to, empty when it stays where it was asked.
 func (s *site) redirectTarget(r *http.Request, held content.Address) string {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return ""
+	}
 	canonical := canonicalAddress(held)
 	if canonical == r.URL.Path {
 		return ""

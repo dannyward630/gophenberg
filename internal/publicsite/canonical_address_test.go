@@ -5,6 +5,7 @@ package publicsite_test
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -125,5 +126,29 @@ func TestSiteServesTheListingWhenItCannotCheckTheOneAddress(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Errorf("GET /page/1 status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+}
+
+func TestSiteRedirectsOnlyAReadOfAListingPage(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := siteWith(manyPosts(25)...)
+
+	for method, want := range map[string]int{
+		http.MethodGet:     http.StatusMovedPermanently,
+		http.MethodHead:    http.StatusMovedPermanently,
+		http.MethodPost:    http.StatusOK,
+		http.MethodPut:     http.StatusOK,
+		http.MethodPatch:   http.StatusOK,
+		http.MethodDelete:  http.StatusOK,
+		http.MethodOptions: http.StatusOK,
+	} {
+		recorder := httptest.NewRecorder()
+
+		handler.ServeHTTP(recorder, httptest.NewRequest(method, "/page/1", nil))
+
+		if recorder.Code != want {
+			t.Errorf("%s /page/1 status = %d, want %d", method, recorder.Code, want)
+		}
 	}
 }
