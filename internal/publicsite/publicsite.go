@@ -156,8 +156,7 @@ func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if moved := s.redirectTarget(r, held); moved != "" {
-		target := url.URL{Path: moved, RawQuery: r.URL.RawQuery}
-		http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
+		serveRedirect(w, r, moved)
 		return
 	}
 	if held.Kind == content.KindArchive {
@@ -198,6 +197,13 @@ func canonicalAddress(held content.Address) string {
 // sameListing reports whether both addresses hold the same page of the same listing.
 func sameListing(a, b content.Address) bool {
 	return a.Kind == b.Kind && a.Type.Key == b.Type.Key && a.Item.ID == b.Item.ID && a.Page == b.Page
+}
+
+// serveRedirect answers with a permanent redirect to the address and the request's query, with no body.
+func serveRedirect(w http.ResponseWriter, r *http.Request, address string) {
+	target := url.URL{Path: address, RawQuery: r.URL.RawQuery}
+	w.Header()["Content-Type"] = nil
+	http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 }
 
 // serveTerm renders a term page, the item itself above what points at it.

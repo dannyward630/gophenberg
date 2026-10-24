@@ -152,3 +152,18 @@ func TestSiteRedirectsOnlyAReadOfAListingPage(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteSendsNothingButTheRedirect(t *testing.T) {
+	t.Parallel()
+
+	handler, _ := siteWith(manyPosts(25)...)
+
+	recorder := get(t, handler, "/page/1?utm_source=feed")
+
+	if recorder.Code != http.StatusMovedPermanently {
+		t.Fatalf("GET /page/1 status = %d, want %d", recorder.Code, http.StatusMovedPermanently)
+	}
+	if recorder.Body.Len() != 0 {
+		t.Errorf("GET /page/1 body = %q, want none", recorder.Body.String())
+	}
+}
