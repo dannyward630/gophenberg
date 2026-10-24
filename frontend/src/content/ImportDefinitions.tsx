@@ -235,6 +235,7 @@ function OutcomeView(props: { outcome: ImportOutcome }) {
  */
 export function ImportDefinitions() {
 	const [open, setOpen] = useState(false)
+	const [closedWhileApplying, setClosedWhileApplying] = useState(false)
 	const [notice, setNotice] = useState('')
 	const [plan, setPlan] = useState<DefinitionsPlan | null>(null)
 	const [file, setFile] = useState('')
@@ -246,18 +247,10 @@ export function ImportDefinitions() {
 			const text = await chosen.text()
 			return { text, plan: await planDefinitions(text) }
 		},
-		onSuccess: (answered) => {
-			setNotice('')
-			setFile(answered.text)
-			setPlan(answered.plan)
-		},
-		onError: (cause) => {
-			setPlan(null)
-			setNotice(cause.message)
-		},
 	})
 	const perform = useMutation({
-		mutationFn: () => applyDefinitions(file, confirmed),
+		mutationFn: (asked: { file: string, confirmed: Confirmed[] }) =>
+			applyDefinitions(asked.file, asked.confirmed),
 		onSuccess: async (answered) => {
 			setNotice('')
 			setPlan(null)
@@ -279,12 +272,29 @@ export function ImportDefinitions() {
 			agreed ? [...held, naming] : held.filter((one) => !sameConfirmation(one, naming)),
 		)
 	}
+
+	/**
+	 * Opens the dialog afresh, or as it was left while an import applied, or closes it.
+	 * @param next - Whether the dialog is opening.
+	 */
+	function change(next: boolean) {
+		if (!next) {
+			setClosedWhileApplying(perform.isPending)
+		} else if (!closedWhileApplying) {
+			read.reset()
+			perform.reset()
+			setPlan(null)
+			setOutcome(null)
+			setNotice('')
+		}
+		setOpen(next)
+	}
 	return (
 		<>
-			<Button variant="outline" size="compact" onClick={() => setOpen(true)}>
+			<Button variant="outline" size="compact" onClick={() => change(true)}>
 				{__('Import definitions', 'gophenberg')}
 			</Button>
-			<Dialog.Root open={open} onOpenChange={setOpen}>
+			<Dialog.Root open={open} onOpenChange={change}>
 				<Dialog.Popup>
 					<Dialog.Header>
 						<Dialog.Title>{__('Import definitions', 'gophenberg')}</Dialog.Title>
@@ -297,6 +307,7 @@ export function ImportDefinitions() {
 								id="definitions-file"
 								type="file"
 								accept=".json,application/json"
+								disabled={perform.isPending}
 								onChange={(event) => {
 									const chosen = chosenDefinitions(event.target.files)
 									event.target.value = ''
@@ -306,7 +317,14 @@ export function ImportDefinitions() {
 										setConfirmed([])
 										setNotice('')
 										perform.reset()
-										read.mutate(chosen)
+										read.mutate(chosen, {
+											onSuccess: (answered) => {
+												setNotice('')
+												setFile(answered.text)
+												setPlan(answered.plan)
+											},
+											onError: (cause) => setNotice(cause.message),
+										})
 									}
 								}}
 							/>
@@ -326,11 +344,11 @@ export function ImportDefinitions() {
 						</Stack>
 					</Dialog.Content>
 					<Dialog.Footer>
-						<Button variant="outline" onClick={() => setOpen(false)}>
+						<Button variant="outline" onClick={() => change(false)}>
 							{__('Close', 'gophenberg')}
 						</Button>
 						{plan !== null && (
-							<Button loading={perform.isPending} onClick={() => perform.mutate()}>
+							<Button loading={perform.isPending} onClick={() => perform.mutate({ file, confirmed })}>
 								{__('Apply', 'gophenberg')}
 							</Button>
 						)}

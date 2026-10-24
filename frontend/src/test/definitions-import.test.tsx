@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
 import { expect, onTestFinished, test } from 'vitest'
 
 import { chosenDefinitions } from '../content/ImportDefinitions'
 import { catalogFor } from '../i18n/catalog'
+import { gate } from './gate'
 import { renderAt } from './render'
 
 const PLAN = {
@@ -56,15 +57,375 @@ function planning(answer: Parameters<typeof http.post>[1]) {
 	server.use(http.post('/api/definitions/plan', answer))
 }
 
-/** Opens the import dialog and hands it a definitions file carrying the text. */
+/**
+ * Opens the import dialog and hands it a definitions file carrying the text.
+ * @param text - The definitions file content to upload.
+ * @returns The rendered query client.
+ */
 async function importing(text: string) {
-	renderAt('/field-groups')
+	const client = renderAt('/field-groups')
 	await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
 	await userEvent.upload(
 		screen.getByLabelText('Definitions file'),
 		new File([text], 'definitions.json', { type: 'application/json' }),
 	)
+	return client
 }
+
+test.each(['success', 'error'] as const)(
+	'keeps and applies the latest file when an earlier plan answers with %s last',
+	async (answer) => {
+		const earlier = gate()
+		const requested = gate()
+		onTestFinished(earlier.release)
+		const latest = '{"format":"1.0.0","types":[],"groups":[]}'
+		let sent = ''
+		planning(async ({ request }) => {
+			if ((await request.text()) !== latest) {
+				requested.release()
+				await earlier.held
+				return answer === 'success'
+					? HttpResponse.json(PLAN)
+					: new HttpResponse('gateway said no', { status: 502 })
+			}
+			return HttpResponse.json({
+				changes: [{ action: 'create', subject: 'type', key: 'latest', label: 'Latest type' }],
+				warnings: [],
+			})
+		})
+		server.use(
+			http.post('/api/definitions/apply', async ({ request }) => {
+				sent = await request.text()
+				return HttpResponse.json({ applied: [], skipped: [] })
+			}),
+		)
+
+		const client = await importing('{"format":"1.0.0"}')
+		await requested.held
+		await userEvent.upload(
+			screen.getByLabelText('Definitions file'),
+			new File([latest], 'latest.json', { type: 'application/json' }),
+		)
+		await screen.findByText('Add Latest type')
+		earlier.release()
+		await waitFor(() => expect(client.isMutating()).toBe(0))
+
+		expect(screen.getByText('Add Latest type')).toBeInTheDocument()
+		expect(screen.queryByText('Add Event details')).not.toBeInTheDocument()
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+		await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+		await screen.findByText('Done. The site now holds what the file describes.')
+		expect(JSON.parse(sent)).toEqual({ ...JSON.parse(latest), confirm: [] })
+	},
+)
+
+test('keeps the latest planning error when an earlier plan succeeds last', async () => {
+	const earlier = gate()
+	const requested = gate()
+	onTestFinished(earlier.release)
+	const latest = '{"format":"1.0.0","groups":[]}'
+	planning(async ({ request }) => {
+		if ((await request.text()) !== latest) {
+			requested.release()
+			await earlier.held
+			return HttpResponse.json(PLAN)
+		}
+		return HttpResponse.json(
+			{ error: 'too big', code: 'definitions_too_large', meta: { max: 262144 } },
+			{ status: 413 },
+		)
+	})
+
+	const client = await importing('{"format":"1.0.0"}')
+	await requested.held
+	await userEvent.upload(
+		screen.getByLabelText('Definitions file'),
+		new File([latest], 'latest.json', { type: 'application/json' }),
+	)
+	expect(await screen.findByRole('alert')).toHaveTextContent(/262\.144 bytes/)
+	earlier.release()
+	await waitFor(() => expect(client.isMutating()).toBe(0))
+
+	expect(screen.getByRole('alert')).toHaveTextContent(/262\.144 bytes/)
+	expect(screen.queryByText('Add Event details')).not.toBeInTheDocument()
+	expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument()
+})
+
+test('sends a loss ticked on the latest plan only with the latest file when an earlier plan answers last', async () => {
+	const earlier = gate()
+	const requested = gate()
+	onTestFinished(earlier.release)
+	const latest = '{"format":"1.0.0","groups":[]}'
+	let sent = ''
+	planning(async ({ request }) => {
+		if ((await request.text()) !== latest) {
+			requested.release()
+			await earlier.held
+			return HttpResponse.json(PLAN)
+		}
+		return HttpResponse.json({ changes: [PLAN.changes[3]], warnings: [] })
+	})
+	server.use(
+		http.post('/api/definitions/apply', async ({ request }) => {
+			sent = await request.text()
+			return HttpResponse.json({ applied: [], skipped: [] })
+		}),
+	)
+
+	const client = await importing('{"format":"1.0.0"}')
+	await requested.held
+	await userEvent.upload(
+		screen.getByLabelText('Definitions file'),
+		new File([latest], 'latest.json', { type: 'application/json' }),
+	)
+	await userEvent.click(await screen.findByRole('checkbox', { name: /Remove Cook time/ }))
+	earlier.release()
+	await waitFor(() => expect(client.isMutating()).toBe(0))
+	await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+	await screen.findByText('Done. The site now holds what the file describes.')
+
+	expect(JSON.parse(sent)).toEqual({
+		...JSON.parse(latest),
+		confirm: [{ subject: 'field', key: 'cook-time', group: 'recipe-details' }],
+	})
+})
+
+test.each([
+	{ answer: 'success', said: 'Done. The site now holds what the file describes.' },
+	{ answer: 'failure', said: 'The site may already hold part of this file. Import it again to see what is left.' },
+] as const)(
+	'reads no file picked while an import applies and says how that import ended in $answer',
+	async ({ answer, said }) => {
+		const applying = gate()
+		const requested = gate()
+		onTestFinished(applying.release)
+		const read: string[] = []
+		planning(async ({ request }) => {
+			read.push(await request.text())
+			return HttpResponse.json(PLAN)
+		})
+		server.use(
+			http.post('/api/definitions/apply', async () => {
+				requested.release()
+				await applying.held
+				return answer === 'success'
+					? HttpResponse.json({ applied: [], skipped: [] })
+					: HttpResponse.json({ error: 'in use', code: 'type_in_use' }, { status: 422 })
+			}),
+		)
+
+		const client = await importing('{"format":"1.0.0"}')
+		await userEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+		await requested.held
+		await userEvent.upload(
+			screen.getByLabelText('Definitions file'),
+			new File(['{"format":"1.0.0","groups":[]}'], 'other.json', { type: 'application/json' }),
+		)
+		applying.release()
+		await waitFor(() => expect(client.isMutating()).toBe(0))
+
+		expect(await screen.findByText(said)).toBeInTheDocument()
+		expect(read).toEqual(['{"format":"1.0.0"}'])
+		expect(screen.getByLabelText('Definitions file')).toBeEnabled()
+	},
+)
+
+test('keeps the file field locked when the dialog is opened again while an import applies', async () => {
+	const applying = gate()
+	const requested = gate()
+	onTestFinished(applying.release)
+	planning(() => HttpResponse.json(PLAN))
+	server.use(
+		http.post('/api/definitions/apply', async () => {
+			requested.release()
+			await applying.held
+			return HttpResponse.json({ applied: [], skipped: [] })
+		}),
+	)
+
+	await importing('{"format":"1.0.0"}')
+	await userEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+	await requested.held
+	const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+	await userEvent.click(footerClose as HTMLElement)
+	await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+
+	expect(await screen.findByLabelText('Definitions file')).toBeDisabled()
+	applying.release()
+	expect(await screen.findByText('Done. The site now holds what the file describes.')).toBeInTheDocument()
+	expect(screen.getByLabelText('Definitions file')).toBeEnabled()
+})
+
+test('sends the file of the plan on screen when Apply is pressed the moment that plan is drawn', async () => {
+	const answer = gate()
+	onTestFinished(answer.release)
+	const latest = '{"format":"1.0.0","types":[],"groups":[]}'
+	let sent = ''
+	planning(async ({ request }) => {
+		if ((await request.text()) !== latest) {
+			return HttpResponse.json(PLAN)
+		}
+		await answer.held
+		return HttpResponse.json({
+			changes: [{ action: 'create', subject: 'type', key: 'latest', label: 'Latest type' }],
+			warnings: [],
+		})
+	})
+	server.use(
+		http.post('/api/definitions/apply', async ({ request }) => {
+			sent = await request.text()
+			return HttpResponse.json({ applied: [], skipped: [] })
+		}),
+	)
+	const pressing = new MutationObserver(() => {
+		if (screen.queryByText('Add Latest type') !== null) {
+			pressing.disconnect()
+			screen.getByRole('button', { name: 'Apply' }).click()
+		}
+	})
+	onTestFinished(() => pressing.disconnect())
+
+	await importing('{"format":"1.0.0"}')
+	await screen.findByText('Add Event details')
+	await userEvent.upload(
+		screen.getByLabelText('Definitions file'),
+		new File([latest], 'latest.json', { type: 'application/json' }),
+	)
+	pressing.observe(document.body, { childList: true, subtree: true })
+	answer.release()
+	await screen.findByText('Done. The site now holds what the file describes.')
+
+	expect(JSON.parse(sent)).toEqual({ ...JSON.parse(latest), confirm: [] })
+})
+
+test.each([
+	{
+		way: 'Close',
+		close: async () => {
+			const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+			await userEvent.click(footerClose as HTMLElement)
+		},
+	},
+	{ way: 'Escape', close: () => userEvent.keyboard('{Escape}') },
+])('shows no earlier plan when the dialog is opened again after closing it with $way', async ({ close }) => {
+	planning(() => HttpResponse.json(PLAN))
+
+	await importing('{"format":"1.0.0"}')
+	await userEvent.click(await screen.findByRole('checkbox', { name: /Remove Cook time/ }))
+	await close()
+	await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+	await screen.findByRole('dialog', { name: 'Import definitions' })
+
+	expect(screen.queryByText('Add Event details')).not.toBeInTheDocument()
+	expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument()
+})
+
+test('shows no plan that answers after the admin closed the dialog', async () => {
+	const answer = gate()
+	const requested = gate()
+	onTestFinished(answer.release)
+	planning(async () => {
+		requested.release()
+		await answer.held
+		return HttpResponse.json(PLAN)
+	})
+
+	const client = await importing('{"format":"1.0.0"}')
+	await requested.held
+	const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+	await userEvent.click(footerClose as HTMLElement)
+	answer.release()
+	await waitFor(() => expect(client.isMutating()).toBe(0))
+	await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+	await screen.findByRole('dialog', { name: 'Import definitions' })
+
+	expect(screen.queryByText('Add Event details')).not.toBeInTheDocument()
+	expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument()
+})
+
+test('shows no plan that answers after the dialog is opened again', async () => {
+	const answer = gate()
+	const requested = gate()
+	onTestFinished(answer.release)
+	planning(async () => {
+		requested.release()
+		await answer.held
+		return HttpResponse.json(PLAN)
+	})
+
+	const client = await importing('{"format":"1.0.0"}')
+	await requested.held
+	const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+	await userEvent.click(footerClose as HTMLElement)
+	await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+	await screen.findByRole('dialog', { name: 'Import definitions' })
+	answer.release()
+	await waitFor(() => expect(client.isMutating()).toBe(0))
+
+	expect(screen.queryByText('Add Event details')).not.toBeInTheDocument()
+	expect(screen.queryByRole('button', { name: 'Apply' })).not.toBeInTheDocument()
+})
+
+test.each([
+	{ answer: 'success', said: 'Done. The site now holds what the file describes.' },
+	{ answer: 'failure', said: 'The site may already hold part of this file. Import it again to see what is left.' },
+] as const)(
+	'shows no earlier ending when the dialog is opened again after an import ended in $answer',
+	async ({ answer, said }) => {
+		planning(() => HttpResponse.json(PLAN))
+		server.use(
+			http.post('/api/definitions/apply', () =>
+				answer === 'success'
+					? HttpResponse.json({ applied: [], skipped: [] })
+					: HttpResponse.json({ error: 'in use', code: 'type_in_use' }, { status: 422 }),
+			),
+		)
+
+		await importing('{"format":"1.0.0"}')
+		await userEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+		await screen.findByText(said)
+		const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+		await userEvent.click(footerClose as HTMLElement)
+		await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+		await screen.findByRole('dialog', { name: 'Import definitions' })
+
+		expect(screen.queryByText(said)).not.toBeInTheDocument()
+		expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+	},
+)
+
+test.each([
+	{ answer: 'success', said: 'Done. The site now holds what the file describes.' },
+	{ answer: 'failure', said: 'The site may already hold part of this file. Import it again to see what is left.' },
+] as const)(
+	'shows how an import ended in $answer when it ended while the dialog was closed',
+	async ({ answer, said }) => {
+		const applying = gate()
+		const requested = gate()
+		onTestFinished(applying.release)
+		planning(() => HttpResponse.json(PLAN))
+		server.use(
+			http.post('/api/definitions/apply', async () => {
+				requested.release()
+				await applying.held
+				return answer === 'success'
+					? HttpResponse.json({ applied: [], skipped: [] })
+					: HttpResponse.json({ error: 'in use', code: 'type_in_use' }, { status: 422 })
+			}),
+		)
+
+		const client = await importing('{"format":"1.0.0"}')
+		await userEvent.click(await screen.findByRole('button', { name: 'Apply' }))
+		await requested.held
+		const [, footerClose] = screen.getAllByRole('button', { name: 'Close' })
+		await userEvent.click(footerClose as HTMLElement)
+		applying.release()
+		await waitFor(() => expect(client.isMutating()).toBe(0))
+		await userEvent.click(await screen.findByRole('button', { name: 'Import definitions' }))
+
+		expect(await screen.findByText(said)).toBeInTheDocument()
+	},
+)
 
 test('shows what a chosen definitions file would change', async () => {
 	planning(() => HttpResponse.json(PLAN))
