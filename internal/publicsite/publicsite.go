@@ -151,7 +151,11 @@ func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		serveError(w)
 		return
 	}
-	if moved := elsewhere(r.URL.Path, held); moved != "" {
+	if held.Kind == content.KindItem {
+		s.serveItem(w, r, held.Item)
+		return
+	}
+	if moved := s.redirectTarget(r, held); moved != "" {
 		target := url.URL{Path: moved, RawQuery: r.URL.RawQuery}
 		http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 		return
@@ -160,33 +164,37 @@ func (s *site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveList(w, r, held.Type, held.Page)
 		return
 	}
-	if held.Kind == content.KindTerm {
-		s.serveTerm(w, r, held)
-		return
-	}
-	s.serveItem(w, r, held.Item)
+	s.serveTerm(w, r, held)
 }
 
-// elsewhere returns the one address a listing page answers at when the request names it another way, such as
-// page 1, a number with leading zeros or a trailing slash, and empty otherwise.
-func elsewhere(requested string, held content.Address) string {
-	var listing string
-	switch held.Kind {
-	case content.KindArchive:
-		listing = held.Type.RouteWord
-	case content.KindTerm:
-		listing = held.Item.Path
-	default:
+// redirectTarget returns the one address a listing page moves to, empty when it stays where it was asked.
+func (s *site) redirectTarget(r *http.Request, held content.Address) string {
+	canonical := canonicalAddress(held)
+	if canonical == r.URL.Path {
 		return ""
 	}
-	canonical := "/" + listing
-	if held.Page > 1 {
-		canonical = numberedPage(listing, held.Page)
-	}
-	if requested == canonical {
+	there, err := s.addresses.Resolve(r.Context(), canonical)
+	if err != nil || !sameListing(there, held) {
 		return ""
 	}
 	return canonical
+}
+
+// canonicalAddress returns the one address a listing page answers at.
+func canonicalAddress(held content.Address) string {
+	listing := held.Item.Path
+	if held.Kind == content.KindArchive {
+		listing = held.Type.RouteWord
+	}
+	if held.Page > 1 {
+		return numberedPage(listing, held.Page)
+	}
+	return "/" + listing
+}
+
+// sameListing reports whether both addresses hold the same page of the same listing.
+func sameListing(a, b content.Address) bool {
+	return a.Kind == b.Kind && a.Type.Key == b.Type.Key && a.Item.ID == b.Item.ID && a.Page == b.Page
 }
 
 // serveTerm renders a term page, the item itself above what points at it.

@@ -3,7 +3,9 @@
 package publicsite_test
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,13 @@ import (
 
 	"github.com/gopherium/gophenberg/internal/content"
 )
+
+// storedAt returns a published item of the type stored at the path.
+func storedAt(kind, title, path string) content.Content {
+	stored := publishedPost(title, path, blockMarkup, time.Now().UTC())
+	stored.Type = kind
+	return stored
+}
 
 func TestSiteSendsAListingPageToTheOneAddressItAnswersAt(t *testing.T) {
 	t.Parallel()
@@ -71,5 +80,50 @@ func TestSiteKeepsTheAddressesAListingAlreadyAnswersAt(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Errorf("GET %s status = %d, want %d", address, recorder.Code, http.StatusOK)
 		}
+	}
+}
+
+func TestSiteKeepsAListingPageWhoseOneAddressHoldsContent(t *testing.T) {
+	t.Parallel()
+
+	two := storedAt("page", "Two", "pages/page/2")
+	guide := storedAt(content.TypePost, "Guide", "pages")
+	news := storedAt("category", "News", "categories/news")
+	three := storedAt("category", "Three", "categories/news/page/3")
+
+	for _, tc := range []struct {
+		stored    []content.Content
+		requested string
+		want      string
+	}{
+		{[]content.Content{two}, "/pages/page/02", "Pages | A Test Site"},
+		{[]content.Content{two}, "/pages/page/+2", "Pages | A Test Site"},
+		{[]content.Content{guide}, "/pages/page/1", "Pages | A Test Site"},
+		{[]content.Content{guide}, "/pages/page/01", "Pages | A Test Site"},
+		{[]content.Content{news, three}, "/categories/news/page/03", "News | A Test Site"},
+	} {
+		handler, _ := siteWith(tc.stored...)
+
+		recorder := get(t, handler, tc.requested)
+
+		if recorder.Code != http.StatusOK {
+			t.Errorf("GET %s status = %d, want %d", tc.requested, recorder.Code, http.StatusOK)
+		}
+		if body := recorder.Body.String(); !strings.Contains(body, "<title>"+tc.want+"</title>") {
+			t.Errorf("GET %s body = %q, want the listing titled %q", tc.requested, body, tc.want)
+		}
+	}
+}
+
+func TestSiteServesTheListingWhenItCannotCheckTheOneAddress(t *testing.T) {
+	t.Parallel()
+
+	handler, reader := siteWith(manyPosts(25)...)
+	reader.readErr = errors.New("database down")
+
+	recorder := get(t, handler, "/page/1")
+
+	if recorder.Code != http.StatusOK {
+		t.Errorf("GET /page/1 status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 }
