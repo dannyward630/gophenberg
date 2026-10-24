@@ -1,7 +1,9 @@
 Feature: Serving content by address
   Every public address resolves through one lookup against the stored path,
   and the registry decides what renders. Content beats pagination under a
-  route word, and the front page always keeps its numbered pages.
+  route word, and the front page always keeps its numbered pages. A listing
+  page answers at one address, so page 1, a padded number and a trailing
+  slash move for good to it, unless content already holds that address.
 
   Background:
     Given a running Gophenberg with the default content types
@@ -32,10 +34,21 @@ Feature: Serving content by address
   Scenario: A padded page number answers at the plain number
     Then "/page/02" moves for good to "/page/2"
 
+  Scenario: A listing with a trailing slash moves to the address without it
+    Then "/pages/" moves for good to "/pages"
+
+  Scenario: A listing that moves keeps its query
+    Then "/page/1?ref=feed" moves for good to "/?ref=feed"
+
   Scenario: Exact content beats pagination
     Given the published page "Page"
     And the published page "2" filed under "Page"
     Then "/pages/page/2" answers with "2"
+
+  Scenario: A padded page number stays where content holds the plain number
+    Given the published page "Page"
+    And the published page "2" filed under "Page"
+    Then "/pages/page/02" answers with an archive page, not a redirect
 
   Scenario: The front page keeps its numbered pages
     Given the administrator lets the type "post" nest
