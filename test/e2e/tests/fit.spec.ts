@@ -121,6 +121,7 @@ test('seeds a hostile post and fits every screen to a phone', async ({ page }) =
 		'/admin/content/page',
 		'/admin/content/category',
 		'/admin/content-types',
+		'/admin/media',
 		'/admin/users',
 		'/admin/users/new',
 	]
