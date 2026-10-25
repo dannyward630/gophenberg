@@ -308,7 +308,7 @@ test('says the update succeeded once the new version runs and offers to reload t
 	expect(reload.className).toBe(classesOf(<Notice.ActionLink href="/">Reload</Notice.ActionLink>))
 	expect(screen.getByText('Current version: 0.20.1')).toBeInTheDocument()
 	expect(within(screen.getByRole('main')).queryByRole('list')).toBeNull()
-	expect(polite()).toContain('Gophenberg updated successfully.')
+	await waitFor(() => expect(polite()).toContain('Gophenberg updated successfully.'))
 })
 
 test('says the update failed and Gophenberg went back, until the notice is dismissed', async () => {
@@ -322,8 +322,10 @@ test('says the update failed and Gophenberg went back, until the notice is dismi
 	const title = await screen.findByText('The update to 0.20.1 failed.')
 	const description = screen.getByText('Gophenberg went back to 0.20.0 and is running normally.')
 	expect(title.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-	expect(assertive()).toContain(
-		'The update to 0.20.1 failed. Gophenberg went back to 0.20.0 and is running normally.',
+	await waitFor(() =>
+		expect(assertive()).toContain(
+			'The update to 0.20.1 failed. Gophenberg went back to 0.20.0 and is running normally.',
+		),
 	)
 	await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 	await waitFor(() => expect(screen.queryByText(/Gophenberg went back to/)).toBeNull())
@@ -389,7 +391,7 @@ test('says a retry of a version the rollback unit took back failed before anythi
 	expect(await screen.findByText('The update failed before anything changed.')).toBeInTheDocument()
 	expect(screen.queryByText(/went back to/)).toBeNull()
 	expect(screen.getByRole('button', { name: REINSTALL })).toBeInTheDocument()
-	expect(assertive()).toEqual(['The update failed before anything changed.'])
+	await waitFor(() => expect(assertive()).toEqual(['The update failed before anything changed.']))
 })
 
 test('says the update stays failed once a release past the minimum version fails its start check', async () => {
@@ -410,7 +412,7 @@ test('says the update stays failed once a release past the minimum version fails
 	)
 	expect(screen.queryByText('Checking the new version…')).toBeNull()
 	expect(screen.queryByRole('heading', { level: 3 })).toBeNull()
-	expect(assertive()).toContain(STAYS_FAILED)
+	await waitFor(() => expect(assertive()).toContain(STAYS_FAILED))
 })
 
 test('says an update stays failed, speaking nothing, when the screen opens after its start check failed', async () => {
@@ -437,7 +439,7 @@ test('says the update failed before anything changed, with the reason the server
 	expect(await screen.findByText('The update failed before anything changed.')).toBeInTheDocument()
 	expect(screen.getByText('the checksum of the archive does not match the index')).toBeInTheDocument()
 	expect(screen.getByRole('button', { name: UPDATE })).toBeInTheDocument()
-	expect(assertive()).toContain('The update failed before anything changed.')
+	await waitFor(() => expect(assertive()).toContain('The update failed before anything changed.'))
 	noBackupWarningOrLead()
 })
 
@@ -511,7 +513,7 @@ test('says Gophenberg has not come back once the restart outlasts the wait the s
 	expect(advice).toHaveTextContent('after exit code 75, and run update:status on the server')
 	expect(within(advice).getByText('75', { selector: 'code' })).toBeInTheDocument()
 	expect(screen.queryByRole('button', { name: UPDATE })).toBeNull()
-	expect(assertive()).toContain('Gophenberg has not come back yet.')
+	await waitFor(() => expect(assertive()).toContain('Gophenberg has not come back yet.'))
 	noBackupWarningOrLead()
 })
 
