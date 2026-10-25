@@ -2,7 +2,8 @@
 
 import { InputControl } from '@gophenberg/frontend-sdk'
 import type { RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { FormBody, useToaster } from '@gopherium/godmin'
+import { FormBody, markLatest, useToaster } from '@gopherium/godmin'
+import type { UnsavedText } from '@gopherium/godmin'
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { __, _x, sprintf } from '@wordpress/i18n'
@@ -10,8 +11,6 @@ import { useState } from 'react'
 
 import { RenameModal } from '../lists/RenameModal'
 import { useCloseWhileOpen } from '../lists/closeWhileOpen'
-import { markLatest } from '../lists/unsavedText'
-import type { UnsavedText } from '../lists/unsavedText'
 import { useRefresh } from './actions'
 import { createPost, fetchPost, renamePost } from './api'
 import type { Post } from './api'

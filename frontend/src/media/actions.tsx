@@ -2,14 +2,13 @@
 
 import { sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
 import type { Action } from '@gophenberg/frontend-sdk/dataviews'
-import { useBulkRun, useToaster } from '@gopherium/godmin'
+import { useBulkRun, useToaster, useUnsavedText } from '@gopherium/godmin'
 import type { ListRun } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
 import { useQueryClient } from '@tanstack/react-query'
 import { __, _x } from '@wordpress/i18n'
 import { useCallback, useMemo } from 'react'
 
-import { useUnsavedText } from '../lists/unsavedText'
 import { mediaQueryKey, mediaSrc } from './api'
 import type { MediaDescriptions, MediaItem } from './api'
 import { displayFile } from './format'

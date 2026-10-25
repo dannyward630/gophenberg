@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Action, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { RunConfirm, useBulkRun, useToaster } from '@gopherium/godmin'
-import type { BulkRun, ListRun } from '@gopherium/godmin'
+import { RunConfirm, useBulkRun, useToaster, useUnsavedText } from '@gopherium/godmin'
+import type { BulkRun, ListRun, UnsavedText } from '@gopherium/godmin'
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { __ } from '@wordpress/i18n'
@@ -10,8 +10,6 @@ import { useCallback, useMemo } from 'react'
 
 import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import type { NameCut } from '../lists/itemWords'
-import { useUnsavedText } from '../lists/unsavedText'
-import type { UnsavedText } from '../lists/unsavedText'
 import { originOf } from './typeFields'
 import { AddressModal, DescribeModal, MakeDefaultModal } from './TypeModals'
 import type { RunOnList } from './TypeModals'

@@ -2,15 +2,14 @@
 
 import { InputControl, Text } from '@gophenberg/frontend-sdk'
 import type { RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { FormBody, RunConfirm, useToaster } from '@gopherium/godmin'
+import { FormBody, RunConfirm, markLatest, useToaster } from '@gopherium/godmin'
+import type { UnsavedText } from '@gopherium/godmin'
 import { FormDialog } from '@gopherium/godmin/dialogs'
 import { useQueryClient } from '@tanstack/react-query'
 import { __, _x, sprintf } from '@wordpress/i18n'
 import { useState } from 'react'
 
 import { useCloseWhileOpen } from '../lists/closeWhileOpen'
-import { markLatest } from '../lists/unsavedText'
-import type { UnsavedText } from '../lists/unsavedText'
 import { typesQueryKey } from './nav'
 import { pluralOf } from './typeText'
 import { createType, slugifyKey } from './types'
