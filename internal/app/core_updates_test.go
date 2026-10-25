@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/cucumber/godog"
+	"github.com/gopherium/framework/gonsole"
 	"github.com/gopherium/framework/gonsole/testkit"
 
 	"github.com/gopherium/gophenberg/internal/updater"
@@ -54,6 +55,9 @@ func initializeCoreUpdates(sc *godog.ScenarioContext, s *operatorScenario) {
 	sc.Given(`^(?:this version|the new build) already tried to start (\d+) times$`, s.triedToStart)
 	sc.Given(`^the update raised the minimum version, with a backup taken before the switch$`, s.raiseMinimum)
 	sc.Given(`^the new build passed its check$`, s.passCheck)
+	sc.Given(`^the new build reached the database$`, s.markDatabaseReached)
+	sc.Given(`^the site failed to start (\d+) times$`, s.failStarts)
+	sc.Given(`^the start check of this version runs out of time$`, s.outlastCheck)
 	sc.When(`^the site starts$`, s.startSite)
 	sc.When(`^the service manager runs "([^"]*)" with (MONITOR_[A-Z_]+) set to "([^"]*)"$`, s.runAfterFailure)
 	sc.Then(`^the command asks for a restart to start "([^"]*)"$`, s.asksForRestart)
@@ -104,6 +108,11 @@ func (s *operatorScenario) refuseVersion(offered string) error {
 // passCheck records that the build the update switched to passed its start check.
 func (s *operatorScenario) passCheck() error {
 	return editState(s.env[installRootSetting], func(state *updater.State) { state.Step = updater.StepCommitted })
+}
+
+// markDatabaseReached records that the build the update switched to reached the database at an earlier start.
+func (s *operatorScenario) markDatabaseReached() error {
+	return editState(s.env[installRootSetting], func(state *updater.State) { state.DatabaseReached = true })
 }
 
 // asksForRestart fails unless the command asked for a restart to start the version given.
@@ -230,6 +239,23 @@ func (s *operatorScenario) startSite() {
 	code := commandLine(testkit.Getenv(s.env), s.loaded, exits, s.stamp).Run(
 		ctx, []string{"serve"}, strings.NewReader(""), &stdout, stderr)
 	s.result = testkit.Result{Code: exits.of(code), Stdout: stdout.String(), Stderr: stderr.String()}
+}
+
+// failStarts starts the site the times given, failing unless each start stops with exit code 1.
+func (s *operatorScenario) failStarts(times int) error {
+	for range times {
+		s.startSite()
+		if s.result.Code != gonsole.ExitFailed {
+			return fmt.Errorf("serve exited with code %d and stderr %q, want %d", s.result.Code, s.result.Stderr,
+				gonsole.ExitFailed)
+		}
+	}
+	return nil
+}
+
+// outlastCheck leaves the start check of the build that starts no time, so it runs out before any page answers.
+func (s *operatorScenario) outlastCheck() {
+	s.env["GOPHENBERG_UPDATE_VERIFY_TIMEOUT"] = "1ns"
 }
 
 // keptWatch records what a run writes to its error stream and calls cancel once the boot guard kept the update.

@@ -49,12 +49,15 @@ func serveSite(ctx context.Context, getenv func(string) string, stderr io.Writer
 		return err
 	}
 	defer built.close()
-	b := boot{settings: settings, built: built, host: hostOf(built.registered), logger: logger, stamp: compiled.stamp}
+	b := boot{
+		settings: settings, guard: guard, built: built, host: hostOf(built.registered), logger: logger,
+		stamp: compiled.stamp,
+	}
 	serving, restart := context.WithCancelCause(ctx)
 	defer restart(nil)
 	b.admin = b.updatesFromAdmin(serving, restart, settingsEnv(getenv))
 	if err := b.ready(ctx); err != nil {
-		return err
+		return b.stopped(ctx, err)
 	}
 
 	jobs := cronOf(settings.cron, built, logger, updateJobs(settings.updates, b.updates())...)
@@ -95,9 +98,10 @@ func started(getenv func(string) string, logger *slog.Logger) (runConfig, *updat
 	return settings, guard, err
 }
 
-// boot is one start of the site: its settings, what compose built, its plugins, logger, stamp and admin updates.
+// boot is one start of the site: its settings, guard, what compose built, plugins, logger, stamp and admin updates.
 type boot struct {
 	settings runConfig
+	guard    *updater.Guard
 	built    site
 	host     *pluginkit.Host
 	logger   *slog.Logger
@@ -125,14 +129,34 @@ func (b boot) updatesFromAdmin(
 	}
 }
 
-// ready refuses plugins that failed to register, then checks the database role and migrates, stopping them on failure.
+// ready refuses plugins that failed to register, then waits for the database and readies it, stopping them on failure.
 func (b boot) ready(ctx context.Context) error {
 	if b.built.failed != nil {
 		return errors.Join(fmt.Errorf("register plugins: %w", b.built.failed), b.stopPlugins(ctx))
 	}
-	if err := prepareDatabase(ctx, b.settings, b.built, b.logger); err != nil {
+	if err := b.reachDatabase(ctx); err != nil {
 		return errors.Join(err, b.stopPlugins(ctx))
 	}
+	return nil
+}
+
+// reachDatabase waits for the database, marks it reached for the boot guard, then checks the role and migrates it.
+func (b boot) reachDatabase(ctx context.Context) error {
+	if err := b.settings.databaseWait.await(ctx, b.built.pgHandle.Pool.Ping, b.logger); err != nil {
+		return err
+	}
+	if err := b.guard.ReachedDatabase(); err != nil {
+		return err
+	}
+	return prepareDatabase(ctx, b.settings, b.built, b.logger)
+}
+
+// stopped returns nil and logs the stop when err is the end of ctx, and err otherwise.
+func (b boot) stopped(ctx context.Context, err error) error {
+	if !errors.Is(err, ctx.Err()) {
+		return err
+	}
+	b.logger.Info("shutting down")
 	return nil
 }
 
@@ -228,6 +252,8 @@ type runConfig struct {
 	cron cronSettings
 
 	superuser superuserPolicy
+
+	databaseWait databaseWait
 
 	updates updateSettings
 
@@ -477,7 +503,7 @@ func loadRunConfig(getenv func(string) string) (runConfig, error) {
 	return settings, nil
 }
 
-// sectionsFrom reads the list, admin folder, cron, superuser, update check and server install settings into held.
+// sectionsFrom reads the list, admin folder, cron, superuser, database wait, update and install settings into held.
 func sectionsFrom(env gonsole.Env, held *runConfig) error {
 	lists, err := listSettingsFrom(env)
 	if err != nil {
@@ -491,6 +517,9 @@ func sectionsFrom(env gonsole.Env, held *runConfig) error {
 		return err
 	}
 	if held.superuser, err = superuserPolicyFrom(env); err != nil {
+		return err
+	}
+	if held.databaseWait, err = databaseWaitFrom(env); err != nil {
 		return err
 	}
 	if held.updates, err = updateSettingsFrom(env); err != nil {

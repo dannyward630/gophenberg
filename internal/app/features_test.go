@@ -127,11 +127,13 @@ func initializeOperatorCommands(t *testing.T, engine operatorEngine) func(*godog
 		sc.Given(`^the administrator "([^"]*)" gave "([^"]*)" the role "([^"]*)"$`, s.gaveRole)
 		sc.Then(`^the answer names the version, the build stamp, the minimum version and the theme kits of this binary$`,
 			s.namesTheBuildFacts)
+		sc.Then(`^the answer names Node.js (\d+) as the lowest major a theme runs on$`, s.namesTheNodeMajor)
 		sc.Given(`^a Gophenberg migrated the database and left the minimum version "([^"]*)"$`, s.leaveMinimumVersion)
 		sc.Then(`^the database holds the minimum version of this binary$`, s.holdsOwnMinimumVersion)
 		sc.Then(`^the database still holds the minimum version "([^"]*)"$`, s.holdsMinimumVersion)
 		initializeUpdateChecks(sc, s)
 		initializeCoreUpdates(sc, s)
+		initializeDatabaseWait(sc, s)
 	}
 }
 
@@ -166,10 +168,25 @@ func (s *operatorScenario) namesTheBuildFacts() error {
 	}
 	want := buildFacts{
 		Schema: 1, Name: "gophenberg", Version: version.Version(), Commit: version.Commit(), Stamp: version.Stamp(),
-		MinimumVersion: version.Minimum(), PostgreSQL: postgres.OldestMajor, Kits: themehost.ServedKits(),
+		MinimumVersion: version.Minimum(), PostgreSQL: postgres.OldestMajor, Node: themehost.OldestNodeMajor,
+		Kits: themehost.ServedKits(),
 	}
 	if !facts.equal(want) {
 		return fmt.Errorf("the answer %q holds %+v, want %+v", s.result.Stdout, facts, want)
+	}
+	return nil
+}
+
+// namesTheNodeMajor fails unless the answer names major as the lowest Node.js major a theme runs on.
+func (s *operatorScenario) namesTheNodeMajor(major int) error {
+	var named struct {
+		Node *int `json:"node"`
+	}
+	if err := json.Unmarshal([]byte(s.result.Stdout), &named); err != nil {
+		return fmt.Errorf("the answer %q is no JSON document: %w", s.result.Stdout, err)
+	}
+	if named.Node == nil || *named.Node != major {
+		return fmt.Errorf("the answer %q names no Node.js major %d", s.result.Stdout, major)
 	}
 	return nil
 }

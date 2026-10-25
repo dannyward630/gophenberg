@@ -50,7 +50,7 @@ func TestRunValidatesItsEnvironment(t *testing.T) {
 			"GOPHENBERG_DATABASE_URL": "not a url \x00",
 		},
 		"unreachable database": {
-			"GOPHENBERG_DATABASE_URL": unreachableDatabaseURL,
+			"GOPHENBERG_DATABASE_URL": unreachableDatabaseURL, "GOPHENBERG_DATABASE_WAIT": "0",
 		},
 		"malformed trusted proxies": {
 			"GOPHENBERG_DATABASE_URL":    unreachableDatabaseURL,

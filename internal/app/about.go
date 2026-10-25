@@ -26,6 +26,7 @@ type buildFacts struct {
 	Stamp          string   `json:"stamp"`
 	MinimumVersion string   `json:"minimum_version"`
 	PostgreSQL     int      `json:"postgresql"`
+	Node           int      `json:"node"`
 	Kits           []string `json:"kits"`
 }
 
@@ -43,7 +44,8 @@ func aboutCommand() gonsole.Command {
 func printAbout(_ context.Context, call gonsole.Call) error {
 	facts := buildFacts{
 		Schema: 1, Name: "gophenberg", Version: version.Version(), Commit: version.Commit(), Stamp: version.Stamp(),
-		MinimumVersion: version.Minimum(), PostgreSQL: postgres.OldestMajor, Kits: themehost.ServedKits(),
+		MinimumVersion: version.Minimum(), PostgreSQL: postgres.OldestMajor, Node: themehost.OldestNodeMajor,
+		Kits: themehost.ServedKits(),
 	}
 	if call.JSON {
 		return call.Encode(facts)
