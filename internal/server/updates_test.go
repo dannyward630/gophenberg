@@ -95,7 +95,7 @@ func answeredResult(t *testing.T, recorder *httptest.ResponseRecorder) update.Re
 
 // at returns a pointer to the moment ago before now.
 func at(ago time.Duration) *time.Time {
-	moment := time.Now().Add(-ago).UTC()
+	moment := time.Now().Add(-ago)
 	return &moment
 }
 
