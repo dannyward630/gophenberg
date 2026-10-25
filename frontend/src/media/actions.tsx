@@ -95,13 +95,13 @@ export function useMediaActions(
 				id: 'edit',
 				label: __('Edit…', 'gophenberg'),
 				isEligible: mayChange,
-				callback: ([item]) => open({ action: 'edit', item, door: 'actions' }),
+				callback: ([item]) => open({ action: 'edit', item, trigger: 'actions' }),
 			},
 			{
 				id: 'rename',
 				label: __('Rename…', 'gophenberg'),
 				isEligible: mayChange,
-				callback: ([item]) => open({ action: 'rename', item, door: 'actions' }),
+				callback: ([item]) => open({ action: 'rename', item, trigger: 'actions' }),
 			},
 			{
 				id: 'delete',

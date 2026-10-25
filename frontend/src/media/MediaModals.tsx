@@ -4,7 +4,7 @@ import { InputControl } from '@gophenberg/frontend-sdk'
 import { DataForm } from '@gophenberg/frontend-sdk/dataviews'
 import type { Form, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
 import { RunConfirm, markLatest, useToaster } from '@gopherium/godmin'
-import type { BulkRun, UnsavedText } from '@gopherium/godmin'
+import type { BulkRun, Trigger, UnsavedText } from '@gopherium/godmin'
 import { FormDialog } from '@gopherium/godmin/dialogs'
 import type { QueryClient } from '@tanstack/react-query'
 import { __ } from '@wordpress/i18n'
@@ -18,7 +18,6 @@ import { deleteMedia, editMedia } from './api'
 import type { MediaDescriptions, MediaItem } from './api'
 import { mediaFields } from './fields'
 import { FieldsPane } from './FieldsPane'
-import type { Door } from './focusBack'
 import { saveFailure, titleOf } from './format'
 
 /** What the actions of the media library need from the screen around them. */
@@ -46,8 +45,8 @@ export interface OpenedDialog {
 	action: 'edit' | 'rename'
 	/** The file the dialog is open on. */
 	item: MediaItem
-	/** The element the dialog opened from, which takes the focus back once the dialog is done. */
-	door: Door
+	/** The trigger the dialog opened from, which takes the focus back once the dialog is done. */
+	trigger: Trigger
 }
 
 /** What a dialog the screen holds open on one file takes. */
@@ -58,7 +57,7 @@ interface MediaDialogProps {
 	tools: MediaTools
 	/** Takes the dialog away. */
 	onClose: () => void
-	/** Puts a focus the list lost while it read the library again back on the element the dialog opened from. */
+	/** Puts a focus the list lost while it read the library again back on the trigger the dialog opened from. */
 	onSettled: () => void
 }
 
@@ -125,7 +124,7 @@ function dropKeptTitle(edits: UnsavedText<MediaDescriptions>, id: string) {
  * @param item - The file.
  * @param tools - What the dialog needs from the screen.
  * @param close - Takes the dialog away.
- * @param settled - Puts a focus the list lost while it read the library again back on the element Edit opened from.
+ * @param settled - Puts a focus the list lost while it read the library again back on the trigger Edit opened from.
  * @returns The props of the form and the send.
  */
 function useEditMedia(item: MediaItem, tools: MediaTools, close: () => void, settled: () => void) {
@@ -226,9 +225,9 @@ const OPENED_DIALOGS = { edit: EditMediaDialog, rename: RenameMediaDialog }
 
 /**
  * Renders the dialog the screen holds open on one file, none while no dialog is open.
- * @param props - The dialog, its file and the element it opened from, what it needs from the screen, what takes it away
- *   and what puts a lost focus back on the element a dialog on a file opened from.
- * @returns The dialog, giving the focus back to the element it opened from once it closed and once its write read the
+ * @param props - The dialog, its file and the trigger it opened from, what it needs from the screen, what takes it away
+ *   and what puts a lost focus back on the trigger a dialog on a file opened from.
+ * @returns The dialog, giving the focus back to the trigger it opened from once it closed and once its write read the
  *   library again.
  */
 export function OpenMediaDialog({
@@ -236,12 +235,15 @@ export function OpenMediaDialog({
 	tools,
 	onClose,
 	onBack,
-}: { opened?: OpenedDialog, onBack: (id: number, door: Door) => void } & Omit<MediaDialogProps, 'item' | 'onSettled'>) {
+}: {
+	opened?: OpenedDialog
+	onBack: (id: string, trigger: Trigger) => void
+} & Omit<MediaDialogProps, 'item' | 'onSettled'>) {
 	if (opened === undefined) {
 		return null
 	}
 	const Dialog = OPENED_DIALOGS[opened.action]
-	const back = () => onBack(opened.item.id, opened.door)
+	const back = () => onBack(String(opened.item.id), opened.trigger)
 	const close = () => {
 		onClose()
 		back()

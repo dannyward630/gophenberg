@@ -94,7 +94,7 @@ function PictureCell({ item, sizes, onError }: { item: MediaItem, sizes: string 
 		}
 	}, [])
 	return (
-		<div className={LOADING_CLASSES[loading]} data-media-item={item.id}>
+		<div className={LOADING_CLASSES[loading]} data-item-id={item.id}>
 			<img
 				ref={held}
 				className="gophenberg-media__image"
@@ -115,7 +115,7 @@ function PictureCell({ item, sizes, onError }: { item: MediaItem, sizes: string 
  */
 function KindCell({ item }: { item: MediaItem }) {
 	return (
-		<div className="gophenberg-media__thumbnail" data-media-item={item.id}>
+		<div className="gophenberg-media__thumbnail" data-item-id={item.id}>
 			<Stack direction="column" justify="center" align="center" className="gophenberg-media__stack">
 				<Icon
 					className="gophenberg-media__icon"
@@ -152,7 +152,7 @@ function ThumbnailCell({ item, config }: { item: MediaItem, config?: { sizes: st
  * @returns The title, or (no title).
  */
 function TitleCell({ item }: { item: MediaItem }) {
-	return <span data-media-item={item.id}>{titleOf(item)}</span>
+	return <span data-item-id={item.id}>{titleOf(item)}</span>
 }
 
 /**
