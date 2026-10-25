@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/gopherium/gophenberg/internal/update"
 )
 
 // productName is the name every release archive starts with.
@@ -61,7 +62,8 @@ func record(args []string, stdout, stderr io.Writer) error {
 	var opts recordOptions
 	flags := newFlagSet("record", stderr)
 	flags.StringVar(&opts.version, "version", "", "the version the archives carry")
-	flags.StringVar(&opts.base, "download-url", "", "the https address the release serves its files under")
+	flags.StringVar(&opts.base, "download-url", "",
+		"the address the release serves its files under, https, or http on a loopback host")
 	if err := parseFlags(flags, args); err != nil {
 		return err
 	}
@@ -80,7 +82,7 @@ func record(args []string, stdout, stderr io.Writer) error {
 	return encoder.Encode(releaseRecord{Version: opts.version, Artifacts: recordArtifacts{Package: entries}})
 }
 
-// validate refuses a run with no version, no archive, or a download address that is not https.
+// validate refuses a run with no version, no archive, or a download address a site refuses to download from.
 func (o recordOptions) validate(archives int) error {
 	if o.version == "" {
 		return usageError{"record needs -version, the version the archives carry"}
@@ -88,20 +90,10 @@ func (o recordOptions) validate(archives int) error {
 	if archives == 0 {
 		return usageError{"record needs at least one archive to list"}
 	}
-	if !httpsAddress(o.base) {
-		return usageError{fmt.Sprintf("record -download-url %q is not the https address the release serves its files under",
-			o.base)}
+	if _, err := update.ParseAddress(o.base); err != nil {
+		return usageError{fmt.Sprintf("record -download-url: %v", err)}
 	}
 	return nil
-}
-
-// httpsAddress reports whether text is an https address naming a host.
-func httpsAddress(text string) bool {
-	address, err := url.Parse(text)
-	if err != nil {
-		return false
-	}
-	return address.Scheme == "https" && address.Host != ""
 }
 
 // artifacts returns the record entry of every archive, in the order given.
