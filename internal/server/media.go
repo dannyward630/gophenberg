@@ -221,20 +221,23 @@ func applyMediaDates(query url.Values, filter *media.Filter) error {
 
 // applyMediaOrdering reads the orderby and order query parameters into filter.
 func applyMediaOrdering(query url.Values, filter *media.Filter) error {
-	if raw, ok := query["orderby"]; ok {
-		orderBy, err := media.ParseOrderBy(raw[0])
-		if err != nil {
-			return err
-		}
-		filter.OrderBy = orderBy
+	if err := parseGiven(query, "orderby", media.ParseOrderBy, &filter.OrderBy); err != nil {
+		return err
 	}
-	if raw, ok := query["order"]; ok {
-		order, err := media.ParseOrder(raw[0])
-		if err != nil {
-			return err
-		}
-		filter.Order = order
+	return parseGiven(query, "order", media.ParseOrder, &filter.Order)
+}
+
+// parseGiven reads the named query parameter through parse into target, untouched when the query lacks it.
+func parseGiven[T any](query url.Values, name string, parse func(string) (T, error), target *T) error {
+	raw, ok := query[name]
+	if !ok {
+		return nil
 	}
+	value, err := parse(raw[0])
+	if err != nil {
+		return err
+	}
+	*target = value
 	return nil
 }
 
