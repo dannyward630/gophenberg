@@ -8,7 +8,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import { __ } from '@wordpress/i18n'
 import { useCallback, useMemo } from 'react'
 
-import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import type { NameCut } from '../lists/itemWords'
 import { originOf } from './typeFields'
 import { AddressModal, DescribeModal, MakeDefaultModal } from './TypeModals'
@@ -144,11 +143,10 @@ function switchActions(tools: ActionTools): Action<ContentType>[] {
  * @returns The confirm.
  */
 function DeleteTypesModal({ items, closeModal, tools }: RenderModalProps<ContentType> & { tools: ActionTools }) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Delete', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(types) => tools.removals(types, (type) => deleteInTurn(tools.client, type.key), removalWords(tools.name))}

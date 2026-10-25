@@ -9,6 +9,7 @@ import {
 	ListEmpty,
 	Page,
 	bulkNotes,
+	focusInDialog,
 	offeredSize,
 	offeredView,
 	paginationOf,
@@ -28,7 +29,6 @@ import { __, _n, _x, sprintf } from '@wordpress/i18n'
 import { useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { focusInDialog, useFocusOnList } from '../lists/focusOnList'
 import type { ListSettings } from '../settings/api'
 import { useListSettings } from '../settings/useListSettings'
 import './media.css'
@@ -312,7 +312,7 @@ function MediaList(props: {
 export function MediaScreen() {
 	const { list, fields, view, settings, media } = useMediaList()
 	const { run, region } = useListRun('media', list.onChangeSelection)
-	const tools = useMediaTools(useFocusOnList(run, region))
+	const tools = useMediaTools(run)
 	const mayChange = useMayChange()
 	const [opened, setOpened] = useState<OpenedDialog>()
 	const focusBack = useFocusBack(media.isFetching, region)

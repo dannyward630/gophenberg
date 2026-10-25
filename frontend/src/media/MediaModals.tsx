@@ -12,7 +12,6 @@ import { useMemo, useState } from 'react'
 
 import { holdWrite, writesSettled } from '../content/postWrites'
 import { useRenameSend } from '../lists/RenameModal'
-import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
 import type { NameCut } from '../lists/itemWords'
 import { deleteMedia, editMedia } from './api'
@@ -264,11 +263,10 @@ export function OpenMediaDialog({
  * @returns The confirm.
  */
 export function DeleteMediaModal({ items, closeModal, tools }: MediaModalProps) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Delete permanently', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(picked) =>

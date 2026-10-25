@@ -2,14 +2,13 @@
 
 import { InputControl, Text } from '@gophenberg/frontend-sdk'
 import type { RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { FormBody, RunConfirm, markLatest, useToaster } from '@gopherium/godmin'
+import { FormBody, RunConfirm, markLatest, useCloseWhileOpen, useToaster } from '@gopherium/godmin'
 import type { UnsavedText } from '@gopherium/godmin'
 import { FormDialog } from '@gopherium/godmin/dialogs'
 import { useQueryClient } from '@tanstack/react-query'
 import { __, _x, sprintf } from '@wordpress/i18n'
 import { useState } from 'react'
 
-import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import { typesQueryKey } from './nav'
 import { pluralOf } from './typeText'
 import { createType, slugifyKey } from './types'
@@ -155,7 +154,6 @@ export function MakeDefaultModal({
 }: RenderModalProps<ContentType> & { runOnList: RunOnList }) {
 	const client = useQueryClient()
 	const toaster = useToaster()
-	const close = useCloseWhileOpen(closeModal)
 	const [holder] = useState(() => client.getQueryData<ContentType[]>(typesQueryKey)?.find((held) => held.isDefault))
 	const [type] = items
 	const handOver = () =>
@@ -169,7 +167,7 @@ export function MakeDefaultModal({
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Make default', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={() => runOnList(items, handOver)}

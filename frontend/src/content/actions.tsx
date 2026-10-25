@@ -9,7 +9,6 @@ import { __, _x } from '@wordpress/i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
-import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
 import type { NameCut } from '../lists/itemWords'
 import { postName, restoreWords, trashQuestion, trashWords } from './actionWords'
@@ -59,11 +58,10 @@ interface PostConfirmProps extends RenderModalProps<Post> {
  * @returns The confirm.
  */
 function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Move to trash', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(picked) => run(picked, (post) => trashPost(post.id), trashWords(name))}
@@ -79,11 +77,10 @@ function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
  * @returns The confirm.
  */
 function DeleteConfirm({ items, closeModal, run, name }: PostConfirmProps) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Delete permanently', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(picked) => run(picked, (post) => deletePost(post.id), deleteWords(name, postName))}
