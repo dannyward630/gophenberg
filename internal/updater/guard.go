@@ -132,6 +132,24 @@ func (g *Guard) ReachedDatabase() error {
 	return g.layout.WriteState(state)
 }
 
+// MarkDatabaseReached writes under the state lock that running, the build an update switched to, reached the database.
+func MarkDatabaseReached(settings Settings, running string) error {
+	if settings.Root == "" {
+		return nil
+	}
+	layout := Layout{Root: settings.Root}
+	state, unlock, err := layout.lockedState()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if running != state.To || !slices.Contains(failedSteps, state.Step) {
+		return nil
+	}
+	state.DatabaseReached = true
+	return layout.WriteState(state)
+}
+
 // Serve runs serve with the start check once srv listens, ending it when a switched build fails it, or alone with none.
 func (g *Guard) Serve(
 	ctx context.Context, srv *http.Server, inside func(context.Context) error, serve func(context.Context) error,
