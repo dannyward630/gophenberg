@@ -849,6 +849,17 @@ That happens when every start stopped before the database answered,
 such as while PostgreSQL was still down. `update:status -json` then
 shows `database_reached` as `false`.
 
+A start is not the only way the new build reaches the database. Every
+command of the new build that migrates, such as `migrate`, `seed -yes`,
+`account:create-admin` and `account:grant-role -yes`, sets
+`database_reached` too, once the database lets that build on and
+before the first schema step changes anything. So
+once you run the new build's `migrate` by hand, the update counts as
+one that may have migrated, and `update:rollback` prints the restore
+steps instead of going back. The command marks the update only when it
+runs with the settings of the service, `GOPHENBERG_INSTALL_ROOT` among
+them.
+
 [Restoring on a server install](#restoring-on-a-server-install) shows
 each step. Or fix what failed, such as a setting or a full disk, and
 start Gophenberg again. Either way, the build that starts runs the

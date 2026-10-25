@@ -148,15 +148,18 @@ Only a database that is not up yet is worth the wait: a connection
 refused, a socket that is not there yet, or a server that says it is
 still starting up. A wrong password, a missing role or a missing
 database stops `serve` at once with its own message, since waiting
-cannot fix them. A database that still does not answer once the wait
-runs out stops `serve` with code 1, and the message ends with the last
-reason:
+cannot fix them. Each try gets only the time the wait has left, so a
+server that takes the connection and never answers holds `serve` no
+longer than the wait. A database that still does not answer once the
+wait runs out stops `serve` with code 1, and the message ends with the
+last reason:
 
 ```text
 gophenberg: the database did not answer within 1m0s, the time GOPHENBERG_DATABASE_WAIT allows: failed to connect to `user=gophenberg database=gophenberg`: ...
 ```
 
-`GOPHENBERG_DATABASE_WAIT=0` stops at the first try instead. Only
+`GOPHENBERG_DATABASE_WAIT=0` stops at the first try instead, and that
+one try has no time bound of its own. Only
 `serve` waits. `migrate`, `seed -yes` and the `account:` commands stop
 at once, so a person running them sees the reason straight away.
 

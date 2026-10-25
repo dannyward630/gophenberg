@@ -566,7 +566,9 @@ gophenberg: restart Gophenberg to start 1.4.1
 - `-json` answers the state the update ends at, holding `step`,
   `from`, `to`, `attempts`, `database_reached`, `long_jump`, `backup`
   and `refused`. `database_reached` turns `true` once a start of the
-  new build reached the database, just before it migrates.
+  new build reached the database, just before it migrates, or once any
+  other command of the new build migrates it, such as `migrate` run by
+  hand.
 
 Before it changes anything it refuses, with exit code 1 and what to
 do: a custom build, an install with no install root such as the
