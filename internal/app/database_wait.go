@@ -48,14 +48,15 @@ func databaseWaitFrom(env gonsole.Env) (databaseWait, error) {
 // await pings until the database answers, ctx ends or the wait runs out, logging when it waits and when it answered.
 func (w databaseWait) await(ctx context.Context, ping func(context.Context) error, logger *slog.Logger) error {
 	started := time.Now()
-	err := ping(ctx)
+	deadline := started.Add(w.limit)
+	err := w.try(ctx, ping, deadline)
 	if !notUpYet(err) {
 		return err
 	}
 	if w.limit > 0 {
 		logger.Warn(waitingLine, "error", err, "wait", w.limit)
 	}
-	if err := w.retry(ctx, ping, started.Add(w.limit), err); err != nil {
+	if err := w.retry(ctx, ping, deadline, err); err != nil {
 		return err
 	}
 	logger.Info(answeredLine, "after", time.Since(started).Round(time.Millisecond))
@@ -67,17 +68,68 @@ func (w databaseWait) retry(
 	ctx context.Context, ping func(context.Context) error, deadline time.Time, failed error,
 ) error {
 	for notUpYet(failed) {
-		left := time.Until(deadline)
-		if left <= 0 {
-			return fmt.Errorf("the database did not answer within %v, the time %s allows: %w",
-				w.limit, settingsPrefix+databaseWaitSetting, failed)
-		}
-		if err := pause(ctx, min(w.interval, left)); err != nil {
+		if err := w.pauseBefore(ctx, deadline, failed); err != nil {
 			return err
 		}
-		failed = ping(ctx)
+		failed = w.try(ctx, ping, deadline)
 	}
 	return failed
+}
+
+// try pings once, within deadline while the wait stands above 0, answering the end of ctx as it is once ctx ended.
+func (w databaseWait) try(ctx context.Context, ping func(context.Context) error, deadline time.Time) error {
+	if w.limit == 0 {
+		return ping(ctx)
+	}
+	bounded, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	err := ping(bounded)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if bounded.Err() == nil {
+		return err
+	}
+	if err == nil {
+		err = bounded.Err()
+	}
+	return unanswered{failed: err}
+}
+
+// pauseBefore pauses before the next try, answering that the wait ran out when deadline passed before or after it.
+func (w databaseWait) pauseBefore(ctx context.Context, deadline time.Time, failed error) error {
+	left := time.Until(deadline)
+	if left <= 0 {
+		return w.ranOut(failed)
+	}
+	if err := pause(ctx, min(w.interval, left)); err != nil {
+		return err
+	}
+	if time.Now().Before(deadline) {
+		return nil
+	}
+	return w.ranOut(failed)
+}
+
+// ranOut says the database did not answer within the wait, naming the setting and keeping failed, the last failure.
+func (w databaseWait) ranOut(failed error) error {
+	return fmt.Errorf("the database did not answer within %v, the time %s allows: %w",
+		w.limit, settingsPrefix+databaseWaitSetting, failed)
+}
+
+// unanswered is a try the wait's end cut short, holding what it failed with, so it counts as not up yet.
+type unanswered struct {
+	failed error
+}
+
+// Error says what the try the wait's end cut short failed with.
+func (u unanswered) Error() string {
+	return u.failed.Error()
+}
+
+// Unwrap answers what the try the wait's end cut short failed with.
+func (u unanswered) Unwrap() error {
+	return u.failed
 }
 
 // pause waits for d, answering the end of ctx when it comes first.
@@ -92,8 +144,11 @@ func pause(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// notUpYet reports whether err says the database is not up yet: a refused connection, a missing socket or 57P03.
+// notUpYet reports whether err says the database is not up yet: refused, no socket yet, 57P03 or a try cut short.
 func notUpYet(err error) bool {
+	if errors.As(err, &unanswered{}) {
+		return true
+	}
 	var answered *pgconn.PgError
 	if errors.As(err, &answered) {
 		return answered.Code == cannotConnectNow

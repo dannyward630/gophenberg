@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -19,6 +20,8 @@ import (
 	"github.com/gopherium/framework/gonsole/testkit"
 	"github.com/gopherium/framework/pluginkit"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/gopherium/gophenberg/sdk"
 )
 
 // errRefused is a connection the database server refused, as a dial answers it.
@@ -194,6 +197,168 @@ func TestDatabaseWaitStopsAtOnceOnAFailureWaitingCannotFix(t *testing.T) {
 	wantNothingLogged(t, &logged)
 }
 
+// wantRanOut fails t unless err says the wait of within ran out, the setting it names included.
+func wantRanOut(t *testing.T, err error, within string) {
+	t.Helper()
+	want := "the database did not answer within " + within + ", the time GOPHENBERG_DATABASE_WAIT allows: "
+	if err == nil || !strings.HasPrefix(err.Error(), want) {
+		t.Errorf("await() = %v, want %q", err, want)
+	}
+}
+
+// pingHanging is a ping that hears nothing until its context ends, then fails with that end.
+func pingHanging(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// silentAddress listens on loopback and never takes a connection, so a client connects and then hears nothing.
+func silentAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listening on loopback: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener.Addr().String()
+}
+
+func TestDatabaseWaitBoundsEachTryByTheTimeTheWaitHasLeft(t *testing.T) {
+	t.Parallel()
+	var ends []time.Time
+	ping := func(ctx context.Context) error {
+		end, _ := ctx.Deadline()
+		ends = append(ends, end)
+		if len(ends) < 3 {
+			return errRefused
+		}
+		return nil
+	}
+	began := time.Now()
+
+	err := databaseWait{limit: time.Minute, interval: time.Millisecond}.await(
+		t.Context(), ping, testLogger(&bytes.Buffer{}))
+
+	if err != nil || len(ends) != 3 {
+		t.Fatalf("await() = %v after %d pings, want nil once the third one answers", err, len(ends))
+	}
+	if ends[0].Before(began.Add(time.Minute)) || ends[0].After(time.Now().Add(time.Minute)) {
+		t.Errorf("the first ping ran until %v, want the wait's end, a minute after %v", ends[0], began)
+	}
+	for i, end := range ends {
+		if !end.Equal(ends[0]) {
+			t.Errorf("ping %d ran until %v, want the wait's end %v as every other ping", i+1, end, ends[0])
+		}
+	}
+}
+
+func TestDatabaseWaitEndsATryThatHangsOnceTheWaitRunsOut(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	began := time.Now()
+
+	err := databaseWait{limit: 50 * time.Millisecond, interval: 10 * time.Millisecond}.await(
+		ctx, pingHanging, testLogger(&bytes.Buffer{}))
+
+	took := time.Since(began)
+	wantRanOut(t, err, "50ms")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("await() = %v, want the hanging try's failure kept", err)
+	}
+	if took > 300*time.Millisecond {
+		t.Errorf("await() took %v, want it to end soon after its wait of 50ms", took)
+	}
+}
+
+func TestDatabaseWaitNeverTakesAnAnswerThatComesAfterTheWait(t *testing.T) {
+	t.Parallel()
+	late := func(context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	}
+
+	err := databaseWait{limit: 50 * time.Millisecond, interval: 10 * time.Millisecond}.await(
+		t.Context(), late, testLogger(&bytes.Buffer{}))
+
+	wantRanOut(t, err, "50ms")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("await() = %v, want the wait's end kept as the failure", err)
+	}
+}
+
+func TestDatabaseWaitPingsNoMoreOnceItsLastPauseReachesTheWaitsEnd(t *testing.T) {
+	t.Parallel()
+	calls := 0
+
+	err := databaseWait{limit: 50 * time.Millisecond, interval: time.Hour}.await(
+		t.Context(), pingAnswering(1, errRefused, &calls), testLogger(&bytes.Buffer{}))
+
+	wantRanOut(t, err, "50ms")
+	if calls != 1 {
+		t.Errorf("await() pinged %d times, want once, as its only pause ends at the wait's end", calls)
+	}
+	if !errors.Is(err, syscall.ECONNREFUSED) {
+		t.Errorf("await() = %v, want the last failure kept", err)
+	}
+}
+
+func TestDatabaseWaitOfZeroTriesOnceWithNoTimeBound(t *testing.T) {
+	t.Parallel()
+	var bounded []bool
+	ping := func(ctx context.Context) error {
+		_, held := ctx.Deadline()
+		bounded = append(bounded, held)
+		return errRefused
+	}
+
+	err := databaseWait{limit: 0, interval: time.Millisecond}.await(t.Context(), ping, testLogger(&bytes.Buffer{}))
+
+	wantRanOut(t, err, "0s")
+	if !slices.Equal(bounded, []bool{false}) {
+		t.Errorf("await() pinged with time bounds %v, want one ping with no time bound", bounded)
+	}
+}
+
+func TestDatabaseWaitAnswersTheEndOfItsContextDuringATry(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ping := func(tried context.Context) error {
+		cancel()
+		<-tried.Done()
+		return fmt.Errorf("failed to connect: %w", tried.Err())
+	}
+
+	err := databaseWait{limit: time.Minute, interval: time.Millisecond}.await(ctx, ping, testLogger(&bytes.Buffer{}))
+
+	if !errors.Is(err, context.Canceled) || err.Error() != context.Canceled.Error() {
+		t.Errorf("await() = %v, want the end of its context as it is", err)
+	}
+}
+
+func TestDatabaseWaitStopsOnceTheWaitRunsOutOnAServerThatNeverAnswers(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	handle, err := dbkitpg.Open("postgres://maria@"+silentAddress(t)+"/blog?sslmode=disable",
+		dbkitpg.Options{MaxConns: 2})
+	if err != nil {
+		t.Fatalf("opening a pool: %v", err)
+	}
+	defer func() { _ = handle.Close() }()
+	began := time.Now()
+
+	err = databaseWait{limit: 100 * time.Millisecond, interval: 10 * time.Millisecond}.await(
+		ctx, handle.Pool.Ping, testLogger(&bytes.Buffer{}))
+
+	took := time.Since(began)
+	wantRanOut(t, err, "100ms")
+	if took > 300*time.Millisecond {
+		t.Errorf("await() took %v, want it to end soon after its wait of 100ms", took)
+	}
+}
+
 func TestDatabaseWaitEndsWithTheContext(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -227,21 +392,67 @@ func (w waitRecorder) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestServeStopsCleanlyWhenItEndsWhileItWaitsForTheDatabase(t *testing.T) {
-	t.Parallel()
+// stopReportingPlugin is a plugin whose Stop records that it ran and returns the failure it holds.
+type stopReportingPlugin struct {
+	failure error
+	stopped bool
+}
 
+// ID names the plugin.
+func (*stopReportingPlugin) ID() string { return "stop-reporting" }
+
+// Start starts nothing.
+func (*stopReportingPlugin) Start(context.Context) error { return nil }
+
+// Stop records the stop and returns the failure the plugin holds.
+func (p *stopReportingPlugin) Stop(context.Context) error {
+	p.stopped = true
+	return p.failure
+}
+
+// stoppedDuringTheWait serves the plugin until serve logs that it waits for the database, then stops it, returning
+// what serve logged and returned.
+func stoppedDuringTheWait(t *testing.T, plugin sdk.Plugin) (string, error) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	logged := &strings.Builder{}
 	env := map[string]string{"GOPHENBERG_DATABASE_URL": unreachableDatabaseURL, "GOPHENBERG_DATABASE_WAIT": "1m"}
 
-	err := run(ctx, testkit.Getenv(env), waitRecorder{cancel: cancel, logged: logged}, noPlugins)
+	err := run(ctx, testkit.Getenv(env), waitRecorder{cancel: cancel, logged: logged},
+		func(sdk.Deps) ([]sdk.Plugin, error) { return []sdk.Plugin{plugin}, nil })
+
+	return logged.String(), err
+}
+
+func TestServeStopsCleanlyWhenItEndsWhileItWaitsForTheDatabase(t *testing.T) {
+	t.Parallel()
+	plugin := &stopReportingPlugin{}
+
+	logged, err := stoppedDuringTheWait(t, plugin)
 
 	if err != nil {
 		t.Fatalf("run() = %v, want a clean stop as a stop while it serves ends", err)
 	}
-	if !strings.Contains(logged.String(), `msg="shutting down"`) {
-		t.Errorf("serve logged %q, want it to say it shuts down", logged.String())
+	if !strings.Contains(logged, `msg="shutting down"`) {
+		t.Errorf("serve logged %q, want it to say it shuts down", logged)
+	}
+	if !plugin.stopped {
+		t.Error("serve ended without stopping the plugin, want it stopped")
+	}
+}
+
+func TestServeReturnsWhatAPluginFailedToStopWhenItEndsWhileItWaitsForTheDatabase(t *testing.T) {
+	t.Parallel()
+	errStuck := errors.New("the queue would not close")
+
+	logged, err := stoppedDuringTheWait(t, &stopReportingPlugin{failure: errStuck})
+
+	if !errors.Is(err, errStuck) || errors.Is(err, context.Canceled) {
+		t.Errorf("run() = %v, want only the plugin's stop failure, as the stop itself ends serve cleanly", err)
+	}
+	if !strings.Contains(logged, `msg="shutting down"`) {
+		t.Errorf("serve logged %q, want it to say it shuts down", logged)
 	}
 }
 

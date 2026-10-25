@@ -57,7 +57,7 @@ func serveSite(ctx context.Context, getenv func(string) string, stderr io.Writer
 	defer restart(nil)
 	b.admin = b.updatesFromAdmin(serving, restart, settingsEnv(getenv))
 	if err := b.ready(ctx); err != nil {
-		return b.stopped(ctx, err)
+		return errors.Join(b.stopped(ctx, err), b.stopPlugins(ctx))
 	}
 
 	jobs := cronOf(settings.cron, built, logger, updateJobs(settings.updates, b.updates())...)
@@ -129,15 +129,12 @@ func (b boot) updatesFromAdmin(
 	}
 }
 
-// ready refuses plugins that failed to register, then waits for the database and readies it, stopping them on failure.
+// ready refuses plugins that failed to register, then waits for the database and readies it.
 func (b boot) ready(ctx context.Context) error {
 	if b.built.failed != nil {
-		return errors.Join(fmt.Errorf("register plugins: %w", b.built.failed), b.stopPlugins(ctx))
+		return fmt.Errorf("register plugins: %w", b.built.failed)
 	}
-	if err := b.reachDatabase(ctx); err != nil {
-		return errors.Join(err, b.stopPlugins(ctx))
-	}
-	return nil
+	return b.reachDatabase(ctx)
 }
 
 // reachDatabase waits for the database, marks it reached for the boot guard, then checks the role and migrates it.
