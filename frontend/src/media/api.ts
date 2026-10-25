@@ -30,6 +30,8 @@ const mediaSchema = z.object({
 	filesize: z.number().optional(),
 	sizes: z.record(z.string(), subSizeSchema).optional(),
 	author_id: z.string().optional(),
+	author_name: z.string().optional(),
+	author_avatar: z.string().optional(),
 	created_at: z.string().optional(),
 	updated_at: z.string().optional(),
 })
@@ -66,6 +68,8 @@ export interface MediaItem {
 	filesize: number
 	sizes: Record<string, MediaSubSize>
 	authorId: string
+	authorName: string
+	authorAvatar: string
 	createdAt: string
 	updatedAt: string
 }
@@ -77,11 +81,18 @@ export interface MediaPage {
 }
 
 export interface MediaQuery {
-	type?: string
 	mimes?: string[]
 	search?: string
 	page?: number
 	perPage?: number
+	orderBy?: string
+	order?: string
+	author?: string[]
+	authorExclude?: string[]
+	before?: string
+	after?: string
+	modifiedBefore?: string
+	modifiedAfter?: string
 }
 
 export interface MediaDescriptions {
@@ -91,12 +102,15 @@ export interface MediaDescriptions {
 	description?: string
 }
 
-export type DescribeOutcome =
-	| { kind: 'saved', item: MediaItem }
-	| { kind: 'stale' }
-	| { kind: 'rejected', message: string }
-
 export const mediaQueryKey = ['media']
+
+/** The name the server reads each description under. */
+const DESCRIPTION_KEYS: [keyof MediaDescriptions, string][] = [
+	['title', 'title'],
+	['altText', 'alt_text'],
+	['caption', 'caption'],
+	['description', 'description'],
+]
 
 /**
  * Returns the sub-sizes carried by an API row.
@@ -157,6 +171,8 @@ function toMedia(row: z.infer<typeof mediaSchema>): MediaItem {
 		mimeType: row.mime_type,
 		sizes: toSizes(row.sizes),
 		authorId: row.author_id ?? '',
+		authorName: row.author_name ?? '',
+		authorAvatar: row.author_avatar ?? '',
 		createdAt: row.created_at ?? '',
 		updatedAt: row.updated_at ?? '',
 		...toDescriptions(row),
@@ -187,27 +203,51 @@ export function mediaSrc(file: string): string {
 }
 
 /**
- * Returns one page of media matching the query.
- * @param query - The filters, page and page size to ask for, the server's own page size when it names none.
- * @returns The page, the total number of matches and the page size the server used.
+ * Returns the named parameters a listing request carries, undefined or empty for each one the query leaves out.
+ * @param query - The filters, sort and page size to ask for.
+ * @returns The parameters by the names the server reads.
  */
-export async function listMedia(query: MediaQuery): Promise<MediaPage> {
+function namedParams(query: MediaQuery): Record<string, string | undefined> {
+	return {
+		per_page: query.perPage?.toString(),
+		mime: query.mimes?.join(','),
+		search: query.search,
+		orderby: query.orderBy,
+		order: query.order,
+		author: query.author?.join(','),
+		author_exclude: query.authorExclude?.join(','),
+		before: query.before,
+		after: query.after,
+		modified_before: query.modifiedBefore,
+		modified_after: query.modifiedAfter,
+	}
+}
+
+/**
+ * Returns the query parameters a listing request carries.
+ * @param query - The filters, sort, page and page size to ask for.
+ * @returns The parameters, the first page left unnamed.
+ */
+function listingParams(query: MediaQuery): URLSearchParams {
 	const params = new URLSearchParams()
-	if (query.perPage !== undefined) {
-		params.set('per_page', String(query.perPage))
-	}
-	if (query.type) {
-		params.set('type', query.type)
-	}
-	if (query.mimes && query.mimes.length > 0) {
-		params.set('mime', query.mimes.join(','))
-	}
-	if (query.search) {
-		params.set('search', query.search)
+	for (const [name, value] of Object.entries(namedParams(query))) {
+		if (value) {
+			params.set(name, value)
+		}
 	}
 	if (query.page && query.page > 1) {
 		params.set('page', String(query.page))
 	}
+	return params
+}
+
+/**
+ * Returns one page of media matching the query.
+ * @param query - The filters, sort, page and page size to ask for, the server's own page size when it names none.
+ * @returns The page, the total number of matches and the page size the server used.
+ */
+export async function listMedia(query: MediaQuery): Promise<MediaPage> {
+	const params = listingParams(query)
 	const response = await fetch(`/api/media?${params}`)
 	if (!response.ok) {
 		throw new Error(`listing media failed with status ${response.status}`)
@@ -244,6 +284,24 @@ async function namedMedia(ids: number[]): Promise<MediaItem[]> {
 }
 
 /**
+ * Returns the answer to a request the server accepted, or throws the refusal in the reader's words.
+ * @param url - Where the request goes.
+ * @param init - The method, headers and body of the request.
+ * @param unreached - The words to throw when no answer came.
+ * @returns The answer.
+ */
+async function answered(url: string, init: RequestInit, unreached: string): Promise<Response> {
+	const response = await fetch(url, init).catch(() => null)
+	if (response === null) {
+		throw new Error(unreached)
+	}
+	if (!response.ok) {
+		throw new Error(await messageFrom(response))
+	}
+	return response
+}
+
+/**
  * Stores an uploaded file in the media library, or throws the reason it was not stored in the reader's words.
  * @param file - The file the administrator chose.
  * @returns The stored item.
@@ -251,19 +309,13 @@ async function namedMedia(ids: number[]): Promise<MediaItem[]> {
 export async function uploadMedia(file: File): Promise<MediaItem> {
 	const body = new FormData()
 	body.append('file', file, file.name)
-	const response = await fetch('/api/media', { method: 'POST', body }).catch(() => null)
-	if (response === null) {
-		throw new Error(__('The server could not be reached, so nothing was uploaded.', 'gophenberg'))
-	}
-	if (!response.ok) {
-		throw new Error(await messageFrom(response))
-	}
-	return storedItem(response)
+	const unreached = __('The server could not be reached, so nothing was uploaded.', 'gophenberg')
+	return storedItem(await answered('/api/media', { method: 'POST', body }, unreached))
 }
 
 /**
- * Returns the item a stored upload answered with, or throws a stand in when the answer cannot be read.
- * @param response - The answer the API stored the file with.
+ * Returns the item an answer of the API carries, or throws a stand in when the answer cannot be read.
+ * @param response - The answer holding one stored item.
  * @returns The stored item.
  */
 async function storedItem(response: Response): Promise<MediaItem> {
@@ -275,51 +327,48 @@ async function storedItem(response: Response): Promise<MediaItem> {
 }
 
 /**
- * Writes the given descriptions to a media item.
- * @param id - The item to write to.
- * @param descriptions - The descriptions to change.
- * @param version - The updatedAt the descriptions were prepared against.
- * @returns What the server made of the write.
+ * Returns the body of an edit, the version it writes over and each description it changes, under the server's names.
+ * @param edits - The descriptions the reader changed.
+ * @param version - The updatedAt the edit writes over.
+ * @returns The body.
  */
-export async function describeMedia(
-	id: number,
-	descriptions: MediaDescriptions,
-	version: string,
-): Promise<DescribeOutcome> {
+function editBody(edits: MediaDescriptions, version: string): Record<string, string> {
 	const body: Record<string, string> = { updated_at: version }
-	const wire: [keyof MediaDescriptions, string][] = [
-		['title', 'title'],
-		['altText', 'alt_text'],
-		['caption', 'caption'],
-		['description', 'description'],
-	]
-	for (const [field, key] of wire) {
-		const value = descriptions[field]
+	for (const [field, key] of DESCRIPTION_KEYS) {
+		const value = edits[field]
 		if (value !== undefined) {
 			body[key] = value
 		}
 	}
-	const response = await fetch(`/api/media/${id}`, {
-		method: 'PATCH',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(body),
-	})
-	if (response.ok) {
-		return { kind: 'saved', item: toMedia(mediaSchema.parse(await response.json())) }
-	}
-	if (response.status === 409) {
-		return { kind: 'stale' }
-	}
-	return { kind: 'rejected', message: await messageFrom(response) }
+	return body
 }
 
 /**
- * Removes a media item and its files for good.
+ * Writes the descriptions a reader changed over the version read just before the write, so the newest write wins.
+ * @param id - The file to write to.
+ * @param edits - The descriptions the reader changed, the others left as they are.
+ * @param unreached - The words to throw when no answer came.
+ * @returns The stored file, or a throw of the reason it was not written in the reader's words.
+ */
+export async function editMedia(id: number, edits: MediaDescriptions, unreached: string): Promise<MediaItem> {
+	const current = await storedItem(await answered(`/api/media/${id}`, {}, unreached))
+	const response = await answered(
+		`/api/media/${id}`,
+		{
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(editBody(edits, current.updatedAt)),
+		},
+		unreached,
+	)
+	return storedItem(response)
+}
+
+/**
+ * Removes a media item and its files for good, or throws the reason it stayed in the reader's words.
  * @param id - The item to delete.
  */
 export async function deleteMedia(id: number): Promise<void> {
-	const response = await fetch(`/api/media/${id}`, { method: 'DELETE' })
-	if (!response.ok) {
-		throw new Error(`deleting media failed with status ${response.status}`)
-	}
+	const unreached = __('The item could not be permanently deleted.', 'gophenberg')
+	await answered(`/api/media/${id}`, { method: 'DELETE' }, unreached)
 }

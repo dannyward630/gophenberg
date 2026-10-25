@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
-import { buttonClasses } from '@gopherium/godmin/testing'
-import { screen, waitFor, within } from '@testing-library/react'
+import { buttonClasses, stubLayout } from '@gopherium/godmin/testing'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 
@@ -174,6 +174,16 @@ test('reports the reason the one file chosen was refused, and raises no toast', 
 	expect(document.querySelector('.godmin-toast')).toBeNull()
 })
 
+test('leaves the focus off the library when no file chosen landed', async () => {
+	storing()
+	renderAt('/media')
+
+	await choose(file('notes.txt'))
+
+	await within(screen.getByRole('region', { name: 'Media' })).findByRole('alert')
+	expect(screen.getByRole('region', { name: 'Media' })).not.toHaveFocus()
+})
+
 test('reports an upload that never reached the server', async () => {
 	vi.spyOn(console, 'error').mockImplementation(() => {})
 	server.use(http.post('/api/media', () => HttpResponse.error()))
@@ -225,6 +235,113 @@ test('reloads the library and moves the focus to it once a file landed', async (
 
 	await waitFor(() => expect(seen.reads).toBeGreaterThan(before))
 	await waitFor(() => expect(screen.getByRole('region', { name: 'Media' })).toHaveFocus())
+})
+
+test('leaves the focus in a dialog opened while the upload ran once a file landed', async () => {
+	stubLayout()
+	const held = gate()
+	server.use(
+		http.post('/api/media', async () => {
+			await held.held
+			return HttpResponse.json(HARBOR, { status: 201 })
+		}),
+	)
+	renderAt('/media')
+	await choose(file('harbor.jpg'))
+	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
+	await userEvent.click(await screen.findByRole('menuitem', { name: 'Edit…' }))
+	const title = within(await screen.findByRole('dialog')).getByRole('textbox', { name: 'Title' })
+	await waitFor(() => expect(title).toHaveFocus())
+
+	held.release()
+	await screen.findByText('"harbor.jpg" uploaded.', { selector: '.godmin-toast' })
+	await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+	expect(title).toHaveFocus()
+})
+
+const MARKET = { ...HARBOR, id: 9, file: '2026/08/market.jpg', title: 'Market at noon' }
+
+/**
+ * Shows the library while an upload holds back a file that lands before its one card.
+ * @returns The gate the upload waits on.
+ */
+async function uploadHeldBack() {
+	stubLayout()
+	const held = gate()
+	const listed = [HARBOR]
+	server.use(
+		http.get('/api/media', () =>
+			HttpResponse.json({ items: listed, total: listed.length, per_page: siteSettings.list_page_size }),
+		),
+		http.post('/api/media', async () => {
+			await held.held
+			listed.unshift(MARKET)
+			return HttpResponse.json(MARKET, { status: 201 })
+		}),
+	)
+	renderAt('/media')
+	await choose(file('market.jpg'))
+	return held
+}
+
+/**
+ * Opens a dialog from the menu of the one card while an upload holds back a file that lands before that card.
+ * @param item - The words of the menu item.
+ * @returns The dialog and the gate the upload waits on.
+ */
+async function openWhileUploading(item: string) {
+	const held = await uploadHeldBack()
+	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
+	await userEvent.click(await screen.findByRole('menuitem', { name: item }))
+	return { dialog: await screen.findByRole('dialog'), held }
+}
+
+test.each([
+	{ item: 'Edit…', box: 'Title' },
+	{ item: 'Rename…', box: 'Name' },
+])('keeps the $item a card menu opened, its typed text and its focus, once an upload lands a file before it', async ({
+	item,
+	box,
+}) => {
+	const { dialog, held } = await openWhileUploading(item)
+	const typed = within(dialog).getByRole('textbox', { name: box })
+	await waitFor(() => expect(typed).toHaveFocus())
+	await userEvent.type(typed, ' in the fog')
+
+	held.release()
+	await screen.findByText('Market at noon')
+	await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+	expect(screen.getByRole('dialog')).toBe(dialog)
+	expect(typed).toHaveValue('Harbor at dawn in the fog')
+	expect(typed).toHaveFocus()
+})
+
+test('focuses the card menu an upload moved while its dialog was open, once Cancel closes the dialog', async () => {
+	const { dialog, held } = await openWhileUploading('Rename…')
+	held.release()
+	await screen.findByText('Market at noon')
+
+	await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+	const harbor = (await screen.findByText('Harbor at dawn')).closest('.dataviews-view-grid__card') as HTMLElement
+	await waitFor(() => expect(within(harbor).getByRole('button', { name: 'Actions' })).toHaveFocus())
+	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(harbor)
+})
+
+test('focuses the card title an upload moved while its Edit was open, once Cancel closes the dialog', async () => {
+	const held = await uploadHeldBack()
+	await userEvent.click(screen.getByText('Harbor at dawn'))
+	const dialog = await screen.findByRole('dialog', { name: 'Edit media' })
+	held.release()
+	await screen.findByText('Market at noon')
+
+	await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+	const harbor = (await screen.findByText('Harbor at dawn')).closest('.dataviews-view-grid__card') as HTMLElement
+	await waitFor(() => expect(harbor.querySelector('.dataviews-title-field')).toHaveFocus())
+	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(harbor)
 })
 
 test('uploads every file dropped on the library', async () => {

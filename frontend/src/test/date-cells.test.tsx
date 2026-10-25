@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { DataViews } from '@gophenberg/frontend-sdk/dataviews'
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
 import { LIST_CHROME_DOMAIN, listChromeCatalogFor } from '@gopherium/godmin'
 import { startListDates } from '@gopherium/godmin/dates'
@@ -74,6 +75,8 @@ const item: MediaItem = {
 	filesize: 1,
 	sizes: {},
 	authorId: '1',
+	authorName: 'Maria Perez',
+	authorAvatar: '',
 	createdAt: NOON,
 	updatedAt: NOON,
 }
@@ -115,11 +118,49 @@ test('writes a post date in the words of the list chrome catalogue when its own 
 	expect(screen.getByText('Publicado: 5 Ene 2026 08:09')).toBeInTheDocument()
 })
 
-test.each(['es-ES', 'en-US'])('shows a media date in the site format to a reader of %s', (reader) => {
-	rememberFormatLocale('es-ES')
-	rememberLocale(reader)
+/**
+ * Renders the Date added and Date modified of a media item as a DataViews table draws them.
+ * @param held - The item to render.
+ */
+function renderMediaDates(held: MediaItem) {
+	render(
+		<DataViews
+			data={[held]}
+			fields={mediaFields()}
+			view={{ type: 'table', fields: ['date', 'modified'], titleField: 'title' }}
+			onChangeView={() => {}}
+			paginationInfo={{ totalItems: 1, totalPages: 1 }}
+			defaultLayouts={{ table: {} }}
+			getItemId={(row) => String(row.id)}
+		/>,
+	)
+}
 
-	renderDate(mediaFields, item)
+test('writes both media dates in the full date and time format WordPress media fields use', () => {
+	startListDates(DEFAULT_LOCALE)
 
-	expect(screen.getByText('16/08/2026')).toBeInTheDocument()
+	renderMediaDates({ ...item, updatedAt: WINTER_MORNING })
+
+	expect(screen.getByText('August 16, 2026 12:00 pm')).toBeInTheDocument()
+	expect(screen.getByText('January 5, 2026 8:09 am')).toBeInTheDocument()
+})
+
+test('writes both media dates in the full format of the language the admin booted in', async () => {
+	setLocaleData(await listChromeCatalogFor('es-ES'), LIST_CHROME_DOMAIN)
+	onTestFinished(() => resetLocaleData({}, LIST_CHROME_DOMAIN))
+	startListDates('es-ES')
+
+	renderMediaDates({ ...item, updatedAt: WINTER_MORNING })
+
+	expect(screen.getByText('16 de agosto de 2026 12:00')).toBeInTheDocument()
+	expect(screen.getByText('5 de enero de 2026 08:09')).toBeInTheDocument()
+})
+
+test('writes no date for a media item that carries no moment', () => {
+	startListDates(DEFAULT_LOCALE)
+
+	renderMediaDates({ ...item, createdAt: '', updatedAt: '' })
+
+	const cells = [...document.querySelectorAll('.dataviews-view-table tbody td')].map((cell) => cell.textContent)
+	expect(cells).toEqual(['One', '', ''])
 })
