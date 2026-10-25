@@ -24,18 +24,25 @@ const WORDS: BulkWords<{ id: string }> = {
 	failed: (failures, asked) => `Failed: ${failures.length} of ${asked}.`,
 }
 
+/** Expects every piece the SDK hands out to be a function, the very one godmin ships in its place. */
+function expectGodmins(handed: unknown[], shipped: unknown[]): void {
+	expect(handed.map((piece) => typeof piece)).toEqual(shipped.map(() => 'function'))
+	expect(handed).toEqual(shipped)
+}
+
 test('hands plugins the list kit the admin runs, the very functions godmin ships', () => {
-	expect([RunConfirm, useBulkRun, useListRun]).toEqual([godmin.RunConfirm, godmin.useBulkRun, godmin.useListRun])
+	expectGodmins([RunConfirm, useBulkRun, useListRun], [godmin.RunConfirm, godmin.useBulkRun, godmin.useListRun])
 })
 
 test('hands plugins the dialog bodies the admin asks in, the very ones godmin ships', () => {
-	expect([ConfirmBody, FormBody, RenameBody]).toEqual([godmin.ConfirmBody, godmin.FormBody, godmin.RenameBody])
+	expectGodmins([ConfirmBody, FormBody, RenameBody], [godmin.ConfirmBody, godmin.FormBody, godmin.RenameBody])
 })
 
 test('hands plugins the toaster the admin reports a failed write in, the very one godmin ships', () => {
 	const handle: Pick<ToasterHandle, 'show'> | undefined = undefined
 
-	expect([useToaster, handle]).toEqual([godmin.useToaster, undefined])
+	expectGodmins([useToaster], [godmin.useToaster])
+	expect(handle).toBeUndefined()
 })
 
 test('hands plugins the types the list kit is written in', () => {
