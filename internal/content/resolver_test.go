@@ -158,16 +158,20 @@ func TestResolveLetsContentBeatPagination(t *testing.T) {
 	}
 }
 
-func TestResolveRefusesAPageNumberBelowTheFirst(t *testing.T) {
+func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 	t.Parallel()
 
 	resolver := newResolver(t, newFakeAddresses())
 
 	_, zero := resolver.Resolve(t.Context(), "/page/0")
 	_, negative := resolver.Resolve(t.Context(), "/pages/page/-2")
+	_, signed := resolver.Resolve(t.Context(), "/page/+2")
+	_, nonASCIIDigits := resolver.Resolve(t.Context(), "/page/２")
 	_, words := resolver.Resolve(t.Context(), "/page/last")
 
-	for name, err := range map[string]error{"zero": zero, "negative": negative, "words": words} {
+	for name, err := range map[string]error{
+		"zero": zero, "negative": negative, "signed": signed, "non-ASCII digits": nonASCIIDigits, "words": words,
+	} {
 		if !errors.Is(err, content.ErrNotFound) {
 			t.Errorf("%s page error = %v, want %v", name, err, content.ErrNotFound)
 		}

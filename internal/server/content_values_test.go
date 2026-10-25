@@ -938,6 +938,18 @@ func TestResolveKeepsASingleItemOffThePageWord(t *testing.T) {
 	}
 }
 
+func TestResolveRefusesASignedPageNumber(t *testing.T) {
+	t.Parallel()
+
+	handler := termTypeServer(t)
+	recorder := doRequest(t, handler, http.MethodGet,
+		"/api/content/v1/resolve?path=%2Fpage%2F%2B2", "")
+
+	if recorder.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d for a signed page number", recorder.Code, http.StatusNotFound)
+	}
+}
+
 func TestResolveCarriesRelationSummaries(t *testing.T) {
 	t.Parallel()
 
