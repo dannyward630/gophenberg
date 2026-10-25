@@ -153,10 +153,11 @@ func (s *server) handleMediaUpload() http.HandlerFunc {
 	}
 }
 
-// mediaRow is one row of the admin media listing, carrying its author's name.
+// mediaRow is one row of the admin media listing, carrying its author's name and the avatar the author cell draws.
 type mediaRow struct {
 	mediaView
-	AuthorName string `json:"author_name"`
+	AuthorName   string `json:"author_name"`
+	AuthorAvatar string `json:"author_avatar"`
 }
 
 // mediaListResponse is a page of media items with the total matching the filter and the page size the server used.
@@ -301,12 +302,34 @@ func (s *server) handleMediaList() http.HandlerFunc {
 			respondDomainError(w, err)
 			return
 		}
-		items := make([]mediaRow, len(rows))
-		for i, m := range rows {
-			items[i] = mediaRow{mediaView: newMediaView(m.Media), AuthorName: m.AuthorName}
+		items, err := s.listedMedia(r.Context(), rows)
+		if err != nil {
+			respondDomainError(w, err)
+			return
 		}
 		authkit.Respond(w, http.StatusOK, mediaListResponse{Items: items, Total: total, PerPage: filter.PerPage})
 	}
+}
+
+// listedMedia returns the rows of a media listing as the admin reads them, each author with the avatar the cell draws.
+func (s *server) listedMedia(ctx context.Context, rows []media.Listed) ([]mediaRow, error) {
+	names := make(map[uuid.UUID]string, len(rows))
+	for _, m := range rows {
+		names[m.AuthorID] = m.AuthorName
+	}
+	authors, err := s.authorsOf(ctx, names)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]mediaRow, len(rows))
+	for i, m := range rows {
+		items[i] = mediaRow{
+			mediaView:    newMediaView(m.Media),
+			AuthorName:   m.AuthorName,
+			AuthorAvatar: authors[m.AuthorID].avatar,
+		}
+	}
+	return items, nil
 }
 
 // respondMediaByIDs answers the stored files the query names, in the order it names them.

@@ -32,16 +32,27 @@ type avatarBody struct {
 	AuthorAvatar *string `json:"author_avatar"`
 }
 
-// postAuthor is who wrote one post authoredServer stores, by name and email.
-type postAuthor struct {
+// itemAuthor is who wrote one listed item, by name and email.
+type itemAuthor struct {
 	name  string
 	email string
 }
 
+// secondAuthor is the writer of the avatar tests beside Maria Perez.
+var secondAuthor = itemAuthor{name: "Second Author", email: "second@example.com"}
+
 // authoredPosts are the posts authoredServer stores, each title with its author.
-var authoredPosts = map[string]postAuthor{
+var authoredPosts = map[string]itemAuthor{
 	"Hello World": {name: "Maria Perez", email: "maria@example.com"},
-	"Notes":       {name: "Ada Lovelace", email: "ada@example.com"},
+	"Notes":       secondAuthor,
+}
+
+// addAuthors stores the signed-in administrator, then Maria Perez and secondAuthor as authors, and returns both.
+func addAuthors(t *testing.T, users *testkit.Store) (gouncer.User, gouncer.User) {
+	t.Helper()
+	addAda(t, users)
+	maria := addWithRole(t, users, "maria@example.com", "Maria Perez", role.Author)
+	return maria, addWithRole(t, users, secondAuthor.email, secondAuthor.name, role.Author)
 }
 
 // avatarListBody is the admin listing as the author cell reads it.
@@ -70,12 +81,11 @@ func authoredServer(
 ) (http.Handler, content.Content) {
 	t.Helper()
 	users := newFakeUserStore()
-	ada := addAda(t, users)
-	maria := addWithRole(t, users, "maria@example.com", "Maria Perez", role.Author)
+	maria, second := addAuthors(t, users)
 	posts := newFakePostStore()
-	posts.authors = map[uuid.UUID]string{maria.ID: maria.Name, ada.ID: ada.Name}
+	posts.authors = map[uuid.UUID]string{maria.ID: maria.Name, second.ID: second.Name}
 	post := posts.add(newPost(t, "Hello World", maria.ID))
-	posts.add(newPost(t, "Notes", ada.ID))
+	posts.add(newPost(t, "Notes", second.ID))
 	handler := authedServerWithStores(t, server.Config{
 		Users: wrap(users), Content: posts, Types: newFakeTypeStore(), Avatars: options,
 	})
@@ -100,21 +110,21 @@ var avatarCases = map[string]avatar.Options{
 }
 
 // wantedAvatar returns the address the author cell must receive for the writer under options, empty with avatars off.
-func wantedAvatar(writer postAuthor, options avatar.Options) string {
+func wantedAvatar(writer itemAuthor, options avatar.Options) string {
 	if options.Mode == avatar.ModeOff {
 		return ""
 	}
 	return avatar.Address(writer.name, writer.email, authorCell, options)
 }
 
-// checkListedAuthors fails for each listed post not shown with its own author and that author's avatar under options.
-func checkListedAuthors(t *testing.T, body avatarListBody, options avatar.Options) {
+// checkListedAuthors fails for each listed item lacking its author in authored or that author's avatar under options.
+func checkListedAuthors(t *testing.T, body avatarListBody, options avatar.Options, authored map[string]itemAuthor) {
 	t.Helper()
-	if len(body.Items) != len(authoredPosts) {
-		t.Fatalf("body = %+v, want the %d posts", body, len(authoredPosts))
+	if len(body.Items) != len(authored) {
+		t.Fatalf("body = %+v, want the %d items", body, len(authored))
 	}
 	for _, item := range body.Items {
-		writer := authoredPosts[item.Title]
+		writer := authored[item.Title]
 		got, want := avatarOf(t, item), wantedAvatar(writer, options)
 		if item.AuthorName != writer.name || got != want {
 			t.Errorf("%q is by %q with author_avatar %q, want by %q with %q",
@@ -146,7 +156,7 @@ func TestContentListSendsEachAuthorsAvatarAtTwiceTheAuthorCell(t *testing.T) {
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
 			}
-			checkListedAuthors(t, decodeBody[avatarListBody](t, recorder), options)
+			checkListedAuthors(t, decodeBody[avatarListBody](t, recorder), options, authoredPosts)
 		})
 	}
 }
