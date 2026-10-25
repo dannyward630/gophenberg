@@ -178,6 +178,28 @@ func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 	}
 }
 
+func TestResolveRefusesInvalidPageSuffixesBeforeLookingUpContent(t *testing.T) {
+	t.Parallel()
+
+	for name, suffix := range map[string]string{"signed": "+2", "non-ASCII digits": "２"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newFakeAddresses()
+			store.hold("page", "pages/page/"+suffix)
+			resolver := newResolver(t, store)
+
+			_, err := resolver.Resolve(t.Context(), "/pages/page/"+suffix)
+			if !errors.Is(err, content.ErrNotFound) {
+				t.Errorf("Resolve error = %v, want %v", err, content.ErrNotFound)
+			}
+			if store.lookups != 0 {
+				t.Errorf("content lookups = %d, want none for an invalid page suffix", store.lookups)
+			}
+		})
+	}
+}
+
 func TestResolveReportsAnAddressHoldingNothing(t *testing.T) {
 	t.Parallel()
 

@@ -60,6 +60,9 @@ func (r *Resolver) Resolve(ctx context.Context, raw string) (Address, error) {
 		return Address{}, ErrNotFound
 	}
 	address := tidy(raw)
+	if _, _, err := listingAt(address); err != nil {
+		return Address{}, err
+	}
 	if RootPagination(address) {
 		return r.archiveAt(ctx, address)
 	}
