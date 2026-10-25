@@ -290,13 +290,16 @@ export function BackupsLine({ backups }: { backups: BackupCount }) {
  * @returns The heading, or undefined before a check, while an update may move on, or while a version is refused.
  */
 function offerHeading(overview: UpdatesOverview, moving: boolean): string | undefined {
+	if (moving) {
+		return undefined
+	}
 	if (overview.offer !== null) {
 		return refuses(overview, overview.offer.version)
 			? undefined
 			: __('An updated version of Gophenberg is available.', 'gophenberg')
 	}
 	const latest = overview.checked_at !== null && !refuses(overview, overview.running)
-	return latest && !moving ? __('You have the latest version of Gophenberg.', 'gophenberg') : undefined
+	return latest ? __('You have the latest version of Gophenberg.', 'gophenberg') : undefined
 }
 
 /**

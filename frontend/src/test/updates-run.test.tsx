@@ -239,6 +239,14 @@ test('leaves the warning to back up and the sentence leading to the button out w
 	noBackupWarningOrLead()
 })
 
+test('drops the heading saying an update is available while it runs, as WordPress shows only progress', async () => {
+	await updateToPatch()
+
+	await underWay('Downloading Gophenberg 0.20.1…')
+
+	expect(screen.queryByRole('heading', { level: 3, name: 'An updated version of Gophenberg is available.' })).toBeNull()
+})
+
 test('follows the update one step at a time, marking the step under way', async () => {
 	const site = await updateToPatch()
 
