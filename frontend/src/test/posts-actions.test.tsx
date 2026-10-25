@@ -3,7 +3,7 @@
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
 import { LIST_CHROME_DOMAIN, listChromeCatalogFor } from '@gopherium/godmin'
 import { buttonClasses } from '@gopherium/godmin/testing'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
 import { beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest'
@@ -16,6 +16,7 @@ import { gate } from './gate'
 import { renderAt } from './render'
 import { storedPostWithId } from './postFixture'
 import { siteSettings } from './siteSettings'
+import { clickDimmedPage, waitBusy } from './typeFixtures'
 
 beforeAll(async () => {
 	await import('../content/EditorScreen')
@@ -386,6 +387,30 @@ test('keeps the confirm open when Cancel is pressed while the trash runs', async
 	expect(dialog).toBeInTheDocument()
 	answer.release()
 	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+})
+
+test('leaves a dialog opened on the row after a trash dismissed while busy open once it ends', async () => {
+	const answer = gate()
+	server.use(
+		http.delete('/api/content/:id', async () => {
+			await answer.held
+			return HttpResponse.json({}, { status: 500 })
+		}),
+	)
+	renderAt('/content/post')
+	await trashTheListedPost()
+	const busy = screen.getByRole('dialog')
+	await waitBusy(busy, 'Move to trash')
+	await clickDimmedPage()
+	await openRowActions()
+	await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename…' }))
+	const rename = await screen.findByRole('dialog', { name: 'Rename' })
+
+	answer.release()
+	await screen.findByText('The item could not be moved to the trash.', { selector: '.godmin-toast' })
+	await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+	expect(screen.getByRole('dialog', { name: 'Rename' })).toBe(rename)
 })
 
 test('speaks Cargando to a Spanish reader while the trash runs, as WordPress es_ES does', async () => {

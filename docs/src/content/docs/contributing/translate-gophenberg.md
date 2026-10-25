@@ -46,7 +46,10 @@ that note describes. Your language may well need two different words where
 English used one, and that is the reason the context exists.
 
 **Some words stay in English.** The name Gophenberg is never translated.
-Neither are the size units B, KB, MB, GB and TB.
+
+**Size units follow your language.** The units B, KB, MB and the larger
+ones carry the context "unit symbol". Write the symbol your language
+uses, as WordPress does, such as Ko and Mo in French.
 
 **Write the way the software speaks.** Gophenberg addresses the reader
 directly and plainly. Keep sentences short, and prefer the everyday word

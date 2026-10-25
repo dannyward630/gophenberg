@@ -2,55 +2,50 @@
 
 import { DropZone, mediaIcon, uploadIcon } from '@gophenberg/frontend-sdk'
 import { DataViews } from '@gophenberg/frontend-sdk/dataviews'
-import type { View } from '@gophenberg/frontend-sdk/dataviews'
+import type { Field, View } from '@gophenberg/frontend-sdk/dataviews'
 import {
 	ErrorNotice,
 	FileButton,
 	ListEmpty,
 	Page,
 	bulkNotes,
+	offeredSize,
+	offeredView,
 	paginationOf,
 	runEach,
+	sizedView,
+	useListRun,
 	useToaster,
+	viewNarrows,
 } from '@gopherium/godmin'
-import type { BulkFailure, BulkWords } from '@gopherium/godmin'
+import type { BulkFailure, BulkWords, OfferedView } from '@gopherium/godmin'
+import { openOnTap, useListView } from '@gopherium/godmin/router'
+import type { ListView } from '@gopherium/godmin/router'
 import { formatNumber } from '@gopherium/gottext'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { __, _n, _x, sprintf } from '@wordpress/i18n'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
+import { focusInDialog, useFocusOnList } from '../lists/focusOnList'
+import type { ListSettings } from '../settings/api'
 import { useListSettings } from '../settings/useListSettings'
 import './media.css'
-import { useMediaActions, useRefreshMedia } from './actions'
+import { useMayChange, useMediaActions, useMediaTools, useRefreshMedia, viewFile } from './actions'
 import { listMedia, mediaQueryKey, uploadMedia } from './api'
-import type { MediaItem, MediaPage } from './api'
-import { mediaFields } from './fields'
+import type { MediaItem, MediaPage, MediaQuery } from './api'
+import { MEDIA_SORT, MEDIA_VIEW_GUARD, libraryFields, mediaListing } from './fields'
+import { clickedDoor, useFocusBack } from './focusBack'
+import type { Door } from './focusBack'
+import { OpenMediaDialog } from './MediaModals'
+import type { MediaTools, OpenedDialog } from './MediaModals'
 
+/** The width a card of the grid opens at, the one DataViews draws by default. */
 const PREVIEW_SIZE = 230
 
-const EMPTY_PAGE: MediaPage = { items: [], total: 0, perPage: 0 }
-
-const INITIAL_VIEW: View = {
-	type: 'grid',
-	fields: ['dimensions', 'filesize'],
-	titleField: 'title',
-	mediaField: 'thumbnail',
-	search: '',
-	page: 1,
-	layout: { previewSize: PREVIEW_SIZE },
-}
-
-/**
- * Returns the kind a view is filtered to.
- * @param view - The view the library is shown through.
- * @returns The kind to ask for, empty for every kind.
- */
-export function filteredKind(view: View): string {
-	const chosen = view.filters?.find((filter) => filter.field === 'type')?.value
-	return typeof chosen === 'string' ? chosen : ''
-}
+/** The items the library holds before its first page arrives. */
+const NO_ITEMS: MediaItem[] = []
 
 /**
  * Returns the reason a file was not stored, already in the reader's words.
@@ -160,7 +155,7 @@ function useUpload(region: RefObject<HTMLDivElement | null>) {
 			toaster.show(toast)
 		}
 		finish(outcome.failures)
-		if (outcome.done > 0) {
+		if (outcome.done > 0 && !focusInDialog()) {
 			region.current?.focus()
 		}
 	}
@@ -189,44 +184,123 @@ function MediaEmpty({ narrowed }: { narrowed: boolean }) {
 }
 
 /**
+ * Returns the listing request a view of the library stands for.
+ * @param view - The view the list shows.
+ * @param settings - The list settings, absent when they could not be read.
+ * @returns The request, leaving the page size to the server while the settings name none.
+ */
+function listingOf(view: OfferedView<View>, settings: ListSettings | undefined): MediaQuery {
+	return { ...mediaListing(view), ...sizedView(view, settings?.list_page_sizes) }
+}
+
+/**
+ * Holds the view of the library in the address, sized by the settings once they are known, and reads its page.
+ * @returns The list view, the fields, the view the fields can draw, the settings and the page query.
+ */
+function useMediaList() {
+	const settings = useListSettings().data
+	const fields = useMemo(() => libraryFields(), [])
+	const list = useListView<View>({
+		fields: ['author'],
+		phoneFields: ['author'],
+		titleField: 'title',
+		mediaField: 'thumbnail',
+		sort: { ...MEDIA_SORT },
+		perPage: settings?.list_page_size,
+		layouts: { wide: 'grid', phone: 'list' },
+		layoutSettings: { grid: { layout: { previewSize: PREVIEW_SIZE } } },
+	})
+	const offered = offeredView(list.view, fields, MEDIA_VIEW_GUARD)
+	const view = {
+		...offered,
+		perPage: offeredSize(offered.perPage, settings?.list_page_sizes, settings?.list_page_size),
+	}
+	const asked = listingOf(view, settings)
+	const media = useQuery({
+		queryKey: [...mediaQueryKey, 'library', asked],
+		queryFn: () => listMedia(asked),
+		placeholderData: keepPreviousData,
+	})
+	return { list, fields, view, settings, media }
+}
+
+/**
+ * Returns the rows, the paging and the page sizes DataViews draws the page of the library with.
+ * @param page - The page the server served, absent until it arrives.
+ * @param settings - The list settings, absent when they could not be read.
+ * @returns The props of the page.
+ */
+function pageProps(page: MediaPage | undefined, settings: ListSettings | undefined) {
+	return {
+		data: page?.items ?? NO_ITEMS,
+		paginationInfo: paginationOf(page === undefined ? undefined : { total: page.total, limit: page.perPage }),
+		config: { perPageSizes: settings?.list_page_sizes ?? [] },
+	}
+}
+
+/**
+ * Returns the handler opening Edit on a file a tap landed on, for a file the session may change, and the file itself
+ * in a new tab otherwise, as View does.
+ * @param page - The page the list shows, which holds every row a tap can land on.
+ * @param mayChange - Whether the session may change a file.
+ * @param onEdit - Opens Edit on a file.
+ * @returns The handler, given the id of the file tapped.
+ */
+function openTapped(
+	page: MediaPage | undefined,
+	mayChange: (item: MediaItem) => boolean,
+	onEdit: (item: MediaItem) => void,
+) {
+	return (id: string) => {
+		const tapped = (page as MediaPage).items.find((item) => String(item.id) === id) as MediaItem
+		if (mayChange(tapped)) {
+			onEdit(tapped)
+		} else {
+			viewFile(tapped)
+		}
+	}
+}
+
+/**
  * Renders the items of the library, or the failure of their read.
- * @param props - The query of the page, the view and what changes it, the ticked items and what changes them.
+ * @param props - The page query, the list view, the view the fields draw, the fields, the settings, what the actions
+ *   need from the screen, whether the session may change a file and the handler opening a dialog on one.
  * @returns The list, or the failure notice.
  */
 function MediaList(props: {
 	media: UseQueryResult<MediaPage>
-	view: View
-	onChangeView: (view: View) => void
-	selection: string[]
-	onChangeSelection: (selection: string[]) => void
+	list: ListView<View>
+	view: OfferedView<View>
+	fields: Field<MediaItem>[]
+	settings: ListSettings | undefined
+	tools: MediaTools
+	mayChange: (item: MediaItem) => boolean
+	open: (opened: OpenedDialog) => void
 }) {
-	const actions = useMediaActions()
-	const { media, view } = props
+	const actions = useMediaActions(props.tools, props.mayChange, props.open)
+	const { media, list, view } = props
+	const edit = (item: MediaItem, door: Door) => props.open({ action: 'edit', item, door })
 	if (media.isError) {
 		return <ErrorNotice>{__('The media library could not be loaded.', 'gophenberg')}</ErrorNotice>
 	}
-	const page = media.data ?? EMPTY_PAGE
 	return (
 		<DataViews
-			data={page.items}
-			fields={mediaFields}
+			{...pageProps(media.data, props.settings)}
+			empty={<MediaEmpty narrowed={viewNarrows(view)} />}
+			fields={props.fields}
 			actions={actions}
 			view={view}
-			onChangeView={props.onChangeView}
-			selection={props.selection}
-			onChangeSelection={props.onChangeSelection}
-			isLoading={media.isPending}
+			onChangeView={list.onChangeView}
+			defaultLayouts={list.defaultLayouts}
+			selection={list.selection}
+			onChangeSelection={openOnTap(list, openTapped(media.data, props.mayChange, (item) => edit(item, 'row')))}
+			isItemClickable={props.mayChange}
+			onClickItem={(item: MediaItem) => edit(item, clickedDoor())}
+			isLoading={media.isFetching}
 			getItemId={(item: MediaItem) => String(item.id)}
-			searchLabel={__('Search media', 'gophenberg')}
-			config={{ perPageSizes: [] }}
-			paginationInfo={paginationOf({ total: page.total, limit: page.perPage })}
-			defaultLayouts={{
-				grid: { fields: ['dimensions', 'filesize'] },
-				table: {
-					fields: ['filename', 'mimeType', 'dimensions', 'filesize', 'date'],
-				},
-			}}
-			empty={<MediaEmpty narrowed={Boolean(view.search) || filteredKind(view) !== ''} />}
+			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), {
+				type: _x('Media', 'admin section', 'gophenberg').toLowerCase(),
+			})}
 		/>
 	)
 }
@@ -236,17 +310,13 @@ function MediaList(props: {
  * @returns The library screen element.
  */
 export function MediaScreen() {
-	const settings = useListSettings().data
-	const [held, setHeld] = useState<View>(INITIAL_VIEW)
-	const view = { ...held, perPage: held.perPage ?? settings?.list_page_size }
-	const [selection, setSelection] = useState<string[]>([])
-	const region = useRef<HTMLDivElement>(null)
+	const { list, fields, view, settings, media } = useMediaList()
+	const { run, region } = useListRun('media', list.onChangeSelection)
+	const tools = useMediaTools(useFocusOnList(run, region))
+	const mayChange = useMayChange()
+	const [opened, setOpened] = useState<OpenedDialog>()
+	const focusBack = useFocusBack(media.isFetching, region)
 	const { busy, notice, upload } = useUpload(region)
-	const kind = filteredKind(view)
-	const media = useQuery({
-		queryKey: [...mediaQueryKey, kind, view.search, view.page, view.perPage],
-		queryFn: () => listMedia({ type: kind, search: view.search, page: view.page, perPage: view.perPage }),
-	})
 	const title = _x('Media', 'admin section', 'gophenberg')
 	const uploadLabel = addLabel()
 	return (
@@ -259,22 +329,27 @@ export function MediaScreen() {
 					{uploadLabel}
 				</FileButton>
 			}
+			list
+			listLabel={title}
+			listRef={region}
 		>
-			<div ref={region} className="godmin-page__list" role="region" aria-label={title} tabIndex={-1}>
-				{notice === undefined ? null : (
-					<div className="gophenberg-media__notice">
-						<ErrorNotice>{notice}</ErrorNotice>
-					</div>
-				)}
-				<MediaList
-					media={media}
-					view={view}
-					onChangeView={setHeld}
-					selection={selection}
-					onChangeSelection={setSelection}
-				/>
-				<DropZone className="godmin-list-overlay" label={__('Drop files to upload', 'gophenberg')} onFilesDrop={upload} />
-			</div>
+			{notice === undefined ? null : (
+				<div className="gophenberg-media__notice">
+					<ErrorNotice>{notice}</ErrorNotice>
+				</div>
+			)}
+			<MediaList
+				media={media}
+				list={list}
+				view={view}
+				fields={fields}
+				settings={settings}
+				tools={tools}
+				mayChange={mayChange}
+				open={setOpened}
+			/>
+			<DropZone className="godmin-list-overlay" label={__('Drop files to upload', 'gophenberg')} onFilesDrop={upload} />
+			<OpenMediaDialog opened={opened} tools={tools} onClose={() => setOpened(undefined)} onBack={focusBack} />
 		</Page>
 	)
 }

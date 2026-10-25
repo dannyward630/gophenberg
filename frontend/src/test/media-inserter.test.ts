@@ -103,6 +103,8 @@ test('shapes a stored item the way the inserter reads it', () => {
 			},
 		},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})
@@ -140,6 +142,8 @@ test('places the scaled display copy of an oversized picture', () => {
 			},
 		},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})
@@ -162,6 +166,8 @@ test('previews a stored item that carries no sub-sizes from its own file', () =>
 		filesize: 900,
 		sizes: {},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})

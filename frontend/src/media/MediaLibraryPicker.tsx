@@ -3,18 +3,19 @@
 import { Button, Dialog, Stack, StyleProvider, Text } from '@gophenberg/frontend-sdk'
 import { DataViewsPicker } from '@gophenberg/frontend-sdk/dataviews'
 import type { View } from '@gophenberg/frontend-sdk/dataviews'
+import { Popover, SlotFillProvider } from '@gophenberg/frontend-sdk/editor'
 import type { MediaLibraryProps } from '@gophenberg/frontend-sdk/editor'
 import { ErrorNotice, paginationOf } from '@gopherium/godmin'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { __ } from '@wordpress/i18n'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { useListSettings } from '../settings/useListSettings'
 import './media.css'
 import { listMedia, mediaQueryKey } from './api'
 import type { MediaItem, MediaPage } from './api'
 import { toAttachment } from './editorMedia'
-import { mediaFields } from './fields'
+import { mediaFields, mediaListing } from './fields'
 
 const PREVIEW_SIZE = 170
 
@@ -67,16 +68,18 @@ export function MediaLibraryPicker({
 	render,
 }: MediaLibraryProps) {
 	const settings = useListSettings().data
+	const fields = useMemo(() => mediaFields(), [])
 	const [open, setOpen] = useState(false)
 	const [held, setHeld] = useState<View>(INITIAL_VIEW)
 	const view = { ...held, perPage: held.perPage ?? settings?.picker_page_size }
 	const [selection, setSelection] = useState<string[]>([])
 	const takesMany = multiple === true || multiple === 'add'
-	const mimes = allowedMimes(allowedTypes)
+	const asked = { mimes: allowedMimes(allowedTypes), ...mediaListing(view), page: view.page, perPage: view.perPage }
 	const media = useQuery({
-		queryKey: [...mediaQueryKey, 'picker', mimes.join(','), view.search, view.page, view.perPage],
-		queryFn: () => listMedia({ mimes, search: view.search, page: view.page, perPage: view.perPage }),
+		queryKey: [...mediaQueryKey, 'picker', asked],
+		queryFn: () => listMedia(asked),
 		enabled: open,
+		placeholderData: keepPreviousData,
 	})
 	const page = media.data ?? EMPTY_PAGE
 	/**
@@ -116,44 +119,47 @@ export function MediaLibraryPicker({
 			<StyleProvider document={document}>
 				<Dialog.Root open={open} onOpenChange={() => close()}>
 					<Dialog.Popup size="large" className="gophenberg-media-picker">
-						<Dialog.Header>
-							<Dialog.Title>{__('Media Library', 'gophenberg')}</Dialog.Title>
-							<Dialog.CloseIconButton />
-						</Dialog.Header>
-						<Dialog.Content>
-							{media.isError ? (
-								<ErrorNotice>{__('The media library could not be loaded.', 'gophenberg')}</ErrorNotice>
-							) : (
-								<DataViewsPicker
-									data={page.items}
-									fields={mediaFields}
-									actions={actions}
-									view={view}
-									onChangeView={setHeld}
-									selection={selection}
-									onChangeSelection={setSelection}
-									isLoading={media.isPending}
-									getItemId={(item: MediaItem) => String(item.id)}
-									searchLabel={__('Search media', 'gophenberg')}
-									config={{ perPageSizes: [] }}
-									paginationInfo={paginationOf({ total: page.total, limit: page.perPage })}
-									defaultLayouts={
-										{
-											pickerGrid: { fields: [] },
-											pickerTable: { fields: ['filename', 'filesize'] },
-										} as unknown as Record<string, object>
-									}
-									empty={<Text>{__('No media has been uploaded yet.', 'gophenberg')}</Text>}
-								/>
-							)}
-						</Dialog.Content>
-						<Dialog.Footer>
-							<Stack direction="row" gap="sm" justify="flex-end">
-								<Button variant="outline" onClick={close}>
-									{__('Cancel', 'gophenberg')}
-								</Button>
-							</Stack>
-						</Dialog.Footer>
+						<SlotFillProvider>
+							<Dialog.Header>
+								<Dialog.Title>{__('Media Library', 'gophenberg')}</Dialog.Title>
+								<Dialog.CloseIconButton />
+							</Dialog.Header>
+							<Dialog.Content>
+								{media.isError ? (
+									<ErrorNotice>{__('The media library could not be loaded.', 'gophenberg')}</ErrorNotice>
+								) : (
+									<DataViewsPicker
+										data={page.items}
+										fields={fields}
+										actions={actions}
+										view={view}
+										onChangeView={setHeld}
+										selection={selection}
+										onChangeSelection={setSelection}
+										isLoading={media.isFetching}
+										getItemId={(item: MediaItem) => String(item.id)}
+										searchLabel={__('Search media', 'gophenberg')}
+										config={{ perPageSizes: [] }}
+										paginationInfo={paginationOf({ total: page.total, limit: page.perPage })}
+										defaultLayouts={
+											{
+												pickerGrid: { fields: [] },
+												pickerTable: { fields: ['filename', 'filesize'] },
+											} as unknown as Record<string, object>
+										}
+										empty={<Text>{__('No media has been uploaded yet.', 'gophenberg')}</Text>}
+									/>
+								)}
+							</Dialog.Content>
+							<Dialog.Footer>
+								<Stack direction="row" gap="sm" justify="flex-end">
+									<Button variant="outline" onClick={close}>
+										{__('Cancel', 'gophenberg')}
+									</Button>
+								</Stack>
+							</Dialog.Footer>
+							<Popover.Slot />
+						</SlotFillProvider>
 					</Dialog.Popup>
 				</Dialog.Root>
 			</StyleProvider>

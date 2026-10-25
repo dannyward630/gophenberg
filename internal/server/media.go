@@ -153,10 +153,11 @@ func (s *server) handleMediaUpload() http.HandlerFunc {
 	}
 }
 
-// mediaRow is one row of the admin media listing, carrying its author's name.
+// mediaRow is one row of the admin media listing, carrying its author's name and the avatar the author cell draws.
 type mediaRow struct {
 	mediaView
-	AuthorName string `json:"author_name"`
+	AuthorName   string `json:"author_name"`
+	AuthorAvatar string `json:"author_avatar"`
 }
 
 // mediaListResponse is a page of media items with the total matching the filter and the page size the server used.
@@ -221,20 +222,23 @@ func applyMediaDates(query url.Values, filter *media.Filter) error {
 
 // applyMediaOrdering reads the orderby and order query parameters into filter.
 func applyMediaOrdering(query url.Values, filter *media.Filter) error {
-	if raw, ok := query["orderby"]; ok {
-		orderBy, err := media.ParseOrderBy(raw[0])
-		if err != nil {
-			return err
-		}
-		filter.OrderBy = orderBy
+	if err := parseGiven(query, "orderby", media.ParseOrderBy, &filter.OrderBy); err != nil {
+		return err
 	}
-	if raw, ok := query["order"]; ok {
-		order, err := media.ParseOrder(raw[0])
-		if err != nil {
-			return err
-		}
-		filter.Order = order
+	return parseGiven(query, "order", media.ParseOrder, &filter.Order)
+}
+
+// parseGiven reads the named query parameter through parse into target, untouched when the query lacks it.
+func parseGiven[T any](query url.Values, name string, parse func(string) (T, error), target *T) error {
+	raw, ok := query[name]
+	if !ok {
+		return nil
 	}
+	value, err := parse(raw[0])
+	if err != nil {
+		return err
+	}
+	*target = value
 	return nil
 }
 
@@ -298,12 +302,34 @@ func (s *server) handleMediaList() http.HandlerFunc {
 			respondDomainError(w, err)
 			return
 		}
-		items := make([]mediaRow, len(rows))
-		for i, m := range rows {
-			items[i] = mediaRow{mediaView: newMediaView(m.Media), AuthorName: m.AuthorName}
+		items, err := s.listedMedia(r.Context(), rows)
+		if err != nil {
+			respondDomainError(w, err)
+			return
 		}
 		authkit.Respond(w, http.StatusOK, mediaListResponse{Items: items, Total: total, PerPage: filter.PerPage})
 	}
+}
+
+// listedMedia returns the rows of a media listing as the admin reads them, each author with the avatar the cell draws.
+func (s *server) listedMedia(ctx context.Context, rows []media.Listed) ([]mediaRow, error) {
+	names := make(map[uuid.UUID]string, len(rows))
+	for _, m := range rows {
+		names[m.AuthorID] = m.AuthorName
+	}
+	authors, err := s.authorsOf(ctx, names)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]mediaRow, len(rows))
+	for i, m := range rows {
+		items[i] = mediaRow{
+			mediaView:    newMediaView(m.Media),
+			AuthorName:   m.AuthorName,
+			AuthorAvatar: authors[m.AuthorID].avatar,
+		}
+	}
+	return items, nil
 }
 
 // respondMediaByIDs answers the stored files the query names, in the order it names them.

@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { Button, Notice, Stack, Text, sessionMayChange } from '@gophenberg/frontend-sdk'
-import { DataForm } from '@gophenberg/frontend-sdk/dataviews'
-import type { Action, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { formatNumber } from '@gopherium/gottext'
+import { sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
+import type { Action } from '@gophenberg/frontend-sdk/dataviews'
+import { useBulkRun, useToaster } from '@gopherium/godmin'
+import type { ListRun } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
-import { __, _n, sprintf } from '@wordpress/i18n'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { __, _x } from '@wordpress/i18n'
+import { useCallback, useMemo } from 'react'
 
-import { deleteMedia, describeMedia, mediaQueryKey } from './api'
+import { useUnsavedText } from '../lists/unsavedText'
+import { mediaQueryKey, mediaSrc } from './api'
 import type { MediaDescriptions, MediaItem } from './api'
-import { describeForm, mediaFields } from './fields'
-import { mediaName } from './format'
+import { displayFile } from './format'
+import { DeleteMediaModal } from './MediaModals'
+import type { MediaTools, OpenedDialog } from './MediaModals'
 
 /**
  * Returns the handler that reloads the library.
@@ -27,162 +29,92 @@ export function useRefreshMedia(): () => Promise<unknown> {
 }
 
 /**
- * Returns the sentence reporting how a save ended.
- * @param kind - The outcome the server answered with.
- * @param message - The reason the server gave, when it gave one.
- * @returns The sentence to show, empty when the save succeeded.
+ * Returns the check telling whether the session may change a file.
+ * @returns The check, true on its own uploads and on every file for a role that may change the work of others.
  */
-function describeFailure(kind: string, message: string): string {
-	if (kind === 'stale') {
-		return __('This item changed while you were describing it. Reload and try again.', 'gophenberg')
-	}
-	return kind === 'rejected' ? message : ''
-}
-
-/**
- * Renders the form describing one media item.
- * @param props - The items acted on and the handler closing the modal.
- * @returns The describe form.
- */
-function DescribeForm({ items, closeModal }: RenderModalProps<MediaItem>) {
-	const target = items[0]
-	const [edits, setEdits] = useState<MediaDescriptions>({})
-	const [notice, setNotice] = useState('')
-	const refresh = useRefreshMedia()
-	const save = useMutation({
-		mutationFn: () => describeMedia(target.id, edits, target.updatedAt),
-		onSuccess: async (outcome) => {
-			const failure = describeFailure(outcome.kind, outcome.kind === 'rejected' ? outcome.message : '')
-			if (failure !== '') {
-				setNotice(failure)
-				return
-			}
-			setNotice('')
-			await refresh()
-			closeModal?.()
-		},
-		onError: () => setNotice(__('The server could not be reached, so nothing was saved.', 'gophenberg')),
-	})
-	return (
-		<Stack direction="column" gap="md">
-			<DataForm
-				data={{ ...target, ...edits }}
-				fields={mediaFields}
-				form={describeForm}
-				onChange={(changed) => setEdits((current) => ({ ...current, ...changed }))}
-			/>
-			{notice !== '' && (
-				<Notice.Root intent="error" role="alert">
-					<Notice.Description>{notice}</Notice.Description>
-				</Notice.Root>
-			)}
-			<Stack direction="row" gap="sm" justify="flex-end">
-				<Button variant="outline" onClick={closeModal}>
-					{__('Cancel', 'gophenberg')}
-				</Button>
-				<Button loading={save.isPending} onClick={() => save.mutate()}>
-					{__('Save', 'gophenberg')}
-				</Button>
-			</Stack>
-		</Stack>
-	)
-}
-
-/**
- * Returns the question asked before media is deleted for good.
- * @param items - The items about to be deleted.
- * @returns The question to show.
- */
-export function deleteQuestion(items: MediaItem[]): string {
-	if (items.length === 1) {
-		return sprintf(__('Delete %(title)s for good? This cannot be undone.', 'gophenberg'), {
-			title: mediaName(items[0]),
-		})
-	}
-	return sprintf(
-		_n(
-			'Delete this %(count)s item for good? This cannot be undone.',
-			'Delete these %(count)s items for good? This cannot be undone.',
-			items.length,
-			'gophenberg',
-		),
-		{ count: formatNumber(items.length) },
-	)
-}
-
-/**
- * Returns the sentence reporting that a delete did not finish.
- * @param items - The items the delete was asked over.
- * @returns The sentence to show.
- */
-export function deleteFailure(items: MediaItem[]): string {
-	return _n('Could not delete that item.', 'Could not delete every item.', items.length, 'gophenberg')
-}
-
-/**
- * Renders the confirmation asked for before media is deleted for good.
- * @param props - The items acted on and the handler closing the modal.
- * @returns The confirmation body.
- */
-function DeleteConfirm({ items, closeModal }: RenderModalProps<MediaItem>) {
-	const refresh = useRefreshMedia()
-	const remove = useMutation({
-		mutationFn: async () => {
-			const settled = await Promise.allSettled(items.map((item) => deleteMedia(item.id)))
-			if (settled.some((outcome) => outcome.status === 'rejected')) {
-				throw new Error('deleting did not finish')
-			}
-		},
-		onSuccess: async () => {
-			await refresh()
-			closeModal?.()
-		},
-		onError: () => {
-			void refresh()
-		},
-	})
-	return (
-		<Stack direction="column" gap="md">
-			<Text>{deleteQuestion(items)}</Text>
-			{remove.isError && (
-				<Notice.Root intent="error" role="alert">
-					<Notice.Description>{deleteFailure(items)}</Notice.Description>
-				</Notice.Root>
-			)}
-			<Stack direction="row" gap="sm" justify="flex-end">
-				<Button variant="outline" onClick={closeModal}>
-					{__('Cancel', 'gophenberg')}
-				</Button>
-				<Button loading={remove.isPending} onClick={() => remove.mutate()}>
-					{__('Delete Permanently', 'gophenberg')}
-				</Button>
-			</Stack>
-		</Stack>
-	)
-}
-
-/**
- * Returns the actions offered on each media item.
- * @returns The row actions.
- */
-export function useMediaActions(): Action<MediaItem>[] {
+export function useMayChange(): (item: MediaItem) => boolean {
 	const session = useSession().data
-	return useMemo(() => {
-		const mine = (item: MediaItem) => sessionMayChange(session, item.authorId)
-		return [
+	return useCallback((item: MediaItem) => sessionMayChange(session, item.authorId), [session])
+}
+
+/**
+ * Returns what the actions of the library need from the screen, the same for as long as the screen stays.
+ * @param list - What the list does around a run.
+ * @returns The tools.
+ */
+export function useMediaTools(list: ListRun): MediaTools {
+	const client = useQueryClient()
+	const name = useToaster().name
+	const refresh = useRefreshMedia()
+	const removals = useBulkRun<MediaItem>(list, refresh)
+	const edits = useUnsavedText<MediaDescriptions>()
+	const renames = useUnsavedText()
+	return useMemo(
+		() => ({ client, name, refresh, removals, edits, renames }),
+		[client, edits, name, refresh, removals, renames],
+	)
+}
+
+/**
+ * Opens a file in a new tab, as View does.
+ * @param item - The file.
+ */
+export function viewFile(item: MediaItem) {
+	window.open(mediaSrc(displayFile(item)), '_blank')
+}
+
+/**
+ * Returns the action opening a file in a new tab, a primary one click action offered on every file.
+ * @returns View.
+ */
+function viewAction(): Action<MediaItem> {
+	return {
+		id: 'view',
+		label: _x('View', 'verb', 'gophenberg'),
+		isPrimary: true,
+		callback: ([item]) => viewFile(item),
+	}
+}
+
+/**
+ * Returns the actions offered on each file, View on every file and the others on a file the session may change.
+ * @param tools - What the actions need from the screen.
+ * @param mayChange - Whether the session may change a file.
+ * @param open - Opens Edit or Rename on a file in a dialog the screen holds, which a card moving to another row of the
+ *   grid never takes away.
+ * @returns The row actions, the same for as long as the screen stays, so a confirm never starts over in a run.
+ */
+export function useMediaActions(
+	tools: MediaTools,
+	mayChange: (item: MediaItem) => boolean,
+	open: (opened: OpenedDialog) => void,
+): Action<MediaItem>[] {
+	return useMemo(
+		() => [
+			viewAction(),
 			{
-				id: 'describe',
-				label: __('Describe', 'gophenberg'),
-				isEligible: mine,
-				RenderModal: DescribeForm,
+				id: 'edit',
+				label: __('Edit…', 'gophenberg'),
+				isEligible: mayChange,
+				callback: ([item]) => open({ action: 'edit', item, door: 'actions' }),
+			},
+			{
+				id: 'rename',
+				label: __('Rename…', 'gophenberg'),
+				isEligible: mayChange,
+				callback: ([item]) => open({ action: 'rename', item, door: 'actions' }),
 			},
 			{
 				id: 'delete',
-				label: __('Delete Permanently', 'gophenberg'),
+				label: __('Permanently delete…', 'gophenberg'),
+				icon: trashIcon,
 				supportsBulk: true,
-				isEligible: mine,
-				RenderModal: DeleteConfirm,
+				isEligible: mayChange,
+				hideModalHeader: true,
+				modalFocusOnMount: 'firstContentElement',
+				RenderModal: (props) => <DeleteMediaModal {...props} tools={tools} />,
 			},
-		]
-	}, [session])
+		],
+		[mayChange, open, tools],
+	)
 }

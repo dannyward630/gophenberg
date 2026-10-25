@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 
 import {
 	deleteMedia,
-	describeMedia,
+	editMedia,
 	listMedia,
 	listMediaByIDs,
 	mediaSrc,
@@ -45,22 +45,76 @@ const HARBOR = {
 	updated_at: '2026-08-10T10:00:00Z',
 }
 
-test('lists media with the query it was given', async () => {
-	let asked = ''
+const OWN_AUTHOR = '019fb000-0000-7000-8000-0000000000ff'
+
+const FOREIGN_AUTHOR = '019fb000-0000-7000-8000-0000000000ee'
+
+/**
+ * Serves one listing page and records the parameters the request carried.
+ * @param rows - The rows the page holds.
+ * @returns The parameters of the last request, filled once it arrives.
+ */
+function recordedListing(rows: unknown[] = [HARBOR]): { params: URLSearchParams } {
+	const seen = { params: new URLSearchParams() }
 	server.use(
 		http.get('/api/media', ({ request }) => {
-			asked = new URL(request.url).search
-			return HttpResponse.json({ items: [HARBOR], total: 1, per_page: 10 })
+			seen.params = new URL(request.url).searchParams
+			return HttpResponse.json({ items: rows, total: rows.length, per_page: 10 })
 		}),
 	)
+	return seen
+}
 
-	const page = await listMedia({ type: 'image', search: 'harbor', page: 2 })
+test('lists media with the query it was given', async () => {
+	const seen = recordedListing()
+
+	const page = await listMedia({ mimes: ['image/'], search: 'harbor', page: 2 })
 
 	expect(page.total).toBe(1)
 	expect(page.items[0].title).toBe('Harbor at dawn')
-	expect(asked).toContain('type=image')
-	expect(asked).toContain('search=harbor')
-	expect(asked).toContain('page=2')
+	expect(Object.fromEntries(seen.params)).toEqual({ mime: 'image/', search: 'harbor', page: '2' })
+})
+
+test('asks for the sort, the authors and both dates a list narrows by, under the names the server reads', async () => {
+	const seen = recordedListing()
+
+	await listMedia({
+		orderBy: 'title',
+		order: 'asc',
+		author: [OWN_AUTHOR, FOREIGN_AUTHOR],
+		authorExclude: [FOREIGN_AUTHOR],
+		before: '2026-08-16T00:00:00.000Z',
+		after: '2026-08-01T00:00:00.000Z',
+		modifiedBefore: '2026-09-16T00:00:00.000Z',
+		modifiedAfter: '2026-09-01T00:00:00.000Z',
+	})
+
+	expect(Object.fromEntries(seen.params)).toEqual({
+		orderby: 'title',
+		order: 'asc',
+		author: `${OWN_AUTHOR},${FOREIGN_AUTHOR}`,
+		author_exclude: FOREIGN_AUTHOR,
+		before: '2026-08-16T00:00:00.000Z',
+		after: '2026-08-01T00:00:00.000Z',
+		modified_before: '2026-09-16T00:00:00.000Z',
+		modified_after: '2026-09-01T00:00:00.000Z',
+	})
+})
+
+test('asks for no author and no kind when a list keeps or leaves out none', async () => {
+	const seen = recordedListing()
+
+	await listMedia({ author: [], authorExclude: [], mimes: [] })
+
+	expect([...seen.params.keys()]).toEqual([])
+})
+
+test('reads the name and the avatar of the account that uploaded each listed file', async () => {
+	recordedListing([{ ...HARBOR, author_name: 'Maria Perez', author_avatar: 'https://example.com/maria.png' }])
+
+	const page = await listMedia({})
+
+	expect(page.items[0]).toMatchObject({ authorName: 'Maria Perez', authorAvatar: 'https://example.com/maria.png' })
 })
 
 test('asks for the first page without naming it', async () => {
@@ -197,6 +251,8 @@ test('fills in what a sparse media row leaves out', async () => {
 		filesize: 0,
 		sizes: {},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})
@@ -271,39 +327,102 @@ test('throws a stand in, never the words of a schema, when a stored upload answe
 	)
 })
 
-test('saves descriptions against the version it read', async () => {
-	let sent: Record<string, unknown> = {}
+/** The version of the harbor picture the server holds once another write landed after the list was read. */
+const CURRENT_VERSION = '2026-08-12T09:00:00Z'
+
+/** The reason the server gives for a file the library no longer holds, in the reader's words. */
+const NOT_FOUND = [
+	'This media item is not in the library, and someone may have deleted it.',
+	'Reload the page to see what is there now.',
+].join(' ')
+
+/**
+ * Answers a request as the server answers for a file the library no longer holds.
+ * @returns The refusal.
+ */
+function gone(): Response {
+	return HttpResponse.json({ error: 'gone', code: 'media_not_found' }, { status: 404 })
+}
+
+/**
+ * Serves the harbor picture at its current version and records the body of every edit sent to it.
+ * @returns The bodies, filled as requests arrive.
+ */
+function recordEdits(): Record<string, unknown>[] {
+	const sent: Record<string, unknown>[] = []
 	server.use(
+		http.get('/api/media/7', () => HttpResponse.json({ ...HARBOR, updated_at: CURRENT_VERSION })),
 		http.patch('/api/media/7', async ({ request }) => {
-			sent = (await request.json()) as Record<string, unknown>
-			return HttpResponse.json({ ...HARBOR, title: 'Harbor at noon' })
+			const body = (await request.json()) as Record<string, unknown>
+			sent.push(body)
+			return HttpResponse.json({ ...HARBOR, ...body })
+		}),
+	)
+	return sent
+}
+
+test('edits a file over the version read just before the write, sending only the fields it was given', async () => {
+	const sent = recordEdits()
+
+	const saved = await editMedia(7, { title: 'Harbor at noon', caption: '' }, 'unreached')
+
+	expect(sent).toEqual([{ updated_at: CURRENT_VERSION, title: 'Harbor at noon', caption: '' }])
+	expect(saved).toMatchObject({ id: 7, title: 'Harbor at noon' })
+})
+
+test('sends the alt text and the description under the names the server reads', async () => {
+	const sent = recordEdits()
+
+	await editMedia(7, { altText: 'Boats at noon', description: 'From the western pier' }, 'unreached')
+
+	expect(sent).toEqual([
+		{ updated_at: CURRENT_VERSION, alt_text: 'Boats at noon', description: 'From the western pier' },
+	])
+})
+
+test('sends an edit as JSON', async () => {
+	let sentAs: string | null = null
+	server.use(
+		http.get('/api/media/7', () => HttpResponse.json({ ...HARBOR, updated_at: CURRENT_VERSION })),
+		http.patch('/api/media/7', ({ request }) => {
+			sentAs = request.headers.get('content-type')
+			return HttpResponse.json(HARBOR)
 		}),
 	)
 
-	const outcome = await describeMedia(7, { title: 'Harbor at noon' }, HARBOR.updated_at)
+	await editMedia(7, { title: 'Harbor at noon' }, 'unreached')
 
-	expect(outcome).toEqual({ kind: 'saved', item: expect.objectContaining({ title: 'Harbor at noon' }) })
-	expect(sent).toEqual({ title: 'Harbor at noon', updated_at: HARBOR.updated_at })
+	expect(sentAs).toBe('application/json')
 })
 
-test('reports an edit the server found stale', async () => {
-	server.use(http.patch('/api/media/7', () => HttpResponse.json({}, { status: 409 })))
+test.each([
+	{ step: 'the read of the version', method: http.get },
+	{ step: 'the write', method: http.patch },
+])('throws in the reader words the reason $step was refused with', async ({ method }) => {
+	recordEdits()
+	server.use(method('/api/media/7', gone))
 
-	const outcome = await describeMedia(7, { title: 'Harbor at noon' }, HARBOR.updated_at)
-
-	expect(outcome.kind).toBe('stale')
+	await expect(editMedia(7, { title: 'Harbor at noon' }, 'unreached')).rejects.toThrow(NOT_FOUND)
 })
 
-test('carries the reason an edit was refused', async () => {
-	server.use(
-		http.patch('/api/media/7', () =>
-			HttpResponse.json({ error: 'that is not a media item' }, { status: 404 }),
-		),
+test.each([
+	{ step: 'the read of the version', method: http.get },
+	{ step: 'the write', method: http.patch },
+])('throws the words it was given when $step never reached the server', async ({ method }) => {
+	recordEdits()
+	server.use(method('/api/media/7', () => HttpResponse.error()))
+
+	await expect(editMedia(7, { title: 'Harbor at noon' }, 'The name could not be updated.')).rejects.toThrow(
+		/^The name could not be updated\.$/,
 	)
+})
 
-	const outcome = await describeMedia(7, { title: 'x' }, HARBOR.updated_at)
+test('throws a stand in, never the words of a schema, when the version read answers a misshapen item', async () => {
+	server.use(http.get('/api/media/7', () => HttpResponse.json({ id: 'seven' })))
 
-	expect(outcome).toEqual({ kind: 'rejected', message: 'that is not a media item' })
+	await expect(editMedia(7, { title: 'Harbor at noon' }, 'unreached')).rejects.toThrow(
+		/^Something went wrong\. Try again\.$/,
+	)
 })
 
 test('deletes a media item', async () => {
@@ -320,10 +439,16 @@ test('deletes a media item', async () => {
 	expect(asked).toBe('/api/media/7')
 })
 
-test('reports a delete that failed', async () => {
-	server.use(http.delete('/api/media/7', () => HttpResponse.json({}, { status: 500 })))
+test('throws in the reader words the reason a delete was refused with', async () => {
+	server.use(http.delete('/api/media/7', gone))
 
-	await expect(deleteMedia(7)).rejects.toThrow(/500/)
+	await expect(deleteMedia(7)).rejects.toThrow(NOT_FOUND)
+})
+
+test('throws the words of a permanent delete in the posts list when a delete never reached the server', async () => {
+	server.use(http.delete('/api/media/7', () => HttpResponse.error()))
+
+	await expect(deleteMedia(7)).rejects.toThrow(/^The item could not be permanently deleted\.$/)
 })
 
 test('addresses a stored file under the public media prefix', () => {

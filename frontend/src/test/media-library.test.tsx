@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
+import { beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 
-import { deleteFailure, deleteQuestion } from '../media/actions'
-import { filteredKind } from '../media/MediaScreen'
 import { renderAt } from './render'
 import { siteSettings } from './siteSettings'
 
@@ -170,18 +169,6 @@ test('says under the Media title what the library holds', async () => {
 	expect(await screen.findByText('Manage the images and files this site holds.')).toHaveClass('godmin-page__subtitle')
 })
 
-test('says no media item was found when the kind filter narrows the library to nothing', async () => {
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-	listing([])
-
-	await userEvent.click(screen.getByRole('button', { name: /Kind/ }))
-	await userEvent.click(await screen.findByRole('option', { name: 'Files' }))
-
-	expect(await screen.findByText('No media items found.')).toBeInTheDocument()
-	expect(screen.queryByText('Add one with Add Media File.')).not.toBeInTheDocument()
-})
-
 test('draws the library in the list region of the page, named Media', async () => {
 	renderAt('/media')
 
@@ -201,6 +188,19 @@ test('lays a drop zone reading Drop files to upload over the list region', async
 
 	expect(zone).not.toBeNull()
 	expect(zone).toHaveTextContent('Drop files to upload')
+})
+
+test('words the drop zone through the admin catalogue', async () => {
+	setLocaleData(
+		{ '': { 'plural-forms': 'nplurals=2; plural=(n != 1);' }, 'Drop files to upload': ['Release files to upload'] },
+		'gophenberg',
+	)
+	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
+	renderAt('/media')
+
+	const region = await screen.findByRole('region', { name: 'Media' })
+
+	expect(region.querySelector(':scope > .godmin-list-overlay')).toHaveTextContent('Release files to upload')
 })
 
 test('ignores a drop that carries no file, while the drop after it carrying one uploads it', async () => {
@@ -229,161 +229,3 @@ test('ignores a drop that carries no file, while the drop after it carrying one 
 	expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 })
 
-test('deletes a media item for good after a confirmation', async () => {
-	let deleted = 0
-	server.use(
-		http.delete('/api/media/7', () => {
-			deleted += 1
-			return new HttpResponse(null, { status: 204 })
-		}),
-	)
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /delete permanently/i }))
-	await userEvent.click(await screen.findByRole('button', { name: /delete permanently/i }))
-
-	await waitFor(() => expect(deleted).toBe(1))
-})
-
-test('reports a delete that failed', async () => {
-	vi.spyOn(console, 'error').mockImplementation(() => {})
-	server.use(http.delete('/api/media/7', () => HttpResponse.json({}, { status: 500 })))
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /delete permanently/i }))
-	await userEvent.click(await screen.findByRole('button', { name: /delete permanently/i }))
-
-	expect(await screen.findByRole('alert')).toHaveTextContent(/could not delete/i)
-})
-
-test('saves the descriptions of a media item', async () => {
-	let sent: Record<string, unknown> = {}
-	server.use(
-		http.patch('/api/media/7', async ({ request }) => {
-			sent = (await request.json()) as Record<string, unknown>
-			return HttpResponse.json({ ...HARBOR, title: 'Harbor at noon' })
-		}),
-	)
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /describe/i }))
-	const title = await screen.findByLabelText('Title')
-	await userEvent.clear(title)
-	await userEvent.type(title, 'Harbor at noon')
-	await userEvent.click(screen.getByRole('button', { name: /save/i }))
-
-	await waitFor(() => expect(sent.title).toBe('Harbor at noon'))
-})
-
-test('reports descriptions the server found stale', async () => {
-	server.use(http.patch('/api/media/7', () => HttpResponse.json({}, { status: 409 })))
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /describe/i }))
-	await userEvent.click(await screen.findByRole('button', { name: /save/i }))
-
-	expect(await screen.findByRole('alert')).toHaveTextContent(/changed while/i)
-})
-
-test('reports descriptions that never reached the server', async () => {
-	vi.spyOn(console, 'error').mockImplementation(() => {})
-	server.use(http.patch('/api/media/7', () => HttpResponse.error()))
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /describe/i }))
-	await userEvent.click(await screen.findByRole('button', { name: /save/i }))
-
-	expect(await screen.findByRole('alert')).toHaveTextContent(/could not be reached/i)
-})
-
-test('reports descriptions the server refused', async () => {
-	server.use(
-		http.patch('/api/media/7', () =>
-			HttpResponse.json({ error: 'that is not a media item' }, { status: 404 }),
-		),
-	)
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getAllByRole('button', { name: /actions/i })[0])
-	await userEvent.click(await screen.findByRole('menuitem', { name: /describe/i }))
-	await userEvent.click(await screen.findByRole('button', { name: /save/i }))
-
-	expect(await screen.findByRole('alert')).toHaveTextContent('that is not a media item')
-})
-
-test('shows the size and shape of a picture', async () => {
-	renderAt('/media')
-
-	expect(await screen.findByText('1600 × 1000')).toBeInTheDocument()
-	expect(screen.getByText('248,05 KB')).toBeInTheDocument()
-})
-
-test('says nothing about the shape of a file that has none', async () => {
-	listing([MANUAL])
-	renderAt('/media')
-
-	expect(await screen.findByText('11,72 KB')).toBeInTheDocument()
-	expect(screen.queryByText(/×/)).not.toBeInTheDocument()
-})
-
-test('describes every stored file when the library is laid out as a table', async () => {
-	renderAt('/media')
-	await screen.findByText('Harbor at dawn')
-
-	await userEvent.click(screen.getByRole('button', { name: /layout/i }))
-	await userEvent.click(await screen.findByRole('menuitemradio', { name: /table/i }))
-
-	expect(await screen.findByText('harbor.jpg')).toBeInTheDocument()
-	expect(screen.getByText('image/jpeg')).toBeInTheDocument()
-	expect(screen.getByText('10/08/2026')).toBeInTheDocument()
-})
-
-test('dates a media item that carries no timestamp', async () => {
-	listing([{ ...MANUAL, created_at: undefined }])
-	renderAt('/media')
-	await screen.findByText('Manual')
-
-	await userEvent.click(screen.getByRole('button', { name: /layout/i }))
-	await userEvent.click(await screen.findByRole('menuitemradio', { name: /table/i }))
-
-	expect(await screen.findAllByText('manual.pdf')).not.toHaveLength(0)
-})
-
-test('asks for every kind until a kind is filtered for', () => {
-	const view = { type: 'grid', fields: [] } as unknown as Parameters<typeof filteredKind>[0]
-
-	expect(filteredKind(view)).toBe('')
-	expect(filteredKind({ ...view, filters: [{ field: 'type', operator: 'is', value: 'image' }] })).toBe(
-		'image',
-	)
-	expect(filteredKind({ ...view, filters: [{ field: 'type', operator: 'is', value: 7 }] })).toBe('')
-})
-
-test('asks about every item a delete was asked over', () => {
-	const one = [{ title: 'Harbor at dawn', file: 'a.jpg' }] as Parameters<typeof deleteQuestion>[0]
-	const two = [...one, { title: 'Manual', file: 'b.pdf' }] as Parameters<typeof deleteQuestion>[0]
-
-	expect(deleteQuestion(one)).toContain('Delete Harbor at dawn for good?')
-	expect(deleteQuestion(two)).toContain('Delete these 2 items for good?')
-	expect(deleteFailure(one)).toBe('Could not delete that item.')
-	expect(deleteFailure(two)).toBe('Could not delete every item.')
-})
-
-test('groups the count a delete asks about in the site format', () => {
-	const many = Array.from({ length: 1234 }, () => ({ title: 'Manual', file: 'b.pdf' })) as Parameters<
-		typeof deleteQuestion
-	>[0]
-
-	expect(deleteQuestion(many)).toContain('Delete these 1.234 items for good?')
-})

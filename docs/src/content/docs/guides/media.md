@@ -1,6 +1,6 @@
 ---
 title: The media library
-description: Uploading pictures and files, describing them, and placing them in a post.
+description: Uploading pictures and files, finding and editing them, and placing them in a post.
 ---
 
 The Media screen holds every file you have uploaded. Pictures,
@@ -54,27 +54,118 @@ An animated GIF is the exception. It is stored exactly as
 uploaded and gains no smaller copies, because making them would
 throw the animation away.
 
-## Finding and describing
+## Reading the library
 
-The library opens as a grid of thumbnails. The **Layout** control
-switches it to a table, which adds the file name, type and date.
-Search matches titles and file names, and the filter narrows the
-list to images or to plain files. When nothing matches, the library
-says `No media items found.` An empty library says `No media items
-yet.` and how to add one.
+The library opens as a grid of cards, the newest file first. On a
+screen narrower than 640 pixels, such as a phone, it shows a list
+with one file per row instead. There is no layout switch.
 
-Every item carries four descriptions, all editable through
-**Describe**:
+Each card shows the picture, the title in bold and the author. An
+untitled file shows `(no title)`. A small round avatar sits before
+the author's name, drawn the way the site's
+[avatar settings](/self-hosting/configuration/#avatars) say, as in
+the [posts list](/guides/posts/).
 
-- **Title** names the item in the library.
+A file that is no picture shows the icon of its kind, video, audio
+or a plain file, above its file name. A picture that fails to load
+shows the picture icon the same way. A long file name is cut short
+with `…` on the card.
+
+Date added, Date modified, Alt text, Caption, Description, File
+name, File size, Dimensions and File type are hidden at first. Turn
+them on under **View options**. Both dates show the whole date and
+time the way WordPress writes them in the language you read the
+admin in, such as `October 8, 2026 5:54 pm` or
+`8 de octubre de 2026 17:54`. A file name longer than 15 characters
+is cut short with `…` and shows whole when you rest the pointer on
+it. Alt text shows on pictures alone. An empty alt text, caption,
+description or file type shows `-`.
+
+## Finding a file
+
+The library shows 20 files per page by default. **View options**
+offers the other page sizes the site allows, and the arrows under
+the library move between pages. It also sorts by Title, Date added,
+Date modified or Author.
+
+The search box reads `Search media…`. It waits for you to stop
+typing, then matches titles, file names, captions and descriptions.
+
+**Add filter** narrows the library:
+
+- **Author** keeps the files of the people you pick, or with **Is
+  none of** leaves them out.
+- **Date added** and **Date modified** keep the files added or
+  changed before or after a moment you pick.
+- **Type** keeps one type of file: Images, Audio, Video, Documents
+  for PDF files or Archives for ZIP files. Every type is listed, even
+  one the library holds none of.
+
+Filters add up, so a file has to match every one of them. The page,
+the page size, the sort, the search and the filters all live in the
+address of the screen. Reload it or share the link and the library
+opens the same way.
+
+When nothing matches, the library says `No media items found.` An
+empty library says `No media items yet.` and how to add one.
+
+## The actions on a file
+
+The actions menu of a file offers:
+
+- **View** opens the file itself in a new tab.
+- **Edit…** opens the file's details, as the next part explains.
+- **Rename…** changes the title alone, in a dialog sent with
+  **Save**.
+- **Permanently delete…** removes the file, after a question.
+
+View is the main action and shows on every file. On a phone it also
+shows as a button beside the menu of each row. The other three show
+only on the files you may change: an author's own uploads, and every
+file for an editor or an administrator. Another person's file shows
+its title as plain text to an author, and on a phone a tap on its
+row opens the file in a new tab, as View does.
+
+## Editing a file
+
+Click the title or the picture of a file you may change to open
+**Edit media**, or pick **Edit…** from its actions menu. On a phone,
+tap the row. The dialog holds four fields you write in:
+
+- **Title** names the file in the library.
 - **Alt text** describes a picture to someone who cannot see it.
-  Leave it empty when the picture is decorative.
+  Leave it empty when the picture is decorative. Only pictures have
+  it, and its link explains how to write one.
 - **Caption** is the line shown under a picture in a post.
 - **Description** is a longer note for your own use.
 
-If someone else changes an item while you are describing it, your
-save is refused rather than quietly overwriting theirs. Reload and
-make the change again.
+Under them sit the details you cannot change: Date added, Author,
+File name, File type, File size and Dimensions. The file name shows
+whole here.
+
+Cancel and **Save** stay at the bottom of the dialog while the fields
+above them scroll, as in WordPress's own media editor. While the
+fields do not fit, the part they scroll in is a stop of its own for
+the Tab key, named `Scrollable section` for a screen reader, so the
+arrow keys, Page Down and End scroll it. Once it has scrolled, a line
+shows under the dialog's header, as in WordPress's dialogs. The dialog
+closes the moment you press **Save**, and a short message at the
+bottom of the screen says `Media file updated.` once the server
+stored the change. The focus then goes back to what opened the
+dialog, the title, the picture, the actions menu or the phone row,
+wherever the file now sits in the library. It goes to the file's
+actions menu when that part no longer shows, and to the library
+itself when the file no longer shows there. Only the fields
+you changed are sent, so a change someone else made to another field
+stays. When the save fails, the message says why, starting with
+`Could not save image.` for a picture and `Could not save media.`
+for any other file. The dialog then opens on what you typed the next
+time you open it for that file.
+
+**Rename…** closes at once too, says `Name updated.`, and keeps a
+refused name the same way. Saves to one file go one after the
+other, so when you rename a file and then edit it, the last one you
+sent wins.
 
 ## Placing media in a post
 
@@ -96,7 +187,22 @@ library from the Document panel, and the same warning applies.
 
 ## Deleting
 
-**Delete Permanently** removes an item and every copy of it from
-disk. There is no media trash, so the confirmation is the only
-step between you and a deleted file. You can select several items
-and delete them together.
+**Permanently delete…** removes a file and every copy of it from
+disk. There is no media trash, so the question is the only step
+between you and a deleted file. It asks in a dialog with no header
+that names the file, such as
+`Delete "Sunset" for good? This cannot be undone.` Cancel has the
+focus when the dialog opens. Press **Delete permanently** and the
+button shows the work running until the server answers, then the
+dialog closes.
+
+Tick several cards and the **Permanently delete…** button under the
+library deletes them all at once, behind one question that counts
+them. A phone list has no tick boxes.
+
+A short message at the bottom of the screen names the file, such as
+`"Sunset" permanently deleted.`, or counts the files when you deleted
+several. A long title is cut short with `…`, in the message and in
+the question. When the server refuses, the message gives the reason
+instead, and when some of several files fail it counts the ones that
+failed.

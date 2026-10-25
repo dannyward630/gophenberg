@@ -232,6 +232,8 @@ test('places the scaled display copy of an oversized picture', () => {
 			},
 		},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})
@@ -255,6 +257,8 @@ test('shapes a plain file without measurements', () => {
 		filesize: 12000,
 		sizes: {},
 		authorId: '',
+		authorName: '',
+		authorAvatar: '',
 		createdAt: '',
 		updatedAt: '',
 	})

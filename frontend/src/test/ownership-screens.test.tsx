@@ -90,11 +90,12 @@ function serveMedia(authorId: string) {
 /**
  * Serves the stored post and its empty autosave for the editor.
  * @param authorId - The account the stored post belongs to.
+ * @param fields - The stored post's fields that differ from the fixture.
  */
-function serveEditor(authorId: string) {
+function serveEditor(authorId: string, fields: Record<string, unknown> = {}) {
 	server.use(
 		http.get(`/api/content/${storedPost.id}`, () =>
-			HttpResponse.json({ ...storedPost, author_id: authorId }),
+			HttpResponse.json({ ...storedPost, ...fields, author_id: authorId }),
 		),
 		http.get(`/api/content/${storedPost.id}/autosave`, () =>
 			HttpResponse.json({}, { status: 404 }),
@@ -145,19 +146,7 @@ test('opens a post another account wrote as a reading view', async () => {
 })
 
 test('reads an untitled foreign post under a stand in title, its excerpt beside it', async () => {
-	server.use(
-		http.get(`/api/content/${storedPost.id}`, () =>
-			HttpResponse.json({
-				...storedPost,
-				title: '',
-				excerpt: 'A few words about it.',
-				author_id: FOREIGN,
-			}),
-		),
-		http.get(`/api/content/${storedPost.id}/autosave`, () =>
-			HttpResponse.json({}, { status: 404 }),
-		),
-	)
+	serveEditor(FOREIGN, { title: '', excerpt: 'A few words about it.' })
 	renderAt(`/content/post/${storedPost.id}/edit`, maria)
 
 	expect(await screen.findByText('(no title)')).toBeInTheDocument()
@@ -165,14 +154,7 @@ test('reads an untitled foreign post under a stand in title, its excerpt beside 
 })
 
 test('reads a trashed post another account wrote as a foreign post', async () => {
-	server.use(
-		http.get(`/api/content/${storedPost.id}`, () =>
-			HttpResponse.json({ ...storedPost, status: 'trash', author_id: FOREIGN }),
-		),
-		http.get(`/api/content/${storedPost.id}/autosave`, () =>
-			HttpResponse.json({}, { status: 404 }),
-		),
-	)
+	serveEditor(FOREIGN, { status: 'trash' })
 	renderAt(`/content/post/${storedPost.id}/edit`, maria)
 
 	expect(await screen.findByText(/another account wrote this/i)).toBeInTheDocument()
@@ -181,14 +163,7 @@ test('reads a trashed post another account wrote as a foreign post', async () =>
 })
 
 test('offers an editor a restore on a trashed post another account wrote', async () => {
-	server.use(
-		http.get(`/api/content/${storedPost.id}`, () =>
-			HttpResponse.json({ ...storedPost, status: 'trash', author_id: FOREIGN }),
-		),
-		http.get(`/api/content/${storedPost.id}/autosave`, () =>
-			HttpResponse.json({}, { status: 404 }),
-		),
-	)
+	serveEditor(FOREIGN, { status: 'trash' })
 	renderAt(`/content/post/${storedPost.id}/edit`, grace)
 
 	expect(await screen.findByText(/This item is in the trash/)).toBeInTheDocument()
@@ -209,35 +184,37 @@ test('opens a foreign post as the editor for an editor', async () => {
 	expect(await screen.findByRole('textbox', { name: 'Title' })).toBeInTheDocument()
 })
 
-test('offers an author no controls on media another account uploaded', async () => {
+/** Every action the media library offers on a file the session may change, in order. */
+const EVERY_MEDIA_ACTION = ['View', 'Edit…', 'Rename…', 'Permanently delete…']
+
+/**
+ * Opens the actions menu of the one listed file and returns the words of its items.
+ * @returns The words, in order.
+ */
+async function mediaMenu(): Promise<(string | null)[]> {
+	await screen.findByText('Harbor at dawn')
+	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
+	await screen.findByRole('menuitem', { name: 'View' })
+	return screen.getAllByRole('menuitem').map((item) => item.textContent)
+}
+
+test('offers an author only a view of media another account uploaded', async () => {
 	serveMedia(FOREIGN)
 	renderAt('/media', maria)
-	await screen.findByText('Harbor at dawn')
 
-	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
-
-	expect(screen.queryByRole('menuitem', { name: 'Describe' })).toBeNull()
-	expect(screen.queryByRole('menuitem', { name: 'Delete Permanently' })).toBeNull()
+	expect(await mediaMenu()).toEqual(['View'])
 })
 
 test('offers an editor every action on media another account uploaded', async () => {
 	serveMedia(FOREIGN)
 	renderAt('/media', grace)
-	await screen.findByText('Harbor at dawn')
 
-	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
-
-	expect(await screen.findByRole('menuitem', { name: 'Describe' })).toBeInTheDocument()
-	expect(screen.getByRole('menuitem', { name: 'Delete Permanently' })).toBeInTheDocument()
+	expect(await mediaMenu()).toEqual(EVERY_MEDIA_ACTION)
 })
 
 test('offers an author every action on its own upload', async () => {
 	serveMedia(maria.id)
 	renderAt('/media', maria)
-	await screen.findByText('Harbor at dawn')
 
-	await userEvent.click(screen.getByRole('button', { name: 'Actions' }))
-
-	expect(await screen.findByRole('menuitem', { name: 'Describe' })).toBeInTheDocument()
-	expect(screen.getByRole('menuitem', { name: 'Delete Permanently' })).toBeInTheDocument()
+	expect(await mediaMenu()).toEqual(EVERY_MEDIA_ACTION)
 })

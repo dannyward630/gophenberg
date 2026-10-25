@@ -99,6 +99,7 @@ const newUserRoute = createRoute({
 const mediaRoute = createRoute({
 	getParentRoute: () => framedRoute,
 	path: '/media',
+	validateSearch: listSearch,
 	component: lazyRouteComponent(() => import('./media/MediaScreen'), 'MediaScreen'),
 })
 

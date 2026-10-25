@@ -563,12 +563,13 @@ msgstr ""
 msgid "Content type updated."
 msgstr ""
 
-msgid "Could not delete that item."
-msgid_plural "Could not delete every item."
-msgstr[0] ""
-msgstr[1] ""
-
 msgid "Could not load that post."
+msgstr ""
+
+msgid "Could not save image. %s"
+msgstr ""
+
+msgid "Could not save media. %s"
 msgstr ""
 
 msgid "Could not save that post."
@@ -587,6 +588,9 @@ msgid "Created"
 msgstr ""
 
 msgid "Date added"
+msgstr ""
+
+msgid "Date modified"
 msgstr ""
 
 msgid "Deactivate"
@@ -619,9 +623,6 @@ msgstr ""
 msgid "Delete %(group)s"
 msgstr ""
 
-msgid "Delete %(title)s for good? This cannot be undone."
-msgstr ""
-
 msgid "Delete %s content type for good? This cannot be undone."
 msgid_plural "Delete %s content types for good? This cannot be undone."
 msgstr[0] ""
@@ -632,7 +633,7 @@ msgid_plural "Delete %s items for good? This cannot be undone."
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "Delete Permanently"
+msgid "Delete permanently"
 msgstr ""
 
 msgid "Delete the field"
@@ -641,15 +642,13 @@ msgstr ""
 msgid "Delete the group"
 msgstr ""
 
-msgid "Delete this %(count)s item for good? This cannot be undone."
-msgid_plural "Delete these %(count)s items for good? This cannot be undone."
-msgstr[0] ""
-msgstr[1] ""
-
 msgid "Delete…"
 msgstr ""
 
 msgid "Describe"
+msgstr ""
+
+msgid "Describe the purpose of the image."
 msgstr ""
 
 msgid "Describe…"
@@ -685,6 +684,9 @@ msgstr ""
 msgid "Document"
 msgstr ""
 
+msgid "Documents"
+msgstr ""
+
 msgid "Done. The site now holds what the file describes."
 msgstr ""
 
@@ -692,6 +694,12 @@ msgid "Draft saved."
 msgstr ""
 
 msgid "Drop files to upload"
+msgstr ""
+
+msgid "Edit media"
+msgstr ""
+
+msgid "Edit…"
 msgstr ""
 
 msgid "Email"
@@ -764,9 +772,6 @@ msgid "File size"
 msgstr ""
 
 msgid "File type"
-msgstr ""
-
-msgid "Files"
 msgstr ""
 
 msgid "Filter by status"
@@ -892,6 +897,9 @@ msgstr ""
 msgid "Large"
 msgstr ""
 
+msgid "Leave empty if decorative."
+msgstr ""
+
 msgid "Let items nest"
 msgstr ""
 
@@ -968,6 +976,9 @@ msgid "Media %(id)s"
 msgstr ""
 
 msgid "Media Library"
+msgstr ""
+
+msgid "Media file updated."
 msgstr ""
 
 msgid "Medium"
@@ -1177,9 +1188,6 @@ msgid "Pending"
 msgstr ""
 
 msgid "Pending Review"
-msgstr ""
-
-msgid "Permanently delete"
 msgstr ""
 
 msgid "Permanently delete…"
@@ -1724,9 +1732,6 @@ msgstr ""
 msgid "This item cannot go straight to that status from the one it holds now. Save it as a draft first, then try again."
 msgstr ""
 
-msgid "This item changed while you were describing it. Reload and try again."
-msgstr ""
-
 msgid "This item does not exist, and it may have been deleted. Go back to the list to see what is there."
 msgstr ""
 
@@ -1897,6 +1902,9 @@ msgstr ""
 msgid "holds anything"
 msgstr ""
 
+msgid "https://www.w3.org/WAI/tutorials/images/decision-tree/"
+msgstr ""
+
 msgid "is"
 msgstr ""
 
@@ -2034,8 +2042,24 @@ msgctxt "field type"
 msgid "Select"
 msgstr ""
 
-msgctxt "media family"
-msgid "Kind"
+msgctxt "file size"
+msgid "%1$s %2$s"
+msgstr ""
+
+msgctxt "file type group"
+msgid "Archives"
+msgstr ""
+
+msgctxt "file type group"
+msgid "Audio"
+msgstr ""
+
+msgctxt "file type group"
+msgid "Video"
+msgstr ""
+
+msgctxt "image dimensions"
+msgid "%1$s × %2$s"
 msgstr ""
 
 msgctxt "panel button label"
@@ -2124,6 +2148,42 @@ msgstr ""
 
 msgctxt "trash"
 msgid "Restore"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "B"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "EB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "GB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "KB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "MB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "PB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "TB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "YB"
+msgstr ""
+
+msgctxt "unit symbol"
+msgid "ZB"
 msgstr ""
 
 msgctxt "verb"

@@ -51,9 +51,11 @@ export {
 	Stack,
 	Tabs,
 	Text,
+	Tooltip,
 	VisuallyHidden,
 } from '@wordpress/ui'
 export {
+	audio as audioIcon,
 	commentAuthorAvatar as authorIcon,
 	chevronLeft as backIcon,
 	backup as backupIcon,
@@ -62,6 +64,8 @@ export {
 	closeSmall as closeIcon,
 	customPostType as customPostTypeIcon,
 	chevronDown as downIcon,
+	file as fileIcon,
+	image as imageIcon,
 	language as languageIcon,
 	list as listIcon,
 	listView as listViewIcon,
@@ -77,6 +81,7 @@ export {
 	undo as undoIcon,
 	chevronUp as upIcon,
 	upload as uploadIcon,
+	video as videoIcon,
 } from '@wordpress/icons'
 export { Dialog } from './dialog'
 export { TextareaControl } from './TextareaControl'

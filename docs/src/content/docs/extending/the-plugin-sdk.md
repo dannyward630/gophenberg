@@ -548,15 +548,19 @@ for the account at `/api/auth/session`, so serve that address with
 
 The frontend SDK, `@gophenberg/frontend-sdk`, passes on a few icons
 from `@wordpress/icons`, each named after the job it does in the
-admin: `authorIcon`, `backIcon`, `backupIcon`, `brushIcon`,
-`categoryIcon`, `closeIcon`, `customPostTypeIcon`, `downIcon`,
-`languageIcon`, `listIcon`, `listViewIcon`, `mediaIcon`, `pageIcon`,
-`postIcon`, `redoIcon`, `saveIcon`, `settingsIcon`, `sidebarIcon`,
-`sidebarRtlIcon`, `trashIcon`, `undoIcon`, `upIcon` and
-`uploadIcon`. `authorIcon` is the one an
+admin: `audioIcon`, `authorIcon`, `backIcon`, `backupIcon`,
+`brushIcon`, `categoryIcon`, `closeIcon`, `customPostTypeIcon`,
+`downIcon`, `fileIcon`, `imageIcon`, `languageIcon`, `listIcon`,
+`listViewIcon`, `mediaIcon`, `pageIcon`, `postIcon`, `redoIcon`,
+`saveIcon`, `settingsIcon`, `sidebarIcon`, `sidebarRtlIcon`,
+`trashIcon`, `undoIcon`, `upIcon`, `uploadIcon` and `videoIcon`.
+`authorIcon` is the one an
 author cell shows when the site shows no avatars, `postIcon` the one
 an empty content list shows, `mediaIcon` the one an empty media
 library shows, and `uploadIcon` the one an upload button carries.
+`imageIcon`, `videoIcon`, `audioIcon` and `fileIcon` are the ones a
+media card draws for a file that shows no picture, picked by its
+file type as WordPress picks them.
 `sidebarIcon` is the one the editor's Settings button carries, and
 `sidebarRtlIcon` its mirror for a language written right to left.
 `saveIcon` is the one Save draft shows on a phone, and `closeIcon`

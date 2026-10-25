@@ -1,18 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { brush, category, customPostType, language, list, media, page, post, settings } from '@wordpress/icons'
+import {
+	audio,
+	brush,
+	category,
+	customPostType,
+	file,
+	image,
+	language,
+	list,
+	media,
+	page,
+	post,
+	settings,
+	video,
+} from '@wordpress/icons'
+import { Tooltip as UiTooltip } from '@wordpress/ui'
 import { expect, test } from 'vitest'
 
 import {
+	audioIcon,
 	brushIcon,
 	categoryIcon,
 	customPostTypeIcon,
+	fileIcon,
+	imageIcon,
 	languageIcon,
 	listIcon,
 	mediaIcon,
 	pageIcon,
 	postIcon,
 	settingsIcon,
+	Tooltip,
+	videoIcon,
 } from '../index'
 
 test('hands the sidebar rows the glyphs WordPress draws them with', () => {
@@ -25,4 +45,15 @@ test('hands the sidebar rows the glyphs WordPress draws them with', () => {
 	expect(languageIcon).toBe(language)
 	expect(customPostTypeIcon).toBe(customPostType)
 	expect(listIcon).toBe(list)
+})
+
+test('hands a media card the glyph WordPress draws for each kind of file', () => {
+	expect(imageIcon).toBe(image)
+	expect(videoIcon).toBe(video)
+	expect(audioIcon).toBe(audio)
+	expect(fileIcon).toBe(file)
+})
+
+test('hands out the tooltip WordPress shows a cut file name in', () => {
+	expect(Tooltip).toBe(UiTooltip)
 })

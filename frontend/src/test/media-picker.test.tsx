@@ -9,6 +9,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 
 import { allowedMimes, MediaLibraryPicker, selectionFrom } from '../media/MediaLibraryPicker'
 import { SiteFormatGate } from '../settings/SiteFormatGate'
+import { gate } from './gate'
 import { siteSettings } from './siteSettings'
 
 const HARBOR = {
@@ -142,46 +143,131 @@ test('counts its pages by the size the server served', async () => {
 	expect(pages.map((page) => page.textContent)).toEqual(['1', '2', '3'])
 })
 
-test('asks only for the kinds the block accepts', async () => {
-	let asked = ''
+const OWN_AUTHOR = '019fb000-0000-7000-8000-0000000000ff'
+
+/**
+ * Returns the sort control of View options, drawn inside the picker's dialog where a reader reaches it.
+ * @returns The Sort by control.
+ */
+function sortControl(): Promise<HTMLElement> {
+	return screen.findByRole('combobox', { name: 'Sort by' })
+}
+
+/**
+ * Serves the library and the authors, recording what each request for the library asked for.
+ * @returns The parameters of every request so far.
+ */
+function recording(): URLSearchParams[] {
+	const asked: URLSearchParams[] = []
 	server.use(
 		http.get('/api/media', ({ request }) => {
-			asked = new URL(request.url).searchParams.get('mime') ?? ''
-			return HttpResponse.json({ items: [HARBOR], total: 1, per_page: siteSettings.picker_page_size })
+			asked.push(new URL(request.url).searchParams)
+			return HttpResponse.json({ items: [HARBOR, CLIFF], total: 2, per_page: siteSettings.picker_page_size })
 		}),
+		http.get('/api/authors', () => HttpResponse.json({ items: [{ id: OWN_AUTHOR, name: 'Maria Perez' }] })),
 	)
+	return asked
+}
 
-	await openPicker({ allowedTypes: ['video'] })
+test.each([
+	{ accepts: ['video'], mime: 'video/', name: 'only for the kinds the block accepts' },
+	{ accepts: ['image', 'video'], mime: 'image/,video/', name: 'for each kind a mixed block accepts' },
+])('asks $name', async ({ accepts, mime }) => {
+	const asked = recording()
 
-	await waitFor(() => expect(asked).toBe('video/'))
-})
+	await openPicker({ allowedTypes: accepts })
 
-test('asks for each kind a mixed block accepts', async () => {
-	let asked = ''
-	server.use(
-		http.get('/api/media', ({ request }) => {
-			asked = new URL(request.url).searchParams.get('mime') ?? ''
-			return HttpResponse.json({ items: [HARBOR], total: 1, per_page: siteSettings.picker_page_size })
-		}),
-	)
-
-	await openPicker({ allowedTypes: ['image', 'video'] })
-
-	await waitFor(() => expect(asked).toBe('image/,video/'))
+	await waitFor(() => expect(asked.at(-1)?.get('mime')).toBe(mime))
 })
 
 test('asks for every kind when the block accepts anything', async () => {
-	let asked = ''
-	server.use(
-		http.get('/api/media', ({ request }) => {
-			asked = new URL(request.url).search
-			return HttpResponse.json({ items: [HARBOR], total: 1, per_page: siteSettings.picker_page_size })
-		}),
-	)
+	const asked = recording()
 
 	await openPicker()
 
-	await waitFor(() => expect(asked).not.toContain('mime='))
+	await waitFor(() => expect(asked.at(-1)?.has('mime')).toBe(false))
+})
+
+test('offers Author, Date added and Date modified as filters, and no Type, as the WordPress picker does', async () => {
+	await openPicker()
+	await screen.findByText('Harbor at dawn')
+
+	await userEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+
+	const offered = await screen.findAllByRole('menuitem')
+	expect(offered.map((item) => item.textContent)).toEqual(['Author', 'Date added', 'Date modified'])
+})
+
+test('sorts by Title, Date added, Date modified and Author alone', async () => {
+	await openPicker()
+	await screen.findByText('Harbor at dawn')
+
+	await userEvent.click(screen.getByRole('button', { name: 'View options' }))
+
+	const sorts = within(await sortControl()).getAllByRole('option')
+	expect(sorts.map((option) => option.textContent)).toEqual(['Title', 'Date added', 'Date modified', 'Author'])
+})
+
+test('offers no page sizes, the picker showing the size the site sets for it', async () => {
+	await openPicker()
+	await screen.findByText('Harbor at dawn')
+
+	await userEvent.click(screen.getByRole('button', { name: 'View options' }))
+
+	expect(await sortControl()).toBeInTheDocument()
+	expect(screen.queryByRole('radiogroup', { name: 'Items per page' })).not.toBeInTheDocument()
+})
+
+test('asks again with the sort a reader picks once the first page arrived, beside the block kinds', async () => {
+	const asked = recording()
+	await openPicker({ allowedTypes: ['image'] })
+	await screen.findByText('Harbor at dawn')
+	await userEvent.click(screen.getByRole('button', { name: 'View options' }))
+
+	await userEvent.selectOptions(await sortControl(), 'modified')
+
+	await waitFor(() => expect(asked.at(-1)?.get('orderby')).toBe('modified'))
+	expect(asked.at(-1)?.get('mime')).toBe('image/')
+	expect(asked.at(-1)?.get('per_page')).toBe(String(siteSettings.picker_page_size))
+})
+
+test('asks again with the author a reader picks once the first page arrived', async () => {
+	const asked = recording()
+	await openPicker({ allowedTypes: ['image'] })
+	await screen.findByText('Harbor at dawn')
+	await userEvent.click(screen.getByRole('button', { name: 'Add filter' }))
+	await userEvent.click(await screen.findByRole('menuitem', { name: 'Author' }))
+
+	await userEvent.click(await screen.findByRole('option', { name: 'Maria Perez' }))
+
+	await waitFor(() => expect(asked.at(-1)?.get('author')).toBe(OWN_AUTHOR))
+	expect(asked.at(-1)?.get('mime')).toBe('image/')
+})
+
+test('keeps the cards and the page count while the sort a reader picks loads', async () => {
+	server.use(
+		http.get('/api/media', () => HttpResponse.json({ items: [HARBOR, CLIFF], total: 25, per_page: 10 })),
+	)
+	await openPicker()
+	await screen.findByText('Harbor at dawn')
+	const sorted = gate()
+	let asking = false
+	server.use(
+		http.get('/api/media', async () => {
+			asking = true
+			await sorted.held
+			return HttpResponse.json({ items: [CLIFF, HARBOR], total: 25, per_page: 10 })
+		}),
+	)
+	await userEvent.click(screen.getByRole('button', { name: 'View options' }))
+
+	await userEvent.selectOptions(await sortControl(), 'title')
+	await waitFor(() => expect(asking).toBe(true))
+
+	expect(screen.getByText('Harbor at dawn')).toBeInTheDocument()
+	const pages = within(screen.getByRole('combobox', { name: 'Current page' })).getAllByRole('option')
+	expect(pages.map((page) => page.textContent)).toEqual(['1', '2', '3'])
+	sorted.release()
 })
 
 test('offers what the block already holds as the selection', async () => {
