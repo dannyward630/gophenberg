@@ -8,10 +8,12 @@ Feature: Operators and administrators update the core and see where it stands
   the attempt and checks itself. A healthy start keeps the update. A build
   that fails goes back to the previous one, and that version is never
   picked again on its own unless a person retries it. An update that
-  raised the minimum version never goes back on its own, since the older
-  build refuses the database the newer one migrated, so the site stays
-  down and shows how to restore the backup. An install with no install
-  root, like the Docker image, and a custom build keep the manual steps.
+  raised the minimum version, a long jump, goes back the same way while
+  its new build never reached the database. Once the new build reached
+  the database it may have migrated it, and the older build refuses a
+  database a newer one migrated, so the site stays down and shows how to
+  restore the backup. An install with no install root, like the Docker
+  image, and a custom build keep the manual steps.
   A step that fails leaves which update failed, when, at which step and
   why. An administrator asks the site for the same: the version that
   runs, whether this install updates itself, the refused versions, the
@@ -117,10 +119,21 @@ Feature: Operators and administrators update the core and see where it stands
     And the current build is "0.18.0"
     And the update status lists this version as refused
 
-  Scenario: A failed update that raised the minimum version stays down and shows the restore steps
+  Scenario: A long jump whose new build never reached the database goes back
     Given an install root where an update switched from "0.18.0" to this version
     And the update raised the minimum version, with a backup taken before the switch
-    And this version already tried to start 3 times
+    And the database refuses every connection
+    And serve waits "0" for the database
+    And the site failed to start 3 times
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "start-limit-hit"
+    Then the command succeeds
+    And the current build is "0.18.0"
+    And the update status lists this version as refused
+
+  Scenario: A long jump that reached the database stays down
+    Given an install root where an update switched from "0.18.0" to this version
+    And the update raised the minimum version, with a backup taken before the switch
+    And the start check of this version runs out of time
     When the site starts
     Then the command exits with code 76
     And the current build is still this version
@@ -147,10 +160,11 @@ Feature: Operators and administrators update the core and see where it stands
     Then the command exits with code 1
     And the current build is still "99.0.0"
 
-  Scenario Outline: The service manager does not take back an update that raised the minimum version after <failure>
+  Scenario Outline: The service manager does not take back a long jump that reached the database after <failure>
     Given an install root where an update switched from this version to "99.0.0"
     And the update raised the minimum version, with a backup taken before the switch
     And the new build already tried to start 3 times
+    And the new build reached the database
     When the service manager runs "update:rollback -after-failure" with <variable> set to "<value>"
     Then the command exits with code 1
     And the current build is still "99.0.0"
