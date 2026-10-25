@@ -118,7 +118,7 @@ msgstr "%(source)s est %(value)s"
 
 #, fuzzy
 msgid "(no title)"
-msgstr "(sans titre)"
+msgstr "(pas de titre)"
 
 #, fuzzy
 msgid ""
@@ -288,7 +288,7 @@ msgstr "août"
 
 #, fuzzy
 msgid "Author"
-msgstr "Auteur"
+msgstr "Auteur/autrice"
 
 #, fuzzy
 msgid "Back to the latest posts"
@@ -362,12 +362,6 @@ msgstr "Le contenu s'imbrique sur au plus %(max)s niveaux, et cet élément irai
 msgid "Content type"
 msgstr "Type de contenu"
 
-msgid "Could not delete that item."
-msgid_plural "Could not delete every item."
-msgstr[0] "Impossible de supprimer cet élément."
-msgstr[1] "Impossible de supprimer tous les éléments."
-msgstr[2] "Impossible de supprimer tous les éléments."
-
 #, fuzzy
 msgid "Could not load that post."
 msgstr "Impossible de charger cet article."
@@ -390,7 +384,7 @@ msgstr "Créer l'utilisateur"
 
 #, fuzzy
 msgid "Date added"
-msgstr "Date d'ajout"
+msgstr "Date d’ajout"
 
 #, fuzzy
 msgid "Deactivate"
@@ -411,10 +405,6 @@ msgstr "Supprimer"
 #, fuzzy
 msgid "Delete %(group)s"
 msgstr "Supprimer %(group)s"
-
-#, fuzzy
-msgid "Delete Permanently"
-msgstr "Supprimer définitivement"
 
 #, fuzzy
 msgid "Delete the field"
@@ -518,7 +508,7 @@ msgstr "Champs de %(group)s"
 
 #, fuzzy
 msgid "File name"
-msgstr "Nom du fichier"
+msgstr "Nom de fichier"
 
 #, fuzzy
 msgid "File size"
@@ -527,10 +517,6 @@ msgstr "Taille du fichier"
 #, fuzzy
 msgid "File type"
 msgstr "Type de fichier"
-
-#, fuzzy
-msgid "Files"
-msgstr "Fichiers"
 
 #, fuzzy
 msgid "Filter by status"
@@ -715,7 +701,7 @@ msgstr "mai"
 
 #, fuzzy
 msgid "Media Library"
-msgstr "Bibliothèque de médias"
+msgstr "Médiathèque"
 
 #, fuzzy
 msgid "Medium"
@@ -795,7 +781,7 @@ msgstr "Aucun thème n'est installé."
 
 #, fuzzy
 msgid "No title"
-msgstr "Sans titre"
+msgstr "Aucun titre"
 
 #, fuzzy
 msgid "None"
@@ -1426,10 +1412,6 @@ msgid "This item cannot go straight to that status from the one it holds now. Sa
 msgstr "Cet élément ne peut pas passer directement à cet état depuis celui qu'il a maintenant. Enregistrez-le d'abord comme brouillon, puis réessayez."
 
 #, fuzzy
-msgid "This item changed while you were describing it. Reload and try again."
-msgstr "Cet élément a changé pendant que vous le décriviez. Rechargez et réessayez."
-
-#, fuzzy
 msgid "This item does not exist, and it may have been deleted. Go back to the list to see what is there."
 msgstr "Cet élément n'existe pas, et il a peut-être été supprimé. Revenez à la liste pour voir ce qui s'y trouve."
 
@@ -1666,17 +1648,6 @@ msgid "Delete %(field)s"
 msgstr "Supprimer %(field)s"
 
 #, fuzzy
-msgid "Delete %(title)s for good? This cannot be undone."
-msgstr "Supprimer %(title)s définitivement ? Cette action est irréversible."
-
-#, fuzzy
-msgid "Delete this %(count)s item for good? This cannot be undone."
-msgid_plural "Delete these %(count)s items for good? This cannot be undone."
-msgstr[0] "Supprimer définitivement ce %(count)s élément ? Cette action est irréversible."
-msgstr[1] "Supprimer définitivement ces %(count)s éléments ? Cette action est irréversible."
-msgstr[2] "Supprimer définitivement ces %(count)s éléments ? Cette action est irréversible."
-
-#, fuzzy
 msgid "Disable %(name)s"
 msgstr "Désactiver %(name)s"
 
@@ -1831,11 +1802,6 @@ msgstr "Média"
 msgctxt "field type"
 msgid "Link"
 msgstr "Lien"
-
-#, fuzzy
-msgctxt "media family"
-msgid "Kind"
-msgstr "Type"
 
 #, fuzzy
 msgctxt "panel button label"
@@ -2445,10 +2411,6 @@ msgid "The item could not be permanently deleted."
 msgstr "L'élément n'a pas pu être supprimé définitivement."
 
 #, fuzzy
-msgid "Permanently delete"
-msgstr "Supprimer définitivement"
-
-#, fuzzy
 msgid "Move %s item to the trash?"
 msgid_plural "Move %s items to the trash?"
 msgstr[0] "Déplacer %s élément dans la corbeille ?"
@@ -2515,7 +2477,7 @@ msgstr[2] "%s éléments n'ont pas pu être rétablis."
 
 #, fuzzy
 msgid "\"%s\" permanently deleted."
-msgstr "« %s » supprimé définitivement."
+msgstr "Suppression définitive de « %s »."
 
 #, fuzzy
 msgid "%s item permanently deleted."
@@ -2740,7 +2702,7 @@ msgstr "%(file)s : %(reason)s"
 
 #, fuzzy
 msgid "No media items found."
-msgstr "Aucun fichier média trouvé."
+msgstr "Aucun média n’a été trouvé."
 
 #, fuzzy
 msgid "No media items yet."
@@ -2910,3 +2872,117 @@ msgstr "Aucun type de contenu trouvé."
 #, fuzzy
 msgid "No description"
 msgstr "Aucune description"
+
+#, fuzzy
+msgid "Could not save image. %s"
+msgstr "Impossible d’enregistrer le média. %s"
+
+#, fuzzy
+msgid "Could not save media. %s"
+msgstr "Impossible d’enregistrer le média. %s"
+
+#, fuzzy
+msgid "Date modified"
+msgstr "Date de modification"
+
+#, fuzzy
+msgid "Delete permanently"
+msgstr "Supprimer définitivement"
+
+#, fuzzy
+msgid "Describe the purpose of the image."
+msgstr "Décrivez la fonction de l’image."
+
+#, fuzzy
+msgid "Documents"
+msgstr "Documents"
+
+#, fuzzy
+msgid "Edit media"
+msgstr "Modifier le média"
+
+#, fuzzy
+msgid "Edit…"
+msgstr "Modifier…"
+
+#, fuzzy
+msgid "Leave empty if decorative."
+msgstr "Laissez vide si l’image est décorative"
+
+#, fuzzy
+msgid "Media file updated."
+msgstr "Fichier média mis à jour."
+
+#, fuzzy
+msgid "https://www.w3.org/WAI/tutorials/images/decision-tree/"
+msgstr "https://www.w3.org/WAI/tutorials/images/decision-tree/"
+
+#, fuzzy
+msgctxt "file size"
+msgid "%1$s %2$s"
+msgstr "%1$s %2$s"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Archives"
+msgstr "Archives"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Audio"
+msgstr "Sons"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Video"
+msgstr "Vidéos"
+
+#, fuzzy
+msgctxt "image dimensions"
+msgid "%1$s × %2$s"
+msgstr "%1$s par %2$s"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "B"
+msgstr "o"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "EB"
+msgstr "Eo"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "GB"
+msgstr "Go"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "KB"
+msgstr "Ko"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "MB"
+msgstr "Mo"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "PB"
+msgstr "Po"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "TB"
+msgstr "To"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "YB"
+msgstr "Yo"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "ZB"
+msgstr "Zo"

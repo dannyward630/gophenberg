@@ -130,12 +130,6 @@ msgstr "Contenido"
 msgid "Content Types"
 msgstr "Tipos de contenido"
 
-msgid "Could not delete that item."
-msgid_plural "Could not delete every item."
-msgstr[0] "No se ha podido borrar ese elemento."
-msgstr[1] "No se han podido borrar todos los elementos."
-msgstr[2] "No se han podido borrar todos los elementos."
-
 msgid "Could not load that post."
 msgstr "No se ha podido cargar esa entrada."
 
@@ -145,8 +139,9 @@ msgstr "No se ha podido guardar esa entrada."
 msgid "Create user"
 msgstr "Crear usuario"
 
+#, fuzzy
 msgid "Date added"
-msgstr "Fecha de subida"
+msgstr "Fecha de inclusión"
 
 msgid "Deactivate"
 msgstr "Desactivar"
@@ -159,9 +154,6 @@ msgstr "Por defecto"
 
 msgid "Delete"
 msgstr "Borrar"
-
-msgid "Delete Permanently"
-msgstr "Borrar permanentemente"
 
 msgid "Delete the field"
 msgstr "Borrar el campo"
@@ -228,9 +220,6 @@ msgstr "Tamaño del archivo"
 
 msgid "File type"
 msgstr "Tipo de archivo"
-
-msgid "Files"
-msgstr "Archivos"
 
 msgid "Filter by status"
 msgstr "Filtrar por estado"
@@ -686,9 +675,6 @@ msgstr "Este archivo se llama %(extension)s pero lleva contenido %(detected)s. S
 msgid "This item cannot go straight to that status from the one it holds now. Save it as a draft first, then try again."
 msgstr "Este elemento no puede pasar directamente a ese estado desde el que tiene ahora. Guárdalo antes como borrador e inténtalo de nuevo."
 
-msgid "This item changed while you were describing it. Reload and try again."
-msgstr "Este elemento ha cambiado mientras lo describías. Recarga e inténtalo de nuevo."
-
 msgid "This item does not exist, and it may have been deleted. Go back to the list to see what is there."
 msgstr "Este elemento no existe, y puede que se haya borrado. Vuelve a la lista para ver qué hay."
 
@@ -820,9 +806,6 @@ msgstr "Desactivar %(theme)s"
 
 msgid "Delete %(field)s"
 msgstr "Borrar %(field)s"
-
-msgid "Delete %(title)s for good? This cannot be undone."
-msgstr "¿Borrar %(title)s para siempre? Esto no se puede deshacer."
 
 msgid "Disable %(name)s"
 msgstr "Desactivar a %(name)s"
@@ -1839,12 +1822,6 @@ msgstr[0] "¿Borrar permanentemente %s elemento? Esto no se puede deshacer."
 msgstr[1] "¿Borrar permanentemente %s de elementos? Esto no se puede deshacer."
 msgstr[2] "¿Borrar permanentemente %s elementos? Esto no se puede deshacer."
 
-msgid "Delete this %(count)s item for good? This cannot be undone."
-msgid_plural "Delete these %(count)s items for good? This cannot be undone."
-msgstr[0] "¿Borrar este %(count)s elemento para siempre? Esto no se puede deshacer."
-msgstr[1] "¿Borrar estos %(count)s elementos para siempre? Esto no se puede deshacer."
-msgstr[2] "¿Borrar estos %(count)s elementos para siempre? Esto no se puede deshacer."
-
 #, fuzzy
 msgid "Empty trash"
 msgstr "Vaciar papelera"
@@ -1899,12 +1876,8 @@ msgid "Pending Review"
 msgstr "Pendiente de revisión"
 
 #, fuzzy
-msgid "Permanently delete"
-msgstr "Borrar permanentemente"
-
-#, fuzzy
 msgid "Permanently delete…"
-msgstr "Borrar permanentemente…"
+msgstr "Eliminar permanentemente…"
 
 #, fuzzy
 msgid "Picture quality runs from 1 to %(max)s, so %(value)s is not a quality Gophenberg stores at. Pick a number inside that range."
@@ -2257,10 +2230,6 @@ msgctxt "field type"
 msgid "Link"
 msgstr "Enlace"
 
-msgctxt "media family"
-msgid "Kind"
-msgstr "Clase"
-
 msgctxt "person"
 msgid "Name"
 msgstr "Nombre"
@@ -2498,3 +2467,117 @@ msgstr "No se han encontrado tipos de contenido."
 #, fuzzy
 msgid "No description"
 msgstr "Sin descripción"
+
+#, fuzzy
+msgid "Could not save image. %s"
+msgstr "No se ha podido guardar la imagen. %s"
+
+#, fuzzy
+msgid "Could not save media. %s"
+msgstr "No se ha podido guardar el archivo multimedia. %s"
+
+#, fuzzy
+msgid "Date modified"
+msgstr "Fecha de modificación"
+
+#, fuzzy
+msgid "Delete permanently"
+msgstr "Borrar permanentemente"
+
+#, fuzzy
+msgid "Describe the purpose of the image."
+msgstr "Describe el propósito de la imagen."
+
+#, fuzzy
+msgid "Documents"
+msgstr "Documentos"
+
+#, fuzzy
+msgid "Edit media"
+msgstr "Editar los medios"
+
+#, fuzzy
+msgid "Edit…"
+msgstr "Editar…"
+
+#, fuzzy
+msgid "Leave empty if decorative."
+msgstr "Déjalo vacío si es decorativo."
+
+#, fuzzy
+msgid "Media file updated."
+msgstr "Archivo de medios actualizado."
+
+#, fuzzy
+msgid "https://www.w3.org/WAI/tutorials/images/decision-tree/"
+msgstr "https://www.w3.org/WAI/tutorials/images/decision-tree/"
+
+#, fuzzy
+msgctxt "file size"
+msgid "%1$s %2$s"
+msgstr "%1$s %2$s"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Archives"
+msgstr "Archivos"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Audio"
+msgstr "Audio"
+
+#, fuzzy
+msgctxt "file type group"
+msgid "Video"
+msgstr "Vídeo"
+
+#, fuzzy
+msgctxt "image dimensions"
+msgid "%1$s × %2$s"
+msgstr "%1$s × %2$s"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "B"
+msgstr "B"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "EB"
+msgstr "EB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "GB"
+msgstr "GB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "KB"
+msgstr "KB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "MB"
+msgstr "MB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "PB"
+msgstr "PB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "TB"
+msgstr "TB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "YB"
+msgstr "YB"
+
+#, fuzzy
+msgctxt "unit symbol"
+msgid "ZB"
+msgstr "ZB"
