@@ -748,10 +748,10 @@ The update ends in one of five ways:
   again, as `-retry` does, so fix what failed first.
 - **The update to 1.4.1 failed its start check, and Gophenberg cannot
   go back to 1.4.0 on its own.** An update that raised the minimum
-  version failed its start check, and the screen says so once the
-  service manager starts the new version again. Run `update:status` to
-  see the backup taken before the update, then restore it or fix what
-  failed, see
+  version failed its start check after it reached the database, and
+  the screen says so once the service manager starts the new version
+  again. Run `update:status` to see the backup taken before the update,
+  then restore it or fix what failed, see
   [an update that raised the minimum version](#an-update-that-raised-the-minimum-version).
 - **The update failed before anything changed.** A step before the
   switch failed, and the reason follows. The site keeps running the
@@ -778,7 +778,11 @@ the build has not passed its check yet, the start checks it:
 
 1. It counts the attempt. A build that already tried to start
    `GOPHENBERG_UPDATE_ATTEMPTS` times, 3 unless set, fails at once.
-2. It migrates the database, as every start does.
+2. It waits for a database that is not up yet, see
+   [a database that starts late after an update](#a-database-that-starts-late-after-an-update).
+   Once the database answers, it writes `database_reached` into
+   `state/update.json`, then migrates the database, as every start
+   does.
 3. Within `GOPHENBERG_UPDATE_VERIFY_TIMEOUT`, one minute unless set, it
    checks that the public site serves through the theme the site chose.
    Then it asks itself over loopback for `/admin/` and `/api/locale`,
@@ -823,10 +827,11 @@ migrated. `update:check` says `going back to this version after it
 needs the backup` for such a release. For it, `update:apply` always
 takes the backup, even with `-skip-backup`.
 
-If such a build fails its check, it does not go back on its own. The
-site stays down, and nothing restores the backup on its own, since
-everything written after the backup would be lost. The error, the log
-and `update:status` name the backup and the steps:
+If such a build reached the database and then fails its check, it
+does not go back on its own. The site stays down, and nothing restores
+the backup on its own, since everything written after the backup would
+be lost. The error, the log and `update:status` name the backup and the
+steps:
 
 ```text
 gophenberg: updater: restore the backup taken before the update, /opt/gophenberg/backups/1.4.0-20261020T120000Z.dump, into an empty database, point current at versions/1.4.0 and start Gophenberg again, as https://docs.gophenberg.org/self-hosting/updates-and-backups/#restoring-on-a-server-install shows, or fix what failed and start Gophenberg 1.4.1 again
@@ -837,6 +842,13 @@ fails, ends the same way. Under systemd, the starts hit the start
 limit, and the rollback unit writes that the update failed instead of
 going back, so `update:status` shows the same steps.
 
+A build that never reached the database cannot have migrated it, so it
+goes back like any other update, see
+[a version that fails its check](#a-version-that-fails-its-check).
+That happens when every start stopped before the database answered,
+such as while PostgreSQL was still down. `update:status -json` then
+shows `database_reached` as `false`.
+
 [Restoring on a server install](#restoring-on-a-server-install) shows
 each step. Or fix what failed, such as a setting or a full disk, and
 start Gophenberg again. Either way, the build that starts runs the
@@ -844,6 +856,46 @@ start check once more, but it never goes back or stops on its own.
 When the check passes, `update:status` says the update was kept, or
 taken back after a restore. When it fails, the site keeps serving and
 the log says `the update stays failed` with the reason.
+
+### A database that starts late after an update
+
+A server may start Gophenberg before PostgreSQL answers, such as when
+both start at boot. `serve` then waits up to `GOPHENBERG_DATABASE_WAIT`,
+60 seconds unless set, and stops with code 1 when the database still
+does not answer, so the service manager starts it again, see
+[a database that starts late](/self-hosting/configuration/#a-database-that-starts-late).
+With no update waiting for its check, the boot guard counts nothing,
+so a late database never takes anything back.
+
+Right after an update, the boot guard counts each start of the new
+build before it waits, so one late start costs one attempt. With the
+defaults, 3 attempts of up to 60 seconds each, the database can stay
+down for about three minutes after the first start, plus the time the
+service manager waits between two starts. When it answers within that
+time, the start goes on, migrates and runs its check as usual. The
+bound is about `GOPHENBERG_UPDATE_ATTEMPTS` times
+`GOPHENBERG_DATABASE_WAIT`, so raising either one gives the database
+longer.
+
+A database down for longer than that takes a good update back. The
+start after the last attempt, the fourth with the defaults, fails its
+check at once, the new build goes back as
+[a version that fails its check](#a-version-that-fails-its-check)
+shows, and its version joins the refused versions. Once the database
+answers again, take the update again:
+
+```sh
+/opt/gophenberg/current/gophenberg update:apply -to 1.4.1 -retry
+```
+
+This holds for an update that raised the minimum version too. Its
+starts never reached the database, so `database_reached` stays `false`
+and the update goes back instead of staying down.
+
+`update:rollback` takes such an update back too while its new build
+still waits, since that build has not reached the database yet. The
+waiting start then stops before it migrates, and the next start runs
+the build before the update.
 
 ## Going back to an older version
 
