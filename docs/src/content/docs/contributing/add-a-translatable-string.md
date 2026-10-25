@@ -57,8 +57,10 @@ Class names, test ids, route paths, API field names, query keys, and any
 status or type value sent to the server. Those are identifiers, not
 words, and translating one breaks the software.
 
-Also leave alone the product name Gophenberg, the size units B, KB, MB,
-GB and TB, and anything that arrives from the server or from an author.
+Also leave alone the product name Gophenberg, and anything that arrives
+from the server or from an author. A size unit is no identifier. Wrap
+it under the context WordPress gives it,
+`_x('KB', 'unit symbol', 'gophenberg')`, so French can write Ko.
 A content type's plural label and its description read as their author
 typed them, in whatever language they typed them, and no catalogue
 reaches them.
