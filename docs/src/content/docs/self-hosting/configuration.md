@@ -20,6 +20,8 @@ so it takes the default.
 | `GOPHENBERG_DATABASE_URL` | Yes | | The PostgreSQL connection string, or `sqlite:` and the absolute path of a SQLite file. [The PostgreSQL address](#the-postgresql-address) lists what a connection string may not hold. [A SQLite database](#a-sqlite-database) says what runs on one and lists its settings |
 | `GOPHENBERG_DATABASE_MAX_CONNS` | No | The larger of 4 and the number of CPUs | How many connections to the database stay open at most, from 2 to 2147483647, see [the database connections](#the-database-connections) |
 | `GOPHENBERG_SUPERUSER_POLICY` | No | `warn` | What the server does when it connects to PostgreSQL as a superuser: `warn` logs a warning and serves, `refuse` stops it, see [the PostgreSQL server](#the-postgresql-server) |
+| `GOPHENBERG_DATABASE_WAIT` | No | `60s` | How long `serve` waits for a PostgreSQL server that is not up yet before it stops. `0` does not wait, see [a database that starts late](#a-database-that-starts-late) |
+| `GOPHENBERG_DATABASE_WAIT_INTERVAL` | No | `1s` | The pause between two tries while `serve` waits for the database |
 | `GOPHENBERG_ADDR` | No | `localhost:8081` | Address the server listens on. The container image sets `0.0.0.0:8081` |
 | `GOPHENBERG_WEB_DIR` | No | | A built admin folder to serve in place of the admin built into the binary. It must hold `index.html` |
 | `GOPHENBERG_SITE_TITLE` | No | `Gophenberg` | The site name shown by the built-in renderer |
@@ -89,7 +91,7 @@ so it takes the default.
 | `GOPHENBERG_UPDATE_DISK_MARGIN_MB` | No | `64` | How many megabytes of free disk an update asks for beyond `GOPHENBERG_UPDATE_DOWNLOAD_CAP_MB` and, when it takes a backup, the size of the database, so the site still has room once the update is done. `0` asks for none |
 | `GOPHENBERG_UPDATE_BACKUPS_KEEP` | No | `3` | How many database backups the `backups` folder of the install root keeps |
 | `GOPHENBERG_PG_DUMP_BIN` | No | `pg_dump` | The `pg_dump` an update backs up the database with, a name found on the path or a full path. Its major version must be at least the server's |
-| `GOPHENBERG_UPDATE_ATTEMPTS` | No | `3` | How many times the build an update switched to may try to start. The next start goes back to the build before it, or stays down when the update raised the minimum version |
+| `GOPHENBERG_UPDATE_ATTEMPTS` | No | `3` | How many times the build an update switched to may try to start. The next start goes back to the build before it, or stays down when the update raised the minimum version and its new build reached the database |
 | `GOPHENBERG_UPDATE_VERIFY_TIMEOUT` | No | `1m` | How long the first start of a new build has to check itself: the server listens, then `/admin/` and `/api/locale` answer 200 and `/` answers below 500 over loopback |
 | `GOPHENBERG_UPDATE_VERSIONS_KEEP` | No | `2` | How many of the newest builds the `versions` folder keeps once a new build passes its check. The builds the `current` and `previous` links name always stay |
 | `GOPHENBERG_FEED_TITLE` | No | `Gophenberg` | The RSS channel title |
@@ -130,6 +132,41 @@ it logs a warning and serves. Set `GOPHENBERG_SUPERUSER_POLICY` to
 [Install](/self-hosting/install/) connects as `postgres`, so a site set
 up from it shows the warning. A SQLite file has no roles, so the
 setting does nothing there.
+
+### A database that starts late
+
+A server often starts Gophenberg before PostgreSQL answers, at boot or
+right after an update. `serve` then tries the database again every
+`GOPHENBERG_DATABASE_WAIT_INTERVAL`, 1 second by default, for up to
+`GOPHENBERG_DATABASE_WAIT`, 60 seconds by default, before it checks the
+role it connects as and migrates. It logs
+`waiting for the database to answer` once when it starts to wait, with
+the reason, and `the database answered` once it does, with how long
+that took.
+
+Only a database that is not up yet is worth the wait: a connection
+refused, a socket that is not there yet, or a server that says it is
+still starting up. A wrong password, a missing role or a missing
+database stops `serve` at once with its own message, since waiting
+cannot fix them. Each try gets only the time the wait has left, so a
+server that takes the connection and never answers holds `serve` no
+longer than the wait. A database that still does not answer once the
+wait runs out stops `serve` with code 1, and the message ends with the
+last reason:
+
+```text
+gophenberg: the database did not answer within 1m0s, the time GOPHENBERG_DATABASE_WAIT allows: failed to connect to `user=gophenberg database=gophenberg`: ...
+```
+
+`GOPHENBERG_DATABASE_WAIT=0` stops at the first try instead, and that
+one try has no time bound of its own. Only
+`serve` waits. `migrate`, `seed -yes` and the `account:` commands stop
+at once, so a person running them sees the reason straight away.
+
+Right after an update, a start that waits still counts as one attempt
+of the new build, so a database down for longer than about three waits
+takes the update back, see
+[a database that starts late after an update](/self-hosting/updates-and-backups/#a-database-that-starts-late-after-an-update).
 
 ## The database connections
 
@@ -544,8 +581,10 @@ The server refuses to start, and says why, when:
   Write them as durations, `1h`, `90s`, `5m`. Part of a second is
   refused, because the header counts in whole seconds.
 - Any of the theme timings, HTTP timeouts, shutdown graces, cron job
-  timings, update timings or the upload timeout is not a positive
-  duration. Write them the way Go does, `30s`, `500ms`, `1m`.
+  timings, update timings, the upload timeout or
+  `GOPHENBERG_DATABASE_WAIT_INTERVAL` is not a positive duration.
+  Write them the way Go does, `30s`, `500ms`, `1m`.
+- `GOPHENBERG_DATABASE_WAIT` is not a duration of `0` or more.
 - `GOPHENBERG_UPDATE_URL` is not an `https` address, or an `http` one
   on a loopback host, or it names a user, a query or a fragment.
 - `GOPHENBERG_UPDATE_CHANNEL` holds anything but lowercase letters,

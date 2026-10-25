@@ -211,6 +211,56 @@ func TestStartWaitsForTheStateLockAndChecksWhatTheStateThenNames(t *testing.T) {
 	f.wantState(takenBack)
 }
 
+// databaseMarks return, for each command that marks the database reached, the mark it writes on the install root of f.
+var databaseMarks = map[string]func(f *guardFixture) func() error{
+	"a start the guard checks": func(f *guardFixture) func() error {
+		return f.started().ReachedDatabase
+	},
+	"a command that migrates": func(f *guardFixture) func() error {
+		settings := settingsOf(f.t, f.env)
+		return func() error { return updater.MarkDatabaseReached(settings, offered) }
+	},
+}
+
+func TestTheDatabaseMarkWaitsForTheStateLockAndMarksWhatTheStateThenNames(t *testing.T) {
+	t.Parallel()
+
+	for name, mark := range databaseMarks {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			counted := switchedTo
+			counted.Attempts = 2
+			f := newGuardFixture(t, switchedTo)
+			marks := mark(f)
+			var err error
+
+			waitsForTheLock(t, f.layout, counted, func() { err = marks() })
+
+			if err != nil {
+				t.Fatalf("the mark = %v, want nil", err)
+			}
+			marked := counted
+			marked.DatabaseReached = true
+			f.wantState(marked)
+		})
+	}
+}
+
+func TestReachedDatabaseRefusesAnUpdateTakenBackWhileItsStartWaitedForTheDatabase(t *testing.T) {
+	t.Parallel()
+
+	f := newGuardFixture(t, switchedTo)
+	guard := f.started()
+	var err error
+
+	waitsForTheLock(t, f.layout, takenBack, func() { err = guard.ReachedDatabase() })
+
+	wantRefused(t, err, "updater: another command took back the update to Gophenberg 0.21.0 while this start "+
+		"waited for the database, so it stops before it migrates")
+	f.wantState(takenBack)
+}
+
 func TestRollbackWaitsForTheStateLockAndTakesBackWhatTheStateThenNames(t *testing.T) {
 	t.Parallel()
 

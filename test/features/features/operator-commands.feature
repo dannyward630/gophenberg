@@ -35,6 +35,12 @@ Feature: Operators run Gophenberg from one command line
     Then the command succeeds
     And the answer names the version, the build stamp, the minimum version and the theme kits of this binary
 
+  Scenario: About names the lowest Node.js major
+    Given the settings name no database
+    When the operator runs "about -json"
+    Then the command succeeds
+    And the answer names Node.js 24 as the lowest major a theme runs on
+
   Scenario: Migrating stores the minimum version of this binary
     When the operator runs "migrate"
     Then the command succeeds

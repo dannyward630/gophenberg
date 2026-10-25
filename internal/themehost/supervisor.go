@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// OldestNodeMajor is the oldest Node.js major version this release runs a theme server on.
+const OldestNodeMajor = 24
+
 // healthPath is where a theme server reports that it is ready to serve.
 const healthPath = "/_gophenberg/health"
 

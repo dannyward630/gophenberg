@@ -48,6 +48,29 @@ func TestRecordReadsAnyNameOnThePattern(t *testing.T) {
 	}
 }
 
+func TestRecordTakesPlainHTTPOnALoopbackHost(t *testing.T) {
+	t.Parallel()
+
+	archives := signedArchives(t, "gophenberg_0.20.0_linux_amd64.tar.gz")
+	for name, base := range map[string]string{
+		"an IPv4 loopback": "http://127.0.0.1:8090/releases",
+		"localhost":        "http://localhost:8090",
+		"an IPv6 loopback": "http://[::1]:8090/v0.20.0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got := runTool("record", "-version", "0.20.0", "-download-url", base, archives[0])
+
+			listed := readRecord(t, got).Artifacts.Package
+			want := base + "/gophenberg_0.20.0_linux_amd64.tar.gz"
+			if len(listed) != 1 || listed[0].URL != want {
+				t.Errorf("record under %s lists %+v, want the archive at %s", base, listed, want)
+			}
+		})
+	}
+}
+
 func TestRecordRefusesAnArchiveWithoutASignature(t *testing.T) {
 	t.Parallel()
 
@@ -115,6 +138,12 @@ func TestRecordExitsTwoWhenMisused(t *testing.T) {
 		{"no archive", []string{"-version", "0.20.0", "-download-url", downloadBase}, "archive"},
 		{"an address that is not https", []string{"-version", "0.20.0", "-download-url",
 			"http://github.com/gopherium/gophenberg/releases/download/v0.20.0", archives[0]}, "https"},
+		{"plain http off loopback", []string{"-version", "0.20.0", "-download-url", "http://example.com/releases",
+			archives[0]}, "http on a loopback host"},
+		{"an address with a query", []string{"-version", "0.20.0", "-download-url",
+			"https://example.com/releases?tag=v0.20.0", archives[0]}, "query"},
+		{"an address that names a user", []string{"-version", "0.20.0", "-download-url",
+			"https://maria@example.com/releases", archives[0]}, "user"},
 		{"an address with no host", []string{"-version", "0.20.0", "-download-url", "https:///releases",
 			archives[0]}, "https"},
 		{"an address that does not parse", []string{"-version", "0.20.0", "-download-url", "https://example.com/%zz",

@@ -43,14 +43,15 @@ const (
 
 // State is what the state file holds: the last update, the versions that failed their start check, the last failure.
 type State struct {
-	Step     Step        `json:"step"`
-	From     string      `json:"from"`
-	To       string      `json:"to"`
-	Attempts int         `json:"attempts"`
-	LongJump bool        `json:"long_jump"`
-	Backup   string      `json:"backup"`
-	Refused  []string    `json:"refused"`
-	Failure  *JobFailure `json:"failure,omitempty"`
+	Step            Step        `json:"step"`
+	From            string      `json:"from"`
+	To              string      `json:"to"`
+	Attempts        int         `json:"attempts"`
+	DatabaseReached bool        `json:"database_reached"`
+	LongJump        bool        `json:"long_jump"`
+	Backup          string      `json:"backup"`
+	Refused         []string    `json:"refused"`
+	Failure         *JobFailure `json:"failure,omitempty"`
 }
 
 // JobFailure is how a job failed after it wrote a step: when, from and to which versions, at which step and why.

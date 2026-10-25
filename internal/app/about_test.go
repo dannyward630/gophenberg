@@ -32,11 +32,22 @@ func TestAboutPrintsTheBuildFactsAsOneDocument(t *testing.T) {
 	}
 	want := buildFacts{
 		Schema: 1, Name: "gophenberg", Version: version.Version(), MinimumVersion: version.Minimum(),
-		PostgreSQL: postgres.OldestMajor, Kits: themehost.ServedKits(),
+		PostgreSQL: postgres.OldestMajor, Node: themehost.OldestNodeMajor, Kits: themehost.ServedKits(),
 	}
-	if len(fields) != 8 || !facts.equal(want) {
-		t.Errorf("about -json = %s, want exactly schema, name, version, commit, stamp, minimum_version, postgresql "+
-			"and kits as %+v", got.Stdout, want)
+	if len(fields) != 9 || !facts.equal(want) {
+		t.Errorf("about -json = %s, want exactly schema, name, version, commit, stamp, minimum_version, postgresql, "+
+			"node and kits as %+v", got.Stdout, want)
+	}
+}
+
+func TestAboutNamesNodeJS24AsTheLowestMajorAThemeRunsOn(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, Program(testkit.Getenv(map[string]string{}), noPlugins), "", "about", "-json")
+
+	var facts buildFacts
+	if err := json.Unmarshal([]byte(got.Stdout), &facts); err != nil || facts.Node != 24 {
+		t.Errorf("about -json = %s (%v), want node 24", got.Stdout, err)
 	}
 }
 

@@ -280,8 +280,8 @@ gophenberg about [flags]
 Prints what this binary is in one line, such as
 `Gophenberg %VERSION%, official build, commit 4c3ba60, theme kits 0.9.0 to %KIT_VERSION%`.
 With `-json` it answers one JSON document holding `schema`, `name`,
-`version`, `commit`, `stamp`, `minimum_version`, `postgresql` and
-`kits`. It needs no database.
+`version`, `commit`, `stamp`, `minimum_version`, `postgresql`, `node`
+and `kits`. It needs no database.
 
 - A binary from a release archive or the release image says
   `official build`, and names the commit it was built from.
@@ -292,6 +292,10 @@ With `-json` it answers one JSON document holding `schema`, `name`,
   database this binary migrated, see
   [going back to an older version](/self-hosting/updates-and-backups/#going-back-to-an-older-version).
 - `postgresql` is the oldest PostgreSQL major this binary runs on.
+- `node` is the oldest Node.js major this binary runs a theme on. The
+  release image ships this major. Outside the image, point
+  [`GOPHENBERG_NODE_BIN`](/self-hosting/configuration/) at a Node.js of
+  this major or newer.
 
 ### check
 
@@ -386,6 +390,10 @@ with `serve`, since a run with no command only prints the listing.
 
 On a SQLite database `serve` exits with code 1 before it opens
 anything, see [on a SQLite database](#on-a-sqlite-database).
+
+When the PostgreSQL server is not up yet, `serve` first waits for it,
+up to `GOPHENBERG_DATABASE_WAIT`, see
+[a database that starts late](/self-hosting/configuration/#a-database-that-starts-late).
 
 Once an update an administrator started from the admin switched
 builds, `serve` stops as it does on `SIGTERM` and exits with code 75,
@@ -556,7 +564,11 @@ gophenberg: restart Gophenberg to start 1.4.1
   the minimum version, `update:apply` takes the backup anyway, since
   only the backup can take the site back then.
 - `-json` answers the state the update ends at, holding `step`,
-  `from`, `to`, `attempts`, `long_jump`, `backup` and `refused`.
+  `from`, `to`, `attempts`, `database_reached`, `long_jump`, `backup`
+  and `refused`. `database_reached` turns `true` once a start of the
+  new build reached the database, just before it migrates, or once any
+  other command of the new build migrates it, such as `migrate` run by
+  hand.
 
 Before it changes anything it refuses, with exit code 1 and what to
 do: a custom build, an install with no install root such as the
@@ -584,10 +596,10 @@ the update again, adds the version it left to the refused versions,
 so `update:apply` never takes it again on its own, and ends asking for
 a restart with exit code 75. It refuses when no update switched builds
 since the last rollback, and when the update raised the minimum
-version and its new build already started, since the older build
-cannot open the database the newer one may have migrated. Then it
-prints the steps that restore the backup taken before the update
-instead. It never opens the database, so it works when the database is
+version and its new build already reached the database, since the
+older build cannot open the database the newer one may have migrated.
+Then it prints the steps that restore the backup taken before the
+update instead. It never opens the database, so it works when the database is
 what broke.
 
 `-after-failure` is the form the rollback unit of the service manager
@@ -598,10 +610,12 @@ systemd says the starts hit the start limit, `start-limit-hit`, or the
 new build exited with code 76. It then exits with code 0, so the unit
 starts the service again. Otherwise it changes nothing and exits with
 code 1. It takes back each update once, so two failing builds never
-take turns. An update that raised the minimum version and already
-started stays down: it writes that the update failed, so
-`update:status` shows the steps that restore the backup, prints them
-and exits with code 1.
+take turns. An update that raised the minimum version and whose new
+build already reached the database stays down: it writes that the
+update failed, so `update:status` shows the steps that restore the
+backup, prints them and exits with code 1. One whose new build never
+reached the database, such as one that started while PostgreSQL was
+still down, goes back like any other update.
 
 `-json` answers the state the rollback ends at, as `update:apply`
 does.
