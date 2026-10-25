@@ -12,7 +12,9 @@ Feature: Operators and administrators update the core and see where it stands
   its new build never reached the database. Once the new build reached
   the database it may have migrated it, and the older build refuses a
   database a newer one migrated, so the site stays down and shows how to
-  restore the backup. An install with no install root, like the Docker
+  restore the backup. Any command of the new build that migrates, such as
+  a migrate run by hand, counts as reaching the database, the same as a
+  start. An install with no install root, like the Docker
   image, and a custom build keep the manual steps.
   A step that fails leaves which update failed, when, at which step and
   why. An administrator asks the site for the same: the version that
@@ -140,6 +142,17 @@ Feature: Operators and administrators update the core and see where it stands
     And the error names the backup taken before the switch
     And the error says "restore the backup taken before the update"
     And the update status names the backup taken before the switch
+
+  Scenario: A migrate run by hand on the new build keeps a long jump from going back
+    Given an install root where an update switched from "0.18.0" to this version
+    And the update raised the minimum version, with a backup taken before the switch
+    And the operator ran "migrate"
+    When the operator runs "update:rollback"
+    Then the command exits with code 1
+    And the current build is still this version
+    And the error says "update:rollback cannot go back to it"
+    And the error names the backup taken before the switch
+    And the error says "restore the backup taken before the update"
 
   Scenario Outline: The service manager takes the site back after <failure>
     Given an install root where an update switched from this version to "99.0.0"
