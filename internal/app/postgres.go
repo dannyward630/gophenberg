@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"maps"
@@ -16,6 +17,8 @@ import (
 	"github.com/gopherium/framework/gonsole"
 
 	"github.com/gopherium/gophenberg/internal/dbconns"
+	"github.com/gopherium/gophenberg/internal/updater"
+	"github.com/gopherium/gophenberg/internal/version"
 )
 
 // poolSettingPrefix starts every pool setting pgx reads.
@@ -48,18 +51,30 @@ func poolSettings(address string) []string {
 	return slices.DeleteFunc(keys, func(key string) bool { return !strings.HasPrefix(key, poolSettingPrefix) })
 }
 
-// checkedFirst returns step, run at an address once openPostgres takes it and the database lets this binary on.
+// checkedFirst returns step, run at an address once openPostgres takes it and admitted lets this binary on it.
 func checkedFirst(env gonsole.Env, step gonsole.Step) gonsole.Step {
 	return gonsole.Step{Name: step.Name, Run: func(ctx context.Context, address string) error {
+		install, err := updater.SettingsFrom(env)
+		if err != nil {
+			return err
+		}
 		handle, err := openPostgres(env, address)
 		if err != nil {
 			return err
 		}
-		if err := guardPostgres(ctx, handle.DB); err != nil {
+		if err := admitted(ctx, handle.DB, install); err != nil {
 			return errors.Join(err, handle.Close())
 		}
 		return errors.Join(handle.Close(), step.Run(ctx, address))
 	}}
+}
+
+// admitted refuses a db that does not let this binary on, then marks it reached for an update that switched to it.
+func admitted(ctx context.Context, db *sql.DB, install updater.Settings) error {
+	if err := guardPostgres(ctx, db); err != nil {
+		return err
+	}
+	return updater.MarkDatabaseReached(install, version.Version())
 }
 
 // postgresCore returns the core schema step that opens a capped handle at the address, migrates on it, then closes it.

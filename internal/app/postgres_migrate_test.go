@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gopherium/framework/dbkit"
@@ -14,6 +16,8 @@ import (
 	authkitpg "github.com/gopherium/gouncer/authkit/postgres"
 
 	"github.com/gopherium/gophenberg/internal/testdb"
+	"github.com/gopherium/gophenberg/internal/updater"
+	"github.com/gopherium/gophenberg/internal/version"
 )
 
 // coreBuilt reports whether the core schema stands in db.
@@ -94,6 +98,59 @@ func TestMigrateNamesADatabaseAddressDbkitRefusesOnPostgreSQL(t *testing.T) {
 		return map[string]string{"GOPHENBERG_DATABASE_URL": keyTwice(t, address)}
 	}, "gophenberg: migrate accounts: GOPHENBERG_DATABASE_URL: "+dbkit.ErrAddress.Error()+
 		": the query sets a key twice, set each key once, with dbname and database as one key\n")
+}
+
+func TestMigrateNamesAnInstallRootItRefusesOnPostgreSQL(t *testing.T) {
+	t.Parallel()
+
+	stopsBeforeAnySchema(t, func(_ *testing.T, address string) map[string]string {
+		return map[string]string{"GOPHENBERG_DATABASE_URL": address, installRootSetting: "opt/gophenberg"}
+	}, "gophenberg: migrate accounts: GOPHENBERG_INSTALL_ROOT: must be an absolute path, got \"opt/gophenberg\"\n")
+}
+
+func TestMigrateStopsBeforeAnySchemaOnAnUpdateStateItCannotRead(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	state := updater.Layout{Root: root}.StateFile()
+	if err := os.MkdirAll(filepath.Dir(state), 0o755); err != nil {
+		t.Fatalf("making the state folder: %v", err)
+	}
+	if err := os.WriteFile(state, []byte("step: switched"), 0o644); err != nil {
+		t.Fatalf("writing the state file: %v", err)
+	}
+
+	stopsBeforeAnySchema(t, func(_ *testing.T, address string) map[string]string {
+		return map[string]string{"GOPHENBERG_DATABASE_URL": address, installRootSetting: root}
+	}, "gophenberg: migrate accounts: updater: read the update state "+state+
+		": invalid character 's' looking for beginning of value\n")
+}
+
+func TestEachCommandThatMigratesMarksTheDatabaseReachedForTheUpdateThatSwitchedToThisBuild(t *testing.T) {
+	t.Parallel()
+
+	for name, args := range migratingCommands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			if err := switchedInstall(root, "0.18.0", version.Version()); err != nil {
+				t.Fatalf("making the install root: %v", err)
+			}
+			settings := map[string]string{"GOPHENBERG_DATABASE_URL": emptyDatabaseURL(t), installRootSetting: root}
+
+			got := testkit.Run(t, Program(testkit.Getenv(settings), noPlugins), typedPassword+"\n", args...)
+
+			state, err := updater.Layout{Root: root}.ReadState()
+			if got.Code != 0 || err != nil {
+				t.Fatalf("%s = %d with stderr %q, and reading the update state gave %v, want 0 and a readable state",
+					name, got.Code, got.Stderr, err)
+			}
+			if !state.DatabaseReached {
+				t.Errorf("%s left the update state %+v, want the database marked reached", name, state)
+			}
+		})
+	}
 }
 
 func TestTheCoreStepOpensUnderTheConnectionCapSetting(t *testing.T) {
