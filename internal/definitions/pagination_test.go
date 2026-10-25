@@ -14,8 +14,14 @@ import (
 func TestImportRefusesANewRootTypeWhoseLabelGivesAReservedWord(t *testing.T) {
 	t.Parallel()
 
-	for _, label := range []string{"Page", "Media"} {
-		t.Run(label, func(t *testing.T) {
+	for _, test := range []struct {
+		label string
+		word  string
+	}{
+		{label: "Page", word: "page"},
+		{label: "Media", word: "media"},
+	} {
+		t.Run(test.label, func(t *testing.T) {
 			t.Parallel()
 			registry := planningSite(t)
 			envelope := exported(t, registry)
@@ -25,7 +31,7 @@ func TestImportRefusesANewRootTypeWhoseLabelGivesAReservedWord(t *testing.T) {
 				}
 			}
 			envelope.Types = append(envelope.Types, definitions.TypeDefinition{
-				Key: "chapter", SingularLabel: "Chapter", PluralLabel: label,
+				Key: "chapter", SingularLabel: "Chapter", PluralLabel: test.label,
 				PageKind: "single", Default: true, Active: true,
 			})
 			envelope.Groups = envelope.Groups[:0]
@@ -43,10 +49,24 @@ func TestImportRefusesANewRootTypeWhoseLabelGivesAReservedWord(t *testing.T) {
 			if !errors.Is(applyErr, content.ErrRouteWordReserved) {
 				t.Errorf("Apply() error = %v, want %v", applyErr, content.ErrRouteWordReserved)
 			}
+			for call, err := range map[string]error{"Compare": compareErr, "Apply": applyErr} {
+				namesTheDerivedWord(t, call, err, test.label, test.word)
+			}
 			if _, found := storedGroup(t, registry, "recipe-details"); !found {
 				t.Errorf("the recipe group is gone, want the refused import to have taken nothing")
 			}
 		})
+	}
+}
+
+// namesTheDerivedWord fails the case unless the error names the chapter type, its plural label and the word it gives.
+func namesTheDerivedWord(t *testing.T, call string, err error, label, word string) {
+	t.Helper()
+	if code, _ := content.CodeOf(err); code != "derived_route_word_reserved" {
+		t.Errorf("%s() code = %q, want derived_route_word_reserved", call, code)
+	}
+	if held, _ := content.DetailsOf(err); held["type"] != "chapter" || held["name"] != label || held["word"] != word {
+		t.Errorf("%s() details = %v, want the type chapter named %q and the word %q", call, held, label, word)
 	}
 }
 
