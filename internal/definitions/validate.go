@@ -75,8 +75,7 @@ func importedAs(d TypeDefinition, found bool) content.Type {
 	return beside(wanted, content.Type{}, ActionCreate)
 }
 
-// importFailure returns the reason the declared type was refused, naming the type and its word when the import
-// derived a word the CMS keeps.
+// importFailure returns the error the import carries, naming the type and the derived word when the CMS keeps it.
 func importFailure(d TypeDefinition, found bool, err error) error {
 	if !errors.Is(err, content.ErrRouteWordReserved) {
 		return err
