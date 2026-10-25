@@ -13,6 +13,7 @@ import {
 	page,
 	post,
 	settings,
+	update,
 	video,
 } from '@wordpress/icons'
 import { Tooltip as UiTooltip } from '@wordpress/ui'
@@ -32,6 +33,7 @@ import {
 	postIcon,
 	settingsIcon,
 	Tooltip,
+	updateIcon,
 	videoIcon,
 } from '../index'
 
@@ -45,6 +47,7 @@ test('hands the sidebar rows the glyphs WordPress draws them with', () => {
 	expect(languageIcon).toBe(language)
 	expect(customPostTypeIcon).toBe(customPostType)
 	expect(listIcon).toBe(list)
+	expect(updateIcon).toBe(update)
 })
 
 test('hands a media card the glyph WordPress draws for each kind of file', () => {
