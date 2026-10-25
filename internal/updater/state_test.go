@@ -14,10 +14,10 @@ import (
 	"github.com/gopherium/gophenberg/internal/updater"
 )
 
-// switchedState is the state of an update that switched from 0.20.0 to 0.21.0 and started twice.
+// switchedState is the state of an update that switched from 0.20.0 to 0.21.0, started twice and reached the database.
 var switchedState = updater.State{
 	Step: updater.StepSwitched, From: "0.20.0", To: "0.21.0", Attempts: 2, LongJump: true,
-	Backup: "backups/0.20.0-20261020T120000Z.dump", Refused: []string{"0.20.5"},
+	Backup: "backups/0.20.0-20261020T120000Z.dump", Refused: []string{"0.20.5"}, DatabaseReached: true,
 }
 
 // writeState writes state into the install root of layout, failing t when it cannot.
@@ -65,7 +65,7 @@ func TestWriteStateKeepsEveryFieldUnderItsFrozenName(t *testing.T) {
 	}
 	want := map[string]any{
 		"step": "switched", "from": "0.20.0", "to": "0.21.0", "attempts": 2.0, "long_jump": true,
-		"backup": "backups/0.20.0-20261020T120000Z.dump", "refused": []any{"0.20.5"},
+		"backup": "backups/0.20.0-20261020T120000Z.dump", "refused": []any{"0.20.5"}, "database_reached": true,
 	}
 	if !reflect.DeepEqual(fields, want) {
 		t.Errorf("the state file holds %v, want %v", fields, want)
@@ -99,8 +99,8 @@ func TestWriteStateKeepsTheFailureOfAJobBesideTheFrozenFields(t *testing.T) {
 		"at": "2026-10-22T09:12:00Z", "from": "0.21.0", "to": "0.22.0", "step": "stage",
 		"error": "updater: refused the archive",
 	}
-	if !reflect.DeepEqual(fields["failure"], want) || len(fields) != 8 {
-		t.Errorf("the state file holds %v, want the seven frozen fields and the failure %v", fields, want)
+	if !reflect.DeepEqual(fields["failure"], want) || len(fields) != 9 {
+		t.Errorf("the state file holds %v, want the eight frozen fields and the failure %v", fields, want)
 	}
 	if read := readState(t, layout); !reflect.DeepEqual(read, failed) {
 		t.Errorf("ReadState() = %+v, want the state written %+v", read, failed)

@@ -211,6 +211,39 @@ func TestStartWaitsForTheStateLockAndChecksWhatTheStateThenNames(t *testing.T) {
 	f.wantState(takenBack)
 }
 
+func TestReachedDatabaseWaitsForTheStateLockAndMarksWhatTheStateThenNames(t *testing.T) {
+	t.Parallel()
+
+	counted := switchedTo
+	counted.Attempts = 2
+	f := newGuardFixture(t, switchedTo)
+	guard := f.started()
+	var err error
+
+	waitsForTheLock(t, f.layout, counted, func() { err = guard.ReachedDatabase() })
+
+	if err != nil {
+		t.Fatalf("ReachedDatabase() = %v, want nil", err)
+	}
+	marked := counted
+	marked.DatabaseReached = true
+	f.wantState(marked)
+}
+
+func TestReachedDatabaseRefusesAnUpdateTakenBackWhileItsStartWaitedForTheDatabase(t *testing.T) {
+	t.Parallel()
+
+	f := newGuardFixture(t, switchedTo)
+	guard := f.started()
+	var err error
+
+	waitsForTheLock(t, f.layout, takenBack, func() { err = guard.ReachedDatabase() })
+
+	wantRefused(t, err, "updater: another command took back the update to Gophenberg 0.21.0 while this start "+
+		"waited for the database, so it stops before it migrates")
+	f.wantState(takenBack)
+}
+
 func TestRollbackWaitsForTheStateLockAndTakesBackWhatTheStateThenNames(t *testing.T) {
 	t.Parallel()
 

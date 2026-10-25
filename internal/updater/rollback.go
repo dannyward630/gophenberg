@@ -57,9 +57,9 @@ func RollbackAfterFailure(settings Settings, failure Failure) (State, error) {
 	})
 }
 
-// mayHaveMigrated reports whether the build an update switched to raised the minimum version and has started once.
+// mayHaveMigrated reports whether the build an update switched to raised the minimum version and reached the database.
 func mayHaveMigrated(state State) bool {
-	return state.LongJump && state.Attempts > 0
+	return state.LongJump && state.DatabaseReached
 }
 
 // lastUpdate runs undo on the install root and its last update under the state lock, refusing an empty install root.

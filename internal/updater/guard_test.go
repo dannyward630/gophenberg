@@ -336,11 +336,11 @@ func TestStartTakesTheAttemptsTheSettingNames(t *testing.T) {
 	f.wantCurrent(offered)
 }
 
-func TestStartKeepsTheSiteDownWhenAnUpdateThatRaisedTheMinimumVersionFails(t *testing.T) {
+func TestStartKeepsTheSiteDownWhenALongJumpFailsAfterItsBuildReachedTheDatabase(t *testing.T) {
 	t.Parallel()
 
 	tried := switchedTo
-	tried.Attempts, tried.LongJump, tried.Backup = 3, true, longJumpBackup
+	tried.Attempts, tried.LongJump, tried.Backup, tried.DatabaseReached = 3, true, longJumpBackup, true
 	f := newGuardFixture(t, tried)
 
 	_, err := f.start()
@@ -422,6 +422,7 @@ func TestStartStillFailsTheCheckWhenItCannotGoBack(t *testing.T) {
 
 			tried := switchedTo
 			tried.Attempts, tried.LongJump, tried.Backup = 3, deny.longJump, longJumpBackup
+			tried.DatabaseReached = deny.longJump
 			f := newGuardFixture(t, tried)
 			denied(t, filepath.Join(f.layout.Root, deny.folder), 0o500)
 

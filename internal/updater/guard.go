@@ -114,6 +114,24 @@ func (g *Guard) count() error {
 	return g.layout.WriteState(g.state)
 }
 
+// ReachedDatabase writes under the state lock that the build of a start the guard checks reached the database.
+func (g *Guard) ReachedDatabase() error {
+	if g.settles == "" {
+		return nil
+	}
+	state, unlock, err := g.layout.lockedState()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if !g.pending(state) {
+		return fmt.Errorf("updater: another command took back the update to Gophenberg %s while this start waited "+
+			"for the database, so it stops before it migrates", g.state.To)
+	}
+	state.DatabaseReached = true
+	return g.layout.WriteState(state)
+}
+
 // Serve runs serve with the start check once srv listens, ending it when a switched build fails it, or alone with none.
 func (g *Guard) Serve(
 	ctx context.Context, srv *http.Server, inside func(context.Context) error, serve func(context.Context) error,
@@ -281,7 +299,7 @@ func (l Layout) builds() []string {
 func (g *Guard) fail(reason error) error {
 	failed := fmt.Errorf("updater: Gophenberg %s failed its start check after the update from %s: %w",
 		g.state.To, g.state.From, reason)
-	if g.state.LongJump {
+	if mayHaveMigrated(g.state) {
 		return CheckError{err: errors.Join(failed, g.layout.stayDown(g.state))}
 	}
 	return CheckError{err: errors.Join(failed, g.goBack(g.state))}

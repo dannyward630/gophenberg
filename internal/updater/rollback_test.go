@@ -23,10 +23,11 @@ var takenBack = updater.State{
 	Step: updater.StepRolledBack, From: running, To: offered, Attempts: 1, Refused: []string{"0.19.5", offered},
 }
 
-// longJumped returns the state of an update from 0.20.0 to 0.21.0 that raised the minimum version and started, at step.
+// longJumped returns the state at step of a long jump from 0.20.0 to 0.21.0 whose build reached the database.
 func longJumped(step updater.Step) updater.State {
 	state := switchedTo
 	state.Step, state.LongJump, state.Backup, state.Attempts = step, true, longJumpBackup, 1
+	state.DatabaseReached = true
 	return state
 }
 
@@ -144,7 +145,7 @@ func TestRollbackRefusesAnUpdateThatRaisedTheMinimumVersionAndNamesItsBackup(t *
 	}
 }
 
-func TestRollbackTakesBackAnUpdateThatRaisedTheMinimumVersionBeforeItsBuildStarted(t *testing.T) {
+func TestRollbackTakesBackAnUpdateThatRaisedTheMinimumVersionBeforeItsBuildReachedTheDatabase(t *testing.T) {
 	t.Parallel()
 
 	for name, rollback := range map[string]func(updater.Settings) (updater.State, error){
@@ -153,23 +154,25 @@ func TestRollbackTakesBackAnUpdateThatRaisedTheMinimumVersionBeforeItsBuildStart
 			return updater.RollbackAfterFailure(settings, startLimitHit)
 		},
 	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+		for attempts, started := range map[int]string{0: "never started", 3: "started three times"} {
+			t.Run(name+", a build that "+started, func(t *testing.T) {
+				t.Parallel()
 
-			unstarted := longJumped(updater.StepSwitched)
-			unstarted.Attempts = 0
-			f := newGuardFixture(t, unstarted)
+				unreached := longJumped(updater.StepSwitched)
+				unreached.Attempts, unreached.DatabaseReached = attempts, false
+				f := newGuardFixture(t, unreached)
 
-			state, err := rollback(settingsOf(t, f.env))
+				state, err := rollback(settingsOf(t, f.env))
 
-			want := unstarted
-			want.Step, want.Refused = updater.StepRolledBack, []string{"0.19.5", offered}
-			if err != nil || !reflect.DeepEqual(state, want) {
-				t.Errorf("the rollback = %+v, %v, want %+v", state, err, want)
-			}
-			f.wantCurrent(running)
-			f.wantState(want)
-		})
+				want := unreached
+				want.Step, want.Refused = updater.StepRolledBack, []string{"0.19.5", offered}
+				if err != nil || !reflect.DeepEqual(state, want) {
+					t.Errorf("the rollback = %+v, %v, want %+v", state, err, want)
+				}
+				f.wantCurrent(running)
+				f.wantState(want)
+			})
+		}
 	}
 }
 
