@@ -3,7 +3,22 @@
 import * as godmin from '@gopherium/godmin'
 import { expect, test } from 'vitest'
 
-import { ConfirmBody, FormBody, RenameBody, RunConfirm, useBulkRun, useListRun, useToaster } from '../index'
+import {
+	ConfirmBody,
+	FormBody,
+	ListEmpty,
+	RenameBody,
+	RunConfirm,
+	focusInDialog,
+	focusedTrigger,
+	markLatest,
+	useBulkRun,
+	useCloseWhileOpen,
+	useFocusBack,
+	useListRun,
+	useToaster,
+	useUnsavedText,
+} from '../index'
 import type {
 	BulkRun,
 	BulkWords,
@@ -16,6 +31,8 @@ import type {
 	RunConfirmProps,
 	RunSettled,
 	ToasterHandle,
+	Trigger,
+	UnsavedText,
 } from '../index'
 
 /** The words a plugin's bulk run reports its outcome in, typed through the SDK. */
@@ -43,6 +60,27 @@ test('hands plugins the toaster the admin reports a failed write in, the very on
 
 	expectGodmins([useToaster], [godmin.useToaster])
 	expect(handle).toBeUndefined()
+})
+
+test('hands plugins the store a failed row write keeps its text in, the very one godmin ships', () => {
+	const kept: UnsavedText = new Map([['7', 'Harbor at dawn']])
+
+	expectGodmins([useUnsavedText, markLatest], [godmin.useUnsavedText, godmin.markLatest])
+	expect(kept.get('7')).toBe('Harbor at dawn')
+})
+
+test('hands plugins the empty state the admin titles an empty list with, the very one godmin ships', () => {
+	expectGodmins([ListEmpty], [godmin.ListEmpty])
+})
+
+test('hands plugins the hooks a dialog closes and gives the focus back with, the very ones godmin ships', () => {
+	const trigger: Trigger = 'actions'
+
+	expectGodmins(
+		[useCloseWhileOpen, useFocusBack, focusedTrigger, focusInDialog],
+		[godmin.useCloseWhileOpen, godmin.useFocusBack, godmin.focusedTrigger, godmin.focusInDialog],
+	)
+	expect(trigger).toBe('actions')
 })
 
 test('hands plugins the types the list kit is written in', () => {
