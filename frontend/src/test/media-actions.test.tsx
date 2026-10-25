@@ -507,7 +507,11 @@ test('draws the line under the Edit header once the fields pane scrolled, gone a
 	}
 })
 
-test('names the Edit fields pane once its fields grow past it, watched as the Modal watches content', async () => {
+/**
+ * Replaces ResizeObserver with one that records what it watches and what it stops, until the test ends.
+ * @returns The callback each watched element reports to, and the callbacks disconnected.
+ */
+function watchResizes() {
 	const watched = new Map<Element, ResizeObserverCallback>()
 	const stopped: ResizeObserverCallback[] = []
 	vi.stubGlobal(
@@ -529,6 +533,28 @@ test('names the Edit fields pane once its fields grow past it, watched as the Mo
 	onTestFinished(() => {
 		vi.unstubAllGlobals()
 	})
+	return { watched, stopped }
+}
+
+test('names the Edit fields pane once a shorter window makes it overflow, its fields the same size', async () => {
+	const { watched } = watchResizes()
+	stubLayout()
+	renderAt('/media')
+	const dialog = await openCardDialog('Harbor at dawn', 'Edit…')
+	const pane = fieldsPane(dialog)
+	await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveFocus())
+	expect(pane).not.toHaveAttribute('aria-label')
+	expect(watched.has(pane)).toBe(true)
+
+	overflowFields()
+	act(() => (watched.get(pane) as ResizeObserverCallback)([], {} as ResizeObserver))
+
+	expect(pane).toHaveAttribute('aria-label', 'Scrollable section')
+	expect(pane).toHaveAttribute('tabindex', '0')
+})
+
+test('names the Edit fields pane once its fields grow past it, watched as the Modal watches content', async () => {
+	const { watched, stopped } = watchResizes()
 	stubLayout()
 	renderAt('/media')
 	const dialog = await openCardDialog('Harbor at dawn', 'Edit…')

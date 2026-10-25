@@ -23,8 +23,9 @@ function paneClass(scrollable: boolean, scrolled: boolean): string {
 
 /**
  * Renders the pane the fields of Edit scroll in, as the components Modal treats its own content: named Scrollable
- * section while the fields overflow it, checked each time they resize, and marked once it scrolled. It turns a tab stop
- * only once the focus the Modal puts on its first field landed inside, so the Modal never picks the pane for that.
+ * section while the fields overflow it, checked each time they or the pane resize, and marked once it scrolled. It
+ * turns a tab stop only once the focus the Modal puts on its first field landed inside, so the Modal never picks the
+ * pane for that.
  * @param props - The fields.
  * @returns The pane.
  */
@@ -39,6 +40,7 @@ export function FieldsPane({ children }: { children: ReactNode }) {
 		const measure = () => setScrollable(scroller.scrollHeight > scroller.clientHeight)
 		const watcher = new ResizeObserver(measure)
 		watcher.observe(content.current as HTMLDivElement)
+		watcher.observe(scroller)
 		measure()
 		return () => watcher.disconnect()
 	}, [])
