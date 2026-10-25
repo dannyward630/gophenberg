@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { backupIcon, sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
-import type { Action } from '@gophenberg/frontend-sdk/dataviews'
+import type { Action, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
 import { RunConfirm, useBulkRun, useToaster } from '@gopherium/godmin'
 import type { BulkRun, ListRun } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
@@ -9,6 +9,7 @@ import { __, _x } from '@wordpress/i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
+import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
 import type { NameCut } from '../lists/itemWords'
 import { useUnsavedText } from '../lists/unsavedText'
@@ -46,6 +47,54 @@ function useRunOver(list: ListRun): BulkRun<Post> {
 	return useBulkRun(list, refreshPosts)
 }
 
+/** What a confirm of the posts list takes beside the props DataViews hands a modal. */
+interface PostConfirmProps extends RenderModalProps<Post> {
+	/** Runs one call over the picked posts. */
+	run: BulkRun<Post>
+	/** Cuts a title to the length a toast shows. */
+	name: NameCut
+}
+
+/**
+ * Renders the confirm moving the picked posts to the trash, closing only itself once the run ends.
+ * @param props - The posts, the handler closing the modal, the run and the name cut.
+ * @returns The confirm.
+ */
+function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
+	const close = useCloseWhileOpen(closeModal)
+	return (
+		<RunConfirm
+			items={items}
+			closeModal={close}
+			confirmLabel={__('Move to trash', 'gophenberg')}
+			cancelLabel={__('Cancel', 'gophenberg')}
+			run={(picked) => run(picked, (post) => trashPost(post.id), trashWords(name))}
+		>
+			{trashQuestion(items, name)}
+		</RunConfirm>
+	)
+}
+
+/**
+ * Renders the confirm deleting the picked posts for good, closing only itself once the run ends.
+ * @param props - The posts, the handler closing the modal, the run and the name cut.
+ * @returns The confirm.
+ */
+function DeleteConfirm({ items, closeModal, run, name }: PostConfirmProps) {
+	const close = useCloseWhileOpen(closeModal)
+	return (
+		<RunConfirm
+			items={items}
+			closeModal={close}
+			confirmLabel={__('Delete permanently', 'gophenberg')}
+			cancelLabel={__('Cancel', 'gophenberg')}
+			run={(picked) => run(picked, (post) => deletePost(post.id), deleteWords(name, postName))}
+		>
+			{deleteQuestion(items, name, postName)}
+		</RunConfirm>
+	)
+}
+
 /**
  * Returns the actions offered on the rows of a trash view.
  * @param mine - Whether the session may change a post.
@@ -60,7 +109,6 @@ function trashViewActions(
 	name: NameCut,
 	type: string,
 ): Action<Post>[] {
-	const confirmLabel = __('Permanently delete', 'gophenberg')
 	return [
 		{
 			id: 'restore',
@@ -79,16 +127,7 @@ function trashViewActions(
 			isEligible: mine,
 			hideModalHeader: true,
 			modalFocusOnMount: 'firstContentElement',
-			RenderModal: (props) => (
-				<RunConfirm
-					{...props}
-					confirmLabel={confirmLabel}
-					cancelLabel={__('Cancel', 'gophenberg')}
-					run={(items) => run(items, (post) => deletePost(post.id), deleteWords(name, postName))}
-				>
-					{deleteQuestion(props.items, name, postName)}
-				</RunConfirm>
-			),
+			RenderModal: (props) => <DeleteConfirm {...props} run={run} name={name} />,
 		},
 	]
 }
@@ -119,7 +158,6 @@ function listActions(
 	served: boolean,
 	unsaved: UnsavedForms,
 ): Action<Post>[] {
-	const confirmLabel = __('Move to trash', 'gophenberg')
 	const changeable = (post: Post) => post.status !== 'trash' && mine(post)
 	return [
 		viewAction(served),
@@ -147,16 +185,7 @@ function listActions(
 			isEligible: changeable,
 			hideModalHeader: true,
 			modalFocusOnMount: 'firstContentElement',
-			RenderModal: (props) => (
-				<RunConfirm
-					{...props}
-					confirmLabel={confirmLabel}
-					cancelLabel={__('Cancel', 'gophenberg')}
-					run={(items) => run(items, (post) => trashPost(post.id), trashWords(name))}
-				>
-					{trashQuestion(props.items, name)}
-				</RunConfirm>
-			),
+			RenderModal: (props) => <TrashConfirm {...props} run={run} name={name} />,
 		},
 	]
 }

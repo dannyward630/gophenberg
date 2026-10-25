@@ -265,7 +265,7 @@ test('restores one item from the Trash tab and deletes another for good', async 
 	await expect(page.locator('#root').getByText(`"${kept}" has been restored.`)).toBeVisible()
 	await row(gone).getByRole('button', { name: 'Actions' }).click()
 	await page.getByRole('menuitem', { name: 'Permanently delete…', exact: true }).click()
-	await page.getByRole('dialog').getByRole('button', { name: 'Permanently delete', exact: true }).click()
+	await page.getByRole('dialog').getByRole('button', { name: 'Delete permanently', exact: true }).click()
 
 	await expect(page.locator('#root').getByText(`"${gone}" permanently deleted.`)).toBeVisible()
 	await expect(page.getByRole('link', { name: kept, exact: true })).toBeHidden()
