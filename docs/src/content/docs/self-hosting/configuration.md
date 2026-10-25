@@ -358,18 +358,20 @@ change them. They shape every list the same way:
 - **The format.** `GOPHENBERG_FORMAT_LOCALE` sets the locale for
   dates, times and numbers, whatever language a person reads the
   admin in. The tag `es-ES` writes 04/10/2026, 14:05 and 1.234,56.
-  The date column of a content list is the one exception. Like
-  WordPress, it writes the date the way WordPress does in the
-  reader's language, with a short month in English and Spanish and
-  a whole one in French.
+  The date column of a content list and the two dates of the media
+  library are the exceptions. Like WordPress, they write the date the
+  way WordPress does in the reader's language. The content list
+  writes a short month in English and Spanish and a whole one in
+  French. The media library writes the whole date and time, such as
+  `8 de octubre de 2026 17:54` in Spanish.
 
 ## Avatars
 
 An avatar is the small round picture beside a person's name. The
 three avatar settings copy the Avatars part of WordPress's Discussion
 settings. The server reads them when it starts. The author column of
-the admin's content lists follows them, and so does every plugin that
-shows who wrote something.
+the admin's content and media lists follows them, and so does every
+plugin that shows who wrote something.
 
 - **`initials`**, the default, draws the first letter of the name in
   a coloured circle. The site draws it, so nothing is sent to another
