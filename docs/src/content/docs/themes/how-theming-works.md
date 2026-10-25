@@ -7,9 +7,10 @@ Gophenberg has two ways to render your public site.
 
 **The built-in renderer** is part of the binary. It serves
 published posts with plain, readable markup: the front page lists
-posts 20 at a time, each post at `/{type}/{slug}`, older posts at
-`/{type}/page/{n}`. It needs nothing installed and it is what
-every new deployment serves.
+posts 20 at a time, each post at `/{slug}`, older posts at
+`/page/{n}`. A type with a route word answers at `/{routeword}/{slug}`
+and `/{routeword}/page/{n}`. It needs nothing installed and it is
+what every new deployment serves.
 
 It is deliberately not customizable. No template overrides, no
 restyling. When you want the site to look like yours, you install
