@@ -69,6 +69,8 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 		sc.Given(`^example.com points at 198.51.100.7, where another server answers every page with 404$`,
 			s.pointElsewhere)
 		sc.Given(`^example.com resolves to 127.0.1.1, as a line in /etc/hosts makes it$`, s.pointAtHostsLine)
+		sc.Given(`^www.example.com points at 198.51.100.7, a public address a NAT in front of the server forwards to it$`,
+			s.pointThroughNAT)
 		sc.Given(`^PostgreSQL is installed on the server$`, s.installPostgreSQL)
 		sc.Given(`^Caddy is installed on the server$`, s.installCaddy)
 		sc.Given(`^another user can write /opt$`, s.openOpt)
@@ -170,6 +172,11 @@ func (s *installScenario) pointElsewhere() {
 // pointAtHostsLine has every domain resolve to 127.0.1.1, as Go reads a line of /etc/hosts.
 func (s *installScenario) pointAtHostsLine() {
 	s.server.addresses = addresses("::ffff:127.0.1.1")
+}
+
+// pointThroughNAT has every domain point at 198.51.100.7, a public address that none of the server's cards holds.
+func (s *installScenario) pointThroughNAT() {
+	s.server.addresses = addresses("198.51.100.7")
 }
 
 // installPostgreSQL puts PostgreSQL's settings on the server, as its package does.

@@ -66,6 +66,13 @@ Feature: Check a Linux server before installing Gophenberg
     Then the run stops with "something already listens on TCP port 80, which Caddy answers on, so nothing was changed"
     And nothing on the server changed
 
+  Scenario: A site address on a port Caddy will answer on is refused
+    Given the environment sets GOPHENBERG_ADDR to 127.0.0.1:443
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "127.0.0.1:443, the GOPHENBERG_ADDR the site listens on, takes TCP port 443, which Caddy answers on, and GOPHENBERG_ADDR must name another port, in the environment or in its line in /etc/gophenberg/server.env, so nothing was changed"
+    And the checks listened on no port
+    And nothing on the server changed
+
   Scenario: A server that keeps its own web server skips the web server checks
     Given something listens on TCP port 80
     And Caddy is installed on the server
@@ -108,6 +115,15 @@ Feature: Check a Linux server before installing Gophenberg
     Given example.com resolves to 127.0.1.1, as a line in /etc/hosts makes it
     When the operator runs "server:install -dry-run -domain example.com"
     Then the run stops with "example.com resolves to 127.0.1.1, an address that never leaves this server, likely from a line in /etc/hosts, and Let's Encrypt asks for the domain from outside, which needs its public A or AAAA record to point at this server, and -skip-domain-check skips this check once it does, so nothing was changed"
+    And the run notes "the hosting provider's firewall must let TCP 80, TCP 443 and UDP 443 in for HTTPS to work, and this check cannot see it"
+    And the checks fetched no page
+    And nothing on the server changed
+
+  Scenario: A later run for a new domain behind NAT is refused while the Caddy an earlier run installed holds port 80
+    Given an earlier run installed Gophenberg for example.com on the server
+    And www.example.com points at 198.51.100.7, a public address a NAT in front of the server forwards to it
+    When the operator runs "server:install -dry-run -domain www.example.com"
+    Then the run stops with "the Caddy this installer set up holds TCP port 80, so the check that www.example.com points at this server cannot run, and -skip-domain-check skips it once the domain points here, so nothing was changed"
     And the run notes "the hosting provider's firewall must let TCP 80, TCP 443 and UDP 443 in for HTTPS to work, and this check cannot see it"
     And the checks fetched no page
     And nothing on the server changed
@@ -391,37 +407,39 @@ Feature: Check a Linux server before installing Gophenberg
     And the dry run writes "/usr/local/share/gophenberg/maintenance/index.html", owned by root with mode 0644:
       """
       <!DOCTYPE html>
-      <html lang="en" dir="ltr">
+      <html lang="en">
       <head>
-      	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-      	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-      	<meta name='robots' content='noindex, nofollow' />
-      	<title>Maintenance</title>
+      	<meta charset="utf-8">
+      	<meta name="viewport" content="width=device-width, initial-scale=1">
+      	<title>Briefly unavailable</title>
       	<style>
-      		html {
-      			background: #f1f1f1;
-      		}
       		body {
-      			background: #fff;
-      			border: 1px solid #ccd0d4;
-      			color: #444;
-      			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell,
-      				"Helvetica Neue", sans-serif;
-      			margin: 50px auto 2em;
-      			padding: 1em 2em;
-      			max-width: 700px;
-      			-webkit-box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
-      			box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+      			margin: 0;
+      			padding: 48px 16px;
+      			background: #fcfcfc;
+      			color: #1e1e1e;
+      			font-family: system-ui, sans-serif;
       		}
-      		.message {
-      			font-size: 14px;
+      		main {
+      			box-sizing: border-box;
+      			max-width: 700px;
+      			margin: 0 auto;
+      			padding: 24px 32px;
+      			border: 1px solid #dbdbdb;
+      			border-radius: 8px;
+      			background: #fff;
+      		}
+      		p {
+      			margin: 0;
+      			font-size: 16px;
       			line-height: 1.5;
-      			margin: 25px 0 20px;
       		}
       	</style>
       </head>
       <body>
-      	<div class="message">Briefly unavailable for scheduled maintenance. Check back in a minute.</div>
+      	<main>
+      		<p>This site is briefly unavailable. Check back in a minute.</p>
+      	</main>
       </body>
       </html>
       """
