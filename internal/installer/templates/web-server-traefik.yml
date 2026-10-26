@@ -1,0 +1,14 @@
+http:
+  routers:
+    gophenberg:
+      rule: Host(`{{.Domain}}`)
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: gophenberg
+  services:
+    gophenberg:
+      loadBalancer:
+        servers:
+          - url: http://{{.Addr}}

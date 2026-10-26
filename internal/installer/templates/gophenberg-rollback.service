@@ -1,0 +1,19 @@
+# Written by gophenberg server:install.
+[Unit]
+Description=Roll Gophenberg back after a failed update
+Documentation=https://docs.gophenberg.org/self-hosting/updates-and-backups/#a-version-that-fails-its-check
+ConditionPathExists={{.Root}}/previous
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=gophenberg
+Group=gophenberg
+WorkingDirectory={{.Root}}
+ExecStart={{.Root}}/previous/gophenberg update:rollback -after-failure
+ExecStartPost=+{{.Systemctl}} reset-failed gophenberg.service
+ExecStartPost=+{{.Systemctl}} start gophenberg.service
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{.Root}}
+PrivateTmp=yes

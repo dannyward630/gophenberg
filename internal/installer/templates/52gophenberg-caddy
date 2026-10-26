@@ -1,0 +1,4 @@
+# Written by gophenberg server:install.
+Unattended-Upgrade::Origins-Pattern {
+	"origin=cloudsmith/caddy/stable,site=dl.cloudsmith.io";
+};

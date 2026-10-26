@@ -1,0 +1,31 @@
+# Written by gophenberg server:install.
+[Unit]
+Description=Gophenberg
+Documentation=https://docs.gophenberg.org/self-hosting/server-install/
+After=network-online.target postgresql.service
+Wants=network-online.target
+StartLimitIntervalSec={{.LimitInterval}}
+StartLimitBurst={{.LimitBurst}}
+OnFailure=gophenberg-rollback.service
+
+[Service]
+Type=exec
+User=gophenberg
+Group=gophenberg
+WorkingDirectory={{.Root}}
+ExecStart={{.Root}}/current/gophenberg serve
+Restart=on-failure
+{{if .RestartMode}}RestartMode=direct
+{{end}}RestartSec={{.RestartSec}}s
+SuccessExitStatus=75
+RestartForceExitStatus=75
+RestartPreventExitStatus=76
+TimeoutStopSec={{.TimeoutStop}}s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={{.Root}}
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

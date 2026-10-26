@@ -1,0 +1,6 @@
+# Written by gophenberg server:install.
+Types: deb
+URIs: https://dl.cloudsmith.io/public/caddy/stable/deb/debian
+Suites: any-version
+Components: main
+Signed-By: {{.Key}}

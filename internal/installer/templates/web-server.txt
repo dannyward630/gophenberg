@@ -1,0 +1,30 @@
+Your own web server provides HTTPS for {{.Domain}} and must run on this server, since the
+site answers on {{.Addr}} alone. During the restart after an update it shows its own
+error page, unless it can hold requests until the site answers again. A web server in a
+container needs this server's own network, such as network_mode: host, since a
+container's loopback address is its own. The lines below send {{.Domain}} to the site with
+the visitor's host, client address and scheme, and a body limit as large as the largest
+upload the site takes: a file of the {{.UploadMB}} MB {{.UploadSetting}} allows or a
+theme of {{.ThemeMB}} MB, each with {{.EnvelopeKB}} KB of form framing around it.
+
+nginx, in the server block that serves {{.Domain}} over HTTPS:
+
+{{template "web-server-nginx.conf" .}}
+Caddy, in its Caddyfile, where reverse_proxy sends the visitor's host, client address
+and scheme on its own, and Caddy sets no upload limit:
+
+{{template "web-server.caddy" .}}
+Traefik, in a file its file provider reads, where websecure and letsencrypt stand for
+your HTTPS entry point and certificate resolver, and Traefik sends the visitor's host,
+client address and scheme on its own and sets no size limit:
+
+{{template "web-server-traefik.yml" .}}
+Traefik 3 cuts a request it has not read in full within the entry point's
+transport.respondingTimeouts.readTimeout, 60s by default. For large uploads, raise it in
+Traefik's install configuration to at least {{.TimeoutSetting}}, {{.UploadTimeout}} unless the
+site's .env sets it, or to 0.
+
+Apache, in the virtual host that serves {{.Domain}} over HTTPS, with its proxy_http and
+headers modules enabled:
+
+{{template "web-server-apache.conf" . -}}
