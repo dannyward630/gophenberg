@@ -41,7 +41,11 @@ const WORDS: BulkWords<{ id: string }> = {
 	failed: (failures, asked) => `Failed: ${failures.length} of ${asked}.`,
 }
 
-/** Expects every piece the SDK hands out to be a function, the very one godmin ships in its place. */
+/**
+ * Expects every piece the SDK hands out to be a function, the very one godmin ships in its place.
+ * @param handed - The pieces the SDK hands out.
+ * @param shipped - The pieces godmin ships, in the same order.
+ */
 function expectGodmins(handed: unknown[], shipped: unknown[]): void {
 	expect(handed.map((piece) => typeof piece)).toEqual(shipped.map(() => 'function'))
 	expect(handed).toEqual(shipped)
