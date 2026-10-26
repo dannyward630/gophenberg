@@ -2,18 +2,15 @@
 
 import { backupIcon, sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
 import type { Action, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { RunConfirm, useBulkRun, useToaster } from '@gopherium/godmin'
-import type { BulkRun, ListRun } from '@gopherium/godmin'
+import { RunConfirm, useBulkRun, useToaster, useUnsavedText } from '@gopherium/godmin'
+import type { BulkRun, ListRun, UnsavedText } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
 import { __, _x } from '@wordpress/i18n'
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
-import { useCloseWhileOpen } from '../lists/closeWhileOpen'
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
 import type { NameCut } from '../lists/itemWords'
-import { useUnsavedText } from '../lists/unsavedText'
-import type { UnsavedText } from '../lists/unsavedText'
 import { postName, restoreWords, trashQuestion, trashWords } from './actionWords'
 import { deletePost, restorePost, trashPost } from './api'
 import type { Post } from './api'
@@ -61,11 +58,10 @@ interface PostConfirmProps extends RenderModalProps<Post> {
  * @returns The confirm.
  */
 function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Move to trash', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(picked) => run(picked, (post) => trashPost(post.id), trashWords(name))}
@@ -81,11 +77,10 @@ function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
  * @returns The confirm.
  */
 function DeleteConfirm({ items, closeModal, run, name }: PostConfirmProps) {
-	const close = useCloseWhileOpen(closeModal)
 	return (
 		<RunConfirm
 			items={items}
-			closeModal={close}
+			closeModal={closeModal}
 			confirmLabel={__('Delete permanently', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
 			run={(picked) => run(picked, (post) => deletePost(post.id), deleteWords(name, postName))}

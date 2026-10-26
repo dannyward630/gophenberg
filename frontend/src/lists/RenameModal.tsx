@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { RenameBody, useToaster } from '@gopherium/godmin'
+import { RenameBody, markLatest, useToaster } from '@gopherium/godmin'
+import type { UnsavedText } from '@gopherium/godmin'
 import { __ } from '@wordpress/i18n'
-
-import { markLatest } from './unsavedText'
-import type { UnsavedText } from './unsavedText'
 
 /** What the send of a new name for one item needs. */
 export interface RenameSend<Item> {

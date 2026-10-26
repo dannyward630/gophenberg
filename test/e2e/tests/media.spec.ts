@@ -394,16 +394,16 @@ for (const { speed, hold } of LISTINGS) {
 		await stored(page, title)
 		await page.setViewportSize(LAPTOP)
 		await page.goto(`/admin/media?search=${LIBRARY}`)
-		const door = cardOf(page, title).locator('.dataviews-title-field')
+		const trigger = cardOf(page, title).locator('.dataviews-title-field')
 
-		await door.click()
+		await trigger.click()
 		const dialog = page.getByRole('dialog', { name: 'Edit media' })
 		await dialog.getByRole('textbox', { name: 'Alt text' }).fill('Boats leaving the harbor')
 		await hold(page)
 		await dialog.getByRole('button', { name: 'Save' }).click()
 
 		await expect(page.locator('.godmin-toast', { hasText: 'Media file updated.' })).toBeVisible()
-		await expect(door).toBeFocused()
+		await expect(trigger).toBeFocused()
 	})
 }
 
@@ -633,16 +633,16 @@ test.describe('on a phone', () => {
 			const title = `${LIBRARY}-tap-${speed}`
 			await stored(page, title)
 			await page.goto(`/admin/media?search=${LIBRARY}`)
-			const door = page.getByRole('button', { name: new RegExp(`^${title}`) })
+			const trigger = page.getByRole('button', { name: new RegExp(`^${title}`) })
 
-			await door.tap()
+			await trigger.tap()
 			const dialog = page.getByRole('dialog', { name: 'Edit media' })
 			await dialog.getByRole('textbox', { name: 'Alt text' }).fill('Boats leaving the harbor')
 			await hold(page)
 			await dialog.getByRole('button', { name: 'Save' }).tap()
 
 			await expect(page.locator('.godmin-toast', { hasText: 'Media file updated.' })).toBeVisible()
-			await expect(door).toBeFocused()
+			await expect(trigger).toBeFocused()
 		})
 	}
 
@@ -652,9 +652,9 @@ test.describe('on a phone', () => {
 		const title = `${LIBRARY}-tap-failed`
 		await stored(page, title)
 		await page.goto(`/admin/media?search=${LIBRARY}`)
-		const door = page.getByRole('button', { name: new RegExp(`^${title}`) })
+		const trigger = page.getByRole('button', { name: new RegExp(`^${title}`) })
 
-		await door.tap()
+		await trigger.tap()
 		const dialog = page.getByRole('dialog', { name: 'Edit media' })
 		await dialog.getByRole('textbox', { name: 'Alt text' }).fill('Boats leaving the harbor')
 		await page.route('**/api/media/*', (route) => (route.request().method() === 'PATCH' ? route.abort() : route.continue()))
@@ -662,6 +662,6 @@ test.describe('on a phone', () => {
 		await dialog.getByRole('button', { name: 'Save' }).tap()
 
 		await expect(page.locator('.godmin-toast', { hasText: 'Could not save image.' })).toBeVisible()
-		await expect(door).toBeFocused()
+		await expect(trigger).toBeFocused()
 	})
 })

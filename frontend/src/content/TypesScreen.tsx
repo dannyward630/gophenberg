@@ -12,7 +12,6 @@ import type { UseQueryResult } from '@tanstack/react-query'
 import { __, sprintf } from '@wordpress/i18n'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { useFocusOnList } from '../lists/focusOnList'
 import type { ListSettings } from '../settings/api'
 import { useListSettings } from '../settings/useListSettings'
 import { typesMenuItem, typesQueryKey } from './nav'
@@ -142,8 +141,7 @@ export function TypesScreen() {
 	const fields = useTypeFields(types.data)
 	const { list, view, settings } = useTypesView(fields)
 	const { run, region } = useListRun('content-types', list.onChangeSelection)
-	const onList = useFocusOnList(run, region)
-	const actions = useTypeActions(onList, usePageKeys(view, fields))
+	const actions = useTypeActions(run, usePageKeys(view, fields))
 	return (
 		<Page
 			title={__('Content Types', 'gophenberg')}

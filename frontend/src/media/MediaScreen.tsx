@@ -9,16 +9,19 @@ import {
 	ListEmpty,
 	Page,
 	bulkNotes,
+	focusInDialog,
+	focusedTrigger,
 	offeredSize,
 	offeredView,
 	paginationOf,
 	runEach,
 	sizedView,
+	useFocusBack,
 	useListRun,
 	useToaster,
 	viewNarrows,
 } from '@gopherium/godmin'
-import type { BulkFailure, BulkWords, OfferedView } from '@gopherium/godmin'
+import type { BulkFailure, BulkWords, OfferedView, Trigger } from '@gopherium/godmin'
 import { openOnTap, useListView } from '@gopherium/godmin/router'
 import type { ListView } from '@gopherium/godmin/router'
 import { formatNumber } from '@gopherium/gottext'
@@ -28,7 +31,6 @@ import { __, _n, _x, sprintf } from '@wordpress/i18n'
 import { useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 
-import { focusInDialog, useFocusOnList } from '../lists/focusOnList'
 import type { ListSettings } from '../settings/api'
 import { useListSettings } from '../settings/useListSettings'
 import './media.css'
@@ -36,8 +38,6 @@ import { useMayChange, useMediaActions, useMediaTools, useRefreshMedia, viewFile
 import { listMedia, mediaQueryKey, uploadMedia } from './api'
 import type { MediaItem, MediaPage, MediaQuery } from './api'
 import { MEDIA_SORT, MEDIA_VIEW_GUARD, libraryFields, mediaListing } from './fields'
-import { clickedDoor, useFocusBack } from './focusBack'
-import type { Door } from './focusBack'
 import { OpenMediaDialog } from './MediaModals'
 import type { MediaTools, OpenedDialog } from './MediaModals'
 
@@ -279,7 +279,7 @@ function MediaList(props: {
 }) {
 	const actions = useMediaActions(props.tools, props.mayChange, props.open)
 	const { media, list, view } = props
-	const edit = (item: MediaItem, door: Door) => props.open({ action: 'edit', item, door })
+	const edit = (item: MediaItem, trigger: Trigger) => props.open({ action: 'edit', item, trigger })
 	if (media.isError) {
 		return <ErrorNotice>{__('The media library could not be loaded.', 'gophenberg')}</ErrorNotice>
 	}
@@ -295,7 +295,7 @@ function MediaList(props: {
 			selection={list.selection}
 			onChangeSelection={openOnTap(list, openTapped(media.data, props.mayChange, (item) => edit(item, 'row')))}
 			isItemClickable={props.mayChange}
-			onClickItem={(item: MediaItem) => edit(item, clickedDoor())}
+			onClickItem={(item: MediaItem) => edit(item, focusedTrigger())}
 			isLoading={media.isFetching}
 			getItemId={(item: MediaItem) => String(item.id)}
 			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), {
@@ -312,7 +312,7 @@ function MediaList(props: {
 export function MediaScreen() {
 	const { list, fields, view, settings, media } = useMediaList()
 	const { run, region } = useListRun('media', list.onChangeSelection)
-	const tools = useMediaTools(useFocusOnList(run, region))
+	const tools = useMediaTools(run)
 	const mayChange = useMayChange()
 	const [opened, setOpened] = useState<OpenedDialog>()
 	const focusBack = useFocusBack(media.isFetching, region)

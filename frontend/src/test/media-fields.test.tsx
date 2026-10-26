@@ -161,8 +161,8 @@ test('reads an untitled item as an empty title under the No title placeholder, s
 })
 
 test('draws a title as text marked with the file, (no title) when untitled, so the bold title rule applies', () => {
-	expect(renderCell('title', item()).innerHTML).toBe('<span data-media-item="1">Harbor at dawn</span>')
-	expect(renderCell('title', item({ title: '' })).innerHTML).toBe('<span data-media-item="1">(no title)</span>')
+	expect(renderCell('title', item()).innerHTML).toBe('<span data-item-id="1">Harbor at dawn</span>')
+	expect(renderCell('title', item({ title: '' })).innerHTML).toBe('<span data-item-id="1">(no title)</span>')
 })
 
 test.each([
@@ -171,7 +171,7 @@ test.each([
 ])('marks the thumbnail of $shape with the file, so the focus finds its card again', ({ held }) => {
 	const cell = renderCell('thumbnail', held, '900px')
 
-	expect(cell.querySelectorAll('[data-media-item="7"]')).toHaveLength(1)
+	expect(cell.querySelectorAll('[data-item-id="7"]')).toHaveLength(1)
 })
 
 test('offers alt text on a picture alone', () => {

@@ -180,16 +180,16 @@ function aMoment() {
 }
 
 /** Finds the element of a card a dialog on its file opens from. */
-type CardDoor = (card: Element) => HTMLElement | null
+type CardTrigger = (card: Element) => HTMLElement | null
 
 /** Finds the button of a card opening its actions menu. */
-const menuDoor: CardDoor = (card) => card.querySelector('[aria-haspopup="menu"]')
+const menuTrigger: CardTrigger = (card) => card.querySelector('[aria-haspopup="menu"]')
 
 /** Finds the title of a card a click opens Edit from. */
-const titleDoor: CardDoor = (card) => card.querySelector('.dataviews-title-field[role="button"]')
+const titleTrigger: CardTrigger = (card) => card.querySelector('.dataviews-title-field[role="button"]')
 
 /** Finds the picture of a card a click opens Edit from. */
-const pictureDoor: CardDoor = (card) => card.querySelector('.dataviews-view-grid__media[role="button"]')
+const pictureTrigger: CardTrigger = (card) => card.querySelector('.dataviews-view-grid__media[role="button"]')
 
 /**
  * Returns the card of the grid holding the given title.
@@ -1134,38 +1134,38 @@ const ANCHOR = { ...MANUAL, id: 9, file: '2026/08/anchor-chain.pdf', title: 'Anc
 
 /**
  * Opens Edit from a part of the card of Harbor at dawn, as a click on it does.
- * @param door - Finds the part clicked inside the card.
+ * @param trigger - Finds the part clicked inside the card.
  * @returns The dialog.
  */
-async function openFromHarbor(door: CardDoor): Promise<HTMLElement> {
-	await userEvent.click(door(await cardHolding('Harbor at dawn')) as HTMLElement)
+async function openFromHarbor(trigger: CardTrigger): Promise<HTMLElement> {
+	await userEvent.click(trigger(await cardHolding('Harbor at dawn')) as HTMLElement)
 	return screen.findByRole('dialog', { name: 'Edit media' })
 }
 
 test.each([
-	{ part: 'title', door: titleDoor },
-	{ part: 'picture', door: pictureDoor },
+	{ part: 'title', trigger: titleTrigger },
+	{ part: 'picture', trigger: pictureTrigger },
 ])('gives the focus back to the $part Edit opened from, on its card where it moved, once Save stored it', async ({
-	door,
+	trigger,
 }) => {
 	listByTitle()
 	renderAt('/media')
-	const dialog = await openFromHarbor(door)
+	const dialog = await openFromHarbor(trigger)
 	await retype(dialog, 'Title', 'Zebra crossing')
 
 	await save(dialog)
 
 	await findToast('Media file updated.')
 	const moved = await cardHolding('Zebra crossing')
-	await waitFor(() => expect(door(moved)).toHaveFocus())
+	await waitFor(() => expect(trigger(moved)).toHaveFocus())
 	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(moved)
 })
 
 test.each([
-	{ part: 'actions menu', door: menuDoor, open: () => openCardDialog('Harbor at dawn', 'Edit…') },
-	{ part: 'title', door: titleDoor, open: () => openFromHarbor(titleDoor) },
+	{ part: 'actions menu', trigger: menuTrigger, open: () => openCardDialog('Harbor at dawn', 'Edit…') },
+	{ part: 'title', trigger: titleTrigger, open: () => openFromHarbor(titleTrigger) },
 ])('gives the focus back to the $part of a file whose edit failed, on its card where it moved', async ({
-	door,
+	trigger,
 	open,
 }) => {
 	vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -1182,7 +1182,7 @@ test.each([
 
 	await findToast('Could not save image. The server could not be reached, so nothing was saved.')
 	const moved = await cardHolding('Harbor at dawn')
-	await waitFor(() => expect(door(moved)).toHaveFocus())
+	await waitFor(() => expect(trigger(moved)).toHaveFocus())
 	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(moved)
 })
 
@@ -1231,7 +1231,7 @@ test('gives the focus back to the phone row Edit opened from once the save faile
 	expect(listings).toBeGreaterThan(1)
 })
 
-test('falls back to the actions menu once the door Edit opened from is gone, as a phone row in a grid', async () => {
+test('falls back to the actions menu once the trigger Edit opened from is gone, as a phone row in a grid', async () => {
 	setViewport({ width: 639 })
 	renderAt('/media')
 	await userEvent.click(await screen.findByRole('button', { name: /^Harbor at dawn/ }))

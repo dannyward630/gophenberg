@@ -2,7 +2,7 @@
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
 import { LIST_CHROME_DOMAIN, listChromeCatalogFor } from '@gopherium/godmin'
-import { buttonClasses } from '@gopherium/godmin/testing'
+import { buttonClasses, stubLayout } from '@gopherium/godmin/testing'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
@@ -411,6 +411,33 @@ test('leaves a dialog opened on the row after a trash dismissed while busy open 
 	await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
 
 	expect(screen.getByRole('dialog', { name: 'Rename' })).toBe(rename)
+})
+
+test('keeps the focus in a Rename opened after a dismissed trash once that trash lands', async () => {
+	stubLayout()
+	const answer = gate()
+	server.use(
+		http.delete('/api/content/:id', async () => {
+			await answer.held
+			return HttpResponse.json({ ...PUBLISHED, status: 'trash' })
+		}),
+	)
+	renderAt('/content/post')
+	await trashTheListedPost()
+	await waitBusy(screen.getByRole('dialog'), 'Move to trash')
+	await clickDimmedPage()
+	await openRowActions()
+	await userEvent.click(await screen.findByRole('menuitem', { name: 'Rename…' }))
+	const rename = await screen.findByRole('dialog', { name: 'Rename' })
+	const name = within(rename).getByRole('textbox', { name: 'Name' })
+	await waitFor(() => expect(name).toHaveFocus())
+
+	answer.release()
+	await screen.findByText('"Welcome to Gophenberg" moved to the trash.', { selector: '.godmin-toast' })
+	await act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+	expect(screen.getByRole('dialog', { name: 'Rename' })).toBe(rename)
+	expect(name).toHaveFocus()
 })
 
 test('speaks Cargando to a Spanish reader while the trash runs, as WordPress es_ES does', async () => {

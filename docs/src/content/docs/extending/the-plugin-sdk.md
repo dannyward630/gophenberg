@@ -674,6 +674,93 @@ does. A copy, or a change to several rows, keeps the modal open with
 `busy` until the write ends. Taking all of these from the SDK keeps
 your plugin on the admin's own copy.
 
+A modal that stays open during its write, such as a `ConfirmBody`
+you run yourself or a busy `FormBody`, closes through
+`useCloseWhileOpen(closeModal)`. Every dialog on a row gets the same
+`closeModal`, so a write that ends after the reader dismissed your
+modal and opened another one would shut the new one. The close
+`useCloseWhileOpen` returns does nothing once your modal left the
+screen. A dialog your screen holds open on one row loses the button
+that opened it when the list draws that row again, and the focus
+falls to the page. `useFocusBack` finds the row again and puts the
+focus back on the `Trigger` that `focusedTrigger()` noted when the
+dialog opened. Mark the title cell of each row with the id DataViews
+keys the row by, as `data-item-id`. `focusInDialog()` tells whether a
+dialog holds the focus, for a write you finish yourself outside a run.
+
+A rename, or a form that closes before its write, is gone by the time
+a write fails. Keep what the reader typed, so the next open of the
+modal starts from it and the reader can try once more.
+`useUnsavedText` from the SDK holds that text, by item id, for as long
+as the screen stays. Keep the store in the hook that builds your
+actions, never in the modal, which goes the moment the reader saves.
+Pass the item's kept text as the first value of the field. Clear the
+item's text before each write, so a save that works leaves nothing
+behind. `markLatest` marks the write as the latest one sent to the
+item and returns a check. Keep the failed text only while that check
+holds, so an earlier save that fails late never overwrites what a
+later save sent:
+
+```tsx
+import { RenameBody, markLatest, useToaster, useUnsavedText } from '@gophenberg/frontend-sdk'
+import type { Action } from '@gophenberg/frontend-sdk/dataviews'
+import { useMemo } from 'react'
+
+function useRenameAction(): Action<Note> {
+	const toaster = useToaster()
+	const renames = useUnsavedText()
+	return useMemo<Action<Note>>(
+		() => ({
+			id: 'rename',
+			label: 'Rename…',
+			modalHeader: 'Rename',
+			modalFocusOnMount: 'firstContentElement',
+			RenderModal: ({ items: [note], closeModal }) => (
+				<RenameBody
+					name={renames.get(note.id) ?? note.title}
+					fieldLabel="Name"
+					submitLabel="Save"
+					cancelLabel="Cancel"
+					onSubmit={(title) => {
+						closeModal?.()
+						renames.delete(note.id)
+						const stillLatest = markLatest(renames, note.id)
+						renameNote(note.id, title)
+							.then(() => toaster.show('Name updated.'))
+							.catch((failure) => {
+								if (stillLatest()) {
+									renames.set(note.id, title)
+								}
+								toaster.show(failure.message)
+							})
+					}}
+					onCancel={closeModal}
+				/>
+			),
+		}),
+		[toaster, renames],
+	)
+}
+```
+
+The store holds any value, so a form with several fields keeps them
+all, as `useUnsavedText<NoteFields>()`. Type a store you pass on with
+`UnsavedText`, from the SDK too.
+
+`ListEmpty` is what your list shows when it has no rows. It titles
+the empty list one level under your page's title, as the admin's own
+lists do. Pass it to DataViews as `empty`, with an icon, a title and
+an optional hint:
+
+```tsx
+import { ListEmpty, postIcon } from '@gophenberg/frontend-sdk'
+import { DataViews } from '@gophenberg/frontend-sdk/dataviews'
+
+<DataViews {...props} empty={<ListEmpty icon={postIcon} title="No notes yet." hint="Add one with Add Note." />} />
+```
+
+Leave the hint out when a search or a filter emptied the list.
+
 ## Versions
 
 Each version below says what it adds and what it changes. When a

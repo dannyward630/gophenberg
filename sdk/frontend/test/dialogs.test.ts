@@ -12,7 +12,10 @@ import manifest from '../package.json'
 const exported: Record<string, string> = manifest.exports
 
 test('hands plugins the dialogs the admin asks with outside a list, the very ones godmin ships', () => {
-	expect([ConfirmDialog, FormDialog]).toEqual([godmin.ConfirmDialog, godmin.FormDialog])
+	const handed = [ConfirmDialog, FormDialog]
+
+	expect(handed.map((piece) => typeof piece)).toEqual(['function', 'function'])
+	expect(handed).toEqual([godmin.ConfirmDialog, godmin.FormDialog])
 })
 
 test('hands plugins the types the dialogs are written in', () => {
