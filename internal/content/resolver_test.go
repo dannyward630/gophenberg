@@ -158,6 +158,33 @@ func TestResolveLetsContentBeatPagination(t *testing.T) {
 	}
 }
 
+func TestResolveLetsContentBeatNonNumericPageSuffixes(t *testing.T) {
+	t.Parallel()
+
+	for name, storedPath := range map[string]string{
+		"root page word":      "page/about",
+		"nested page word":    "chapter/page/intro",
+		"ordinal-like suffix": "page/2nd",
+	} {
+		storedPath := storedPath
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			store := newFakeAddresses()
+			held := store.hold("page", storedPath)
+			resolver := newResolver(t, store)
+
+			answer, err := resolver.Resolve(t.Context(), "/"+storedPath)
+			if err != nil {
+				t.Fatalf("Resolve error = %v, want nil", err)
+			}
+			if answer.Kind != content.KindItem || answer.Item.ID != held.ID {
+				t.Errorf("answer = %q with item %q, want stored item %q", answer.Kind, answer.Item.ID, held.ID)
+			}
+		})
+	}
+}
+
 func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 	t.Parallel()
 
@@ -181,7 +208,13 @@ func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 func TestResolveRefusesInvalidPageSuffixesBeforeLookingUpContent(t *testing.T) {
 	t.Parallel()
 
-	for name, suffix := range map[string]string{"signed": "+2", "non-ASCII digits": "２"} {
+	for name, suffix := range map[string]string{
+		"zero":      "0",
+		"negative":  "-2",
+		"signed":    "+2",
+		"non-ASCII": "２",
+		"overflow":  "999999999999999999999999999999999999",
+	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
