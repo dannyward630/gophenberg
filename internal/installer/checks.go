@@ -29,8 +29,8 @@ var clockProbe = Program{Name: "timedatectl", Args: []string{"show", "-p", "NTPS
 
 // machineChecks are the checks of the machine in the order server:install runs them, before anything changes.
 var machineChecks = []func(context.Context, *machineCheck) error{
-	checkRoot, checkSystem, checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkDisk, checkPorts,
-	checkPieces, checkDatabaseURL, checkDomain, checkClock,
+	checkRoot, checkSystem, checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkDisk, checkSitePort,
+	checkPorts, checkPieces, checkDatabaseURL, checkDomain, checkClock,
 }
 
 // machineCheck is one run of the machine checks, with what they read, where their notes go and what they find.

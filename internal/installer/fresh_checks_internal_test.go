@@ -4,6 +4,7 @@ package installer
 
 import (
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -115,6 +116,57 @@ func TestTheMachineChecksPassAServerWhosePortsAreHeldByThePiecesTheRecordOwns(t 
 	err := check.run(t.Context())
 
 	server.wantPassed(err, "")
+}
+
+// sitePortTaken is how a site address that takes the port of another piece is refused, after the address and the port.
+const sitePortTaken = "%s, the GOPHENBERG_ADDR the site listens on, takes %s, and GOPHENBERG_ADDR must name another " +
+	"port, in the environment or in its line in /etc/gophenberg/server.env, so nothing was changed"
+
+func TestTheMachineChecksStopASiteAddressThatTakesThePortOfAnotherPiece(t *testing.T) {
+	t.Parallel()
+
+	every := []string{piecePostgreSQL, pieceCaddy, pieceService}
+	for _, taken := range []struct {
+		webServer, addr, what string
+		installed             []string
+	}{
+		{webServerCaddy, "127.0.0.1:80", "TCP port 80, which Caddy answers on", nil},
+		{webServerCaddy, "127.0.0.1:443", "TCP port 443, which Caddy answers on", nil},
+		{webServerCaddy, "[::1]:443", "TCP port 443, which Caddy answers on", nil},
+		{webServerCaddy, "127.0.0.1:5432", "TCP port 5432, which PostgreSQL answers on", nil},
+		{webServerNone, "127.0.0.1:5432", "TCP port 5432, which PostgreSQL answers on", nil},
+		{webServerCaddy, "127.0.0.1:443", "TCP port 443, which Caddy answers on", every},
+		{webServerNone, "[::1]:5432", "TCP port 5432, which PostgreSQL answers on", every},
+	} {
+		server := newFakeServer(t)
+		check := server.check()
+		check.settings.WebServer, check.settings.Addr = taken.webServer, netip.MustParseAddrPort(taken.addr)
+		check.record.Installed = taken.installed
+
+		err := check.run(t.Context())
+
+		wantRefused(t, err, fmt.Sprintf(sitePortTaken, taken.addr, taken.what))
+		if len(server.listened) != 0 {
+			t.Errorf("the checks of the site address %s listened on %q, want no port", taken.addr, server.listened)
+		}
+	}
+}
+
+func TestTheMachineChecksTakeASiteAddressWhosePortNoOtherPieceAnswersOn(t *testing.T) {
+	t.Parallel()
+
+	for _, free := range []struct{ webServer, addr string }{
+		{webServerNone, "127.0.0.1:80"}, {webServerNone, "127.0.0.1:443"}, {webServerNone, "127.0.0.1:8081"},
+		{webServerCaddy, "127.0.0.1:8081"}, {webServerCaddy, "[::1]:8443"},
+	} {
+		server := newFakeServer(t)
+		check := server.check()
+		check.settings.WebServer, check.settings.Addr = free.webServer, netip.MustParseAddrPort(free.addr)
+
+		err := check.run(t.Context())
+
+		server.wantPassed(err, "")
+	}
 }
 
 func TestTheMachineChecksStopOnAPieceAFreshServerDoesNotHold(t *testing.T) {

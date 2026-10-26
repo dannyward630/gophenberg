@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -51,15 +52,40 @@ var caddyPorts = []port{
 
 // ports returns every port a fresh server must leave free for the site, PostgreSQL and, when set up, Caddy.
 func (c *machineCheck) ports() []port {
-	site := fmt.Sprintf("%s, the %s the site listens on", c.settings.Addr, c.env.Key("ADDR"))
 	own := []port{
-		{"tcp", c.settings.Addr.String(), site, pieceService},
+		{"tcp", c.settings.Addr.String(), c.siteAddress(), pieceService},
 		{"tcp", ":5432", "TCP port 5432, which PostgreSQL answers on", piecePostgreSQL},
 	}
 	if !c.settings.withCaddy() {
 		return own
 	}
 	return append(slices.Clone(caddyPorts), own...)
+}
+
+// siteAddress returns how a check names the address the site listens on and the setting that gives it.
+func (c *machineCheck) siteAddress() string {
+	return fmt.Sprintf("%s, the %s the site listens on", c.settings.Addr, c.env.Key("ADDR"))
+}
+
+// checkSitePort stops when the site's address takes the TCP port of another piece the install sets up, on any run.
+func checkSitePort(_ context.Context, c *machineCheck) error {
+	site := portNumber(c.settings.Addr.String())
+	for _, other := range c.ports() {
+		if other.network != "tcp" || other.piece == pieceService {
+			continue
+		}
+		if portNumber(other.address) == site {
+			return stop("%s, takes %s, and %s must name another port, in the environment or in its line in %s",
+				c.siteAddress(), other.what, c.env.Key("ADDR"), serverEnvPath)
+		}
+	}
+	return nil
+}
+
+// portNumber returns the port number of address, a host and a port such as 127.0.0.1:8081 or :80.
+func portNumber(address string) string {
+	_, number, _ := net.SplitHostPort(address)
+	return number
 }
 
 // checkPorts stops when something listens on a port the install needs, skipping the ports of a piece the record owns.
