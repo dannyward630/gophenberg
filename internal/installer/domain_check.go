@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // httpPort is the port Let's Encrypt asks a domain on over plain HTTP, which the domain check serves its token on.
@@ -107,8 +109,7 @@ func foreignOf(named []netip.Addr, own map[netip.Addr]bool) []netip.Addr {
 func (c *machineCheck) serveToken(ctx context.Context, addresses []netip.Addr) error {
 	listener, err := c.machine.Listen("tcp", fmt.Sprint(":", httpPort))
 	if err != nil {
-		return stop("cannot listen on TCP port %d to check that %s points at this server: %v, and "+
-			"-skip-domain-check skips this check", httpPort, c.settings.Domain, err)
+		return c.unlistened(err)
 	}
 	token := rand.Text()
 	page := http.NewServeMux()
@@ -133,6 +134,17 @@ func (c *machineCheck) serveToken(ctx context.Context, addresses []netip.Addr) e
 		}
 	}
 	return nil
+}
+
+// unlistened returns the stop of a domain check whose listen on TCP port 80 failed with err, naming a Caddy holding it.
+func (c *machineCheck) unlistened(err error) error {
+	domain := c.settings.Domain
+	if errors.Is(err, syscall.EADDRINUSE) && c.record.owns(pieceCaddy) {
+		return stop("the Caddy this installer set up holds TCP port %d, so the check that %s points at this server "+
+			"cannot run, and -skip-domain-check skips it once the domain points here", httpPort, domain)
+	}
+	return stop("cannot listen on TCP port %d to check that %s points at this server: %v, and -skip-domain-check "+
+		"skips this check", httpPort, domain, err)
 }
 
 // fetchToken stops unless the token page fetched through address answers token within the domain check timeout.

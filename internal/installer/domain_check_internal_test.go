@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/iotest"
 	"time"
@@ -316,22 +317,51 @@ func TestTheDomainCheckGivesUpOnAFetchOnceTheDomainCheckTimeoutPasses(t *testing
 	}
 }
 
-func TestTheDomainCheckStopsWhenItCannotListenOnPort80(t *testing.T) {
+func TestTheDomainCheckStopsWhenTheCaddyItSetUpHoldsPort80(t *testing.T) {
 	t.Parallel()
 
 	server := newFakeServer(t)
 	server.addresses = addresses("198.51.100.7")
 	server.taken["tcp :80"] = inUse("tcp", ":80")
 	check := server.domainCheck("example.com")
-	check.record.Installed = []string{pieceCaddy}
+	check.record.Installed, check.record.Domain = []string{pieceCaddy}, "old.example.com"
 
 	err := check.run(t.Context())
 
-	server.wantDomainRefused(err, "cannot listen on TCP port 80 to check that example.com points at this server: "+
-		"listen tcp :80: bind: address already in use, and -skip-domain-check skips this check, so nothing was "+
-		"changed")
+	server.wantDomainRefused(err, "the Caddy this installer set up holds TCP port 80, so the check that example.com "+
+		"points at this server cannot run, and -skip-domain-check skips it once the domain points here, so "+
+		"nothing was changed")
 	if len(server.fetched) != 0 {
 		t.Errorf("the check fetched %q, want nothing fetched", server.fetched)
+	}
+}
+
+func TestTheDomainCheckStopsWhenItCannotListenOnPort80(t *testing.T) {
+	t.Parallel()
+
+	for _, unlistened := range []struct {
+		installed []string
+		failed    error
+		why       string
+	}{
+		{nil, inUse("tcp", ":80"), "address already in use"},
+		{[]string{piecePostgreSQL, pieceService}, inUse("tcp", ":80"), "address already in use"},
+		{[]string{pieceCaddy}, fmt.Errorf("listen tcp :80: bind: %w", syscall.EACCES), "permission denied"},
+	} {
+		server := newFakeServer(t)
+		server.addresses = addresses("198.51.100.7")
+		server.taken["tcp :80"] = unlistened.failed
+		check := server.domainCheck("example.com")
+		check.record.Installed = unlistened.installed
+
+		err := checkDomain(t.Context(), check)
+
+		server.wantDomainRefused(err, "cannot listen on TCP port 80 to check that example.com points at this "+
+			"server: listen tcp :80: bind: "+unlistened.why+", and -skip-domain-check skips this check, so "+
+			"nothing was changed")
+		if len(server.fetched) != 0 {
+			t.Errorf("the check fetched %q, want nothing fetched", server.fetched)
+		}
 	}
 }
 
