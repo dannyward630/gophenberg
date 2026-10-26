@@ -16,7 +16,8 @@ import (
 var listedCommands = []string{
 	"check", "help", "list", "migrate", "seed", "serve", "version",
 	"account:create-admin", "account:disable", "account:enable", "account:grant-role", "account:list",
-	"account:records", "account:role", "update:apply", "update:check", "update:rollback", "update:status",
+	"account:records", "account:role", "server:install", "update:apply", "update:check", "update:rollback",
+	"update:status",
 }
 
 func TestProgramListsEveryCommandWhenNoneIsNamed(t *testing.T) {
@@ -50,6 +51,8 @@ func TestProgramListsEveryCommandWhenNoneIsNamed(t *testing.T) {
 		"  account:list          list every account with its role",
 		"  account:records       list who applied which change, the newest first",
 		"  account:role          set one account's role",
+		" server",
+		"  server:install        install Gophenberg on this Linux server with PostgreSQL, Caddy and a systemd service",
 		" update",
 		"  update:apply          update this server install to a newer Gophenberg, then ask for a restart",
 		"  update:check          check the update site for a newer Gophenberg and keep what it found",

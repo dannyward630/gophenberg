@@ -11,6 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
+	dbkitpg "github.com/gopherium/framework/dbkit/postgres"
+
+	"github.com/gopherium/gophenberg/internal/installer"
 	"github.com/gopherium/gophenberg/internal/testdb"
 	"github.com/gopherium/gophenberg/internal/updater"
 )
@@ -227,6 +232,33 @@ func TestTakeHandsPgDumpTheQueryAsWrittenWhenItHoldsNoPassword(t *testing.T) {
 	want := []string{
 		"--format=custom", "--no-password", "--dbname=postgres://maria@db.example.com/site" + query, "PGPASSWORD=s3cret",
 	}
+	if logged := dump.logged(t); !slices.Equal(logged, want) {
+		t.Errorf("pg_dump ran with %q, want %q", logged, want)
+	}
+}
+
+func TestTakeHandsPgDumpThePeerAddressOfAServerInstallAsWritten(t *testing.T) {
+	t.Setenv("PGPASSWORD", "")
+	address := installer.DatabaseAddress
+	dump := pgDumpOf(t, 16)
+
+	if err := dbkitpg.CheckAddress(address); err != nil {
+		t.Errorf("CheckAddress(%q) = %v, want the address taken", address, err)
+	}
+	config, err := pgx.ParseConfig(address)
+	if err != nil {
+		t.Fatalf("pgx.ParseConfig(%q) = %v, want the address read", address, err)
+	}
+	read := [3]string{config.Host, config.User, config.Database}
+	if read != [3]string{"/var/run/postgresql", "gophenberg", "gophenberg"} {
+		t.Errorf("pgx reads %q as the host, user and database %q, want the gophenberg role and database over the "+
+			"local socket", address, read)
+	}
+	if err := backupInto(t, dump, address).Take(t.Context()); err != nil {
+		t.Fatalf("Take() = %v, want nil", err)
+	}
+
+	want := []string{"--format=custom", "--no-password", "--dbname=" + address, "PGPASSWORD="}
 	if logged := dump.logged(t); !slices.Equal(logged, want) {
 		t.Errorf("pg_dump ran with %q, want %q", logged, want)
 	}

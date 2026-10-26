@@ -29,8 +29,8 @@ func uploadTimeoutOf(cfg Config) time.Duration {
 	return cfg.UploadTimeout
 }
 
-// uploadEnvelope is how much multipart framing an upload may carry around the archive.
-const uploadEnvelope = 64 << 10
+// UploadEnvelope is how much multipart framing a media or theme upload may carry around its file.
+const UploadEnvelope = 64 << 10
 
 // Themes is the managed themes directory the admin lists and installs into.
 type Themes interface {
@@ -108,7 +108,7 @@ func (s *server) handleThemeUpload() http.HandlerFunc {
 			})
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, themehost.MaxSize+uploadEnvelope)
+		r.Body = http.MaxBytesReader(w, r.Body, themehost.MaxSize+UploadEnvelope)
 		file, header, err := r.FormFile(uploadField)
 		defer s.removeUploadScratch(r)
 		if err != nil {

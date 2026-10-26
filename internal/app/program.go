@@ -11,6 +11,7 @@ import (
 	"github.com/gopherium/framework/gonsole"
 	accounts "github.com/gopherium/framework/gonsole/auth"
 
+	"github.com/gopherium/gophenberg/internal/installer"
 	"github.com/gopherium/gophenberg/internal/version"
 	"github.com/gopherium/gophenberg/sdk"
 )
@@ -33,6 +34,7 @@ func commandLine(
 	roles := goncierge.New()
 	accountCommands := accountConfig(roles, getenv)
 	composed := &sitePool{}
+	installs := append(updateCommands(getenv, exits, stamp), serverCommands(installer.RealMachine())...)
 	return gonsole.Program{
 		Name:       "gophenberg",
 		Title:      "Gophenberg",
@@ -45,16 +47,16 @@ func commandLine(
 		Validate:   validate(accountCommands),
 		Migrations: migrations(getenv),
 		Seed:       postgresOnly(getenv, "seed", composed.seed),
-		Commands:   coreCommands(accountCommands, updateCommands(getenv, exits, stamp)...),
+		Commands:   coreCommands(accountCommands, installs...),
 		Plugins:    loadPlugins(plugins, roles, composed),
 		Authorize:  accounts.Authorize(accountCommands),
 		Record:     accounts.Record(accountCommands),
 	}
 }
 
-// coreCommands returns the commands the core offers beside the plugins' own, the update commands given last.
-func coreCommands(cfg accounts.Config, updates ...gonsole.Command) []gonsole.Command {
-	return append(append(accounts.Commands(cfg), accounts.Records(cfg), aboutCommand()), updates...)
+// coreCommands returns the commands the core offers beside the plugins' own, the update and server commands given last.
+func coreCommands(cfg accounts.Config, last ...gonsole.Command) []gonsole.Command {
+	return append(append(accounts.Commands(cfg), accounts.Records(cfg), aboutCommand()), last...)
 }
 
 // serve returns the command that serves the site of the binary given.

@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package installer
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestReadRecordReturnsAnEmptyRecordBeforeAnyRunWroteOne(t *testing.T) {
+	t.Parallel()
+
+	record, err := readRecord(serverWith(t, nil))
+
+	if err != nil || !reflect.DeepEqual(record, Record{}) {
+		t.Errorf("readRecord() = %+v, %v, want an empty record", record, err)
+	}
+}
+
+func TestReadRecordReadsWhatAnEarlierRunWroteAndSkipsWhatItDoesNotKnow(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{recordPath: `{"installer": "0.20.0", "steps": {"packages": "ended", ` +
+		`"user": "started"}, "installed": ["postgresql", "caddy"], "domain": "example.com", "a later field": true}`})
+
+	record, err := readRecord(machine)
+
+	want := Record{
+		Installer: "0.20.0", Steps: map[string]string{"packages": "ended", "user": "started"},
+		Installed: []string{"postgresql", "caddy"}, Domain: "example.com",
+	}
+	if err != nil || !reflect.DeepEqual(record, want) {
+		t.Errorf("readRecord() = %+v, %v, want %+v", record, err, want)
+	}
+}
+
+func TestReadRecordRefusesARecordItCannotRead(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, nil)
+	if err := os.MkdirAll(filepath.Join(machine.Root, recordPath), 0o700); err != nil {
+		t.Fatalf("making a folder where the record goes: %v", err)
+	}
+
+	_, err := readRecord(machine)
+
+	if got := fmt.Sprint(err); !strings.HasPrefix(got, "installer: read ") || !strings.HasSuffix(got, recordPath+
+		": is a directory") {
+		t.Errorf("readRecord() = %v, want the record refused as a folder", err)
+	}
+}
+
+func TestReadRecordRefusesARecordThatIsNotJSON(t *testing.T) {
+	t.Parallel()
+
+	for _, body := range []string{`{"installer": "0.20.0"`, ""} {
+		machine := serverWith(t, map[string]string{recordPath: body})
+
+		_, err := readRecord(machine)
+
+		wantRefused(t, err, "installer: /var/lib/gophenberg-installer/install.json is not an install record: "+
+			"unexpected end of JSON input")
+	}
+}
+
+func TestReadRecordRefusesARecordThatNamesNoInstallerVersion(t *testing.T) {
+	t.Parallel()
+
+	for body, named := range map[string]string{`{}`: "", `{"installer": "v0.20.0"}`: "v0.20.0", `null`: ""} {
+		machine := serverWith(t, map[string]string{recordPath: body})
+
+		_, err := readRecord(machine)
+
+		wantRefused(t, err, fmt.Sprintf("installer: /var/lib/gophenberg-installer/install.json names the installer "+
+			"%q, which is not a version", named))
+	}
+}
+
+func TestAllowsTakesAnInstallerAsNewAsTheOneTheRecordNamesOrNewer(t *testing.T) {
+	t.Parallel()
+
+	for _, running := range []string{"0.20.0", "0.20.1", "1.0.0"} {
+		if err := (Record{Installer: "0.20.0"}).allows(running); err != nil {
+			t.Errorf("allows(%s) over a record of 0.20.0 = %v, want nil", running, err)
+		}
+	}
+	if err := (Record{}).allows("0.20.0"); err != nil {
+		t.Errorf("allows() over an empty record = %v, want nil", err)
+	}
+}
+
+func TestAllowsWebServerRefusesARunWithoutCaddyOnAServerWhoseRecordSaysCaddyWasInstalled(t *testing.T) {
+	t.Parallel()
+
+	err := Record{Installed: []string{"postgresql", "caddy"}}.allowsWebServer(Settings{WebServer: "none"}, envOf(nil))
+
+	wantRefused(t, err, fmt.Sprintf(webServerMove, "caddy", "none"))
+}
+
+func TestAllowsWebServerTakesARunThatKeepsTheWebServerTheRecordShows(t *testing.T) {
+	t.Parallel()
+
+	for _, run := range []struct {
+		installed []string
+		webServer string
+	}{{[]string{"caddy"}, "caddy"}, {[]string{"postgresql"}, "none"}, {nil, "caddy"}, {nil, "none"}} {
+		err := Record{Installed: run.installed}.allowsWebServer(Settings{WebServer: run.webServer}, envOf(nil))
+
+		if err != nil {
+			t.Errorf("allowsWebServer(%s) over a record that installed %q = %v, want nil", run.webServer,
+				run.installed, err)
+		}
+	}
+}
+
+func TestAllowsRefusesAnInstallerOlderThanTheOneTheRecordNames(t *testing.T) {
+	t.Parallel()
+
+	for running, recorded := range map[string]string{"0.20.0": "0.21.0", "0.21.0-rc.1": "0.21.0"} {
+		err := Record{Installer: recorded}.allows(running)
+
+		wantRefused(t, err, "this installer is "+running+", and this server was set up by the "+recorded+
+			" installer, so run the install.sh line again")
+	}
+}

@@ -1,0 +1,8 @@
+Explanation: Written by gophenberg server:install.
+Package: caddy
+Pin: origin dl.cloudsmith.io
+Pin-Priority: 500
+
+Package: *
+Pin: origin dl.cloudsmith.io
+Pin-Priority: -1

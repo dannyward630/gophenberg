@@ -7,7 +7,10 @@ The `gophenberg` binary serves the site, and it also runs the jobs an
 operator does beside it, such as creating the first account or
 applying the schema. Every command reads the same environment
 variables and `.env` file as the server, listed in
-[configuration](/self-hosting/configuration/).
+[configuration](/self-hosting/configuration/). The one exception is
+[`server:install`](#serverinstall), which runs as root and takes none
+of its settings from a `.env` file, see
+[the server settings](/self-hosting/configuration/#the-server-settings).
 
 With Docker Compose, put the command after the service name:
 
@@ -45,6 +48,8 @@ Available commands:
   account:list          list every account with its role
   account:records       list who applied which change, the newest first
   account:role          set one account's role
+ server
+  server:install        install Gophenberg on this Linux server with PostgreSQL, Caddy and a systemd service
  update
   update:apply          update this server install to a newer Gophenberg, then ask for a restart
   update:check          check the update site for a newer Gophenberg and keep what it found
@@ -164,6 +169,9 @@ change, and it prints `set author@example.com to editor` instead.
 
 `migrate` and `account:create-admin` have no dry run. They act at
 once.
+
+`server:install` takes no `-yes`. Its dry run is the `-dry-run` flag,
+see [server:install](#serverinstall).
 
 ## Who may change an account
 
@@ -503,6 +511,348 @@ Sets the role of one account to `admin`, `editor`, `author`,
 of the account named in `-as`, to hand out a role beyond the reach
 of that account, and to take `manage_users` from the last enabled
 account holding it.
+
+### server:install
+
+```text
+gophenberg server:install [flags]
+```
+
+Checks a fresh Linux server before Gophenberg is installed on it, with
+PostgreSQL, Caddy in front for HTTPS unless you keep a web server of
+your own, and a systemd service that runs the site. In this release,
+`-dry-run` checks the server and then prints what an install would
+do: each step it would take and the full text of every file it would
+write. It changes nothing on the server.
+
+Run it on the server itself as root, with the `gophenberg` binary of
+a Linux release archive, see
+[check a download](/self-hosting/install/#check-a-download). It is not
+a command for the container image.
+
+```sh
+tar -xzf gophenberg_%VERSION%_linux_amd64.tar.gz gophenberg
+sudo ./gophenberg server:install -dry-run -domain example.com -admin-email admin@example.com
+```
+
+- `-domain host` is the host name the site answers at, such as
+  `example.com`, or `localhost` to try it on the server itself. A
+  first run needs it, unless the environment or
+  `/etc/gophenberg/server.env` already names `GOPHENBERG_PUBLIC_URL`.
+  It must be `localhost` or a host name of two labels or more, each of
+  1 to 63 lower-case letters, digits and hyphens with no hyphen at
+  either end, a letter in the last label, and 253 characters at most.
+  So an address such as `203.0.113.7` is not a domain. A domain that
+  breaks the rule stops the run before anything else is read.
+- `-admin-email email` is the email of the first administrator. The
+  dry run gives it to Caddy for the HTTPS certificate, unless
+  `GOPHENBERG_INSTALL_CERTIFICATE_EMAIL` names another.
+- `-admin-name name` and `-admin-password-file file` name the first
+  administrator and the file holding the password. A dry run reads
+  neither.
+- `-archive file` is the checked release archive, inside
+  `/var/lib/gophenberg-installer`. A dry run does not open it, but an
+  archive outside that folder stops the run before anything else is
+  read, as a bad domain does.
+- `-web-server name` picks the web server in front of the site:
+  `caddy`, the default, has the install set Caddy up, and `none` keeps
+  a web server of your own, see
+  [with your own web server](#with-your-own-web-server). The first run
+  keeps it in `/etc/gophenberg/server.env` as
+  `GOPHENBERG_INSTALL_WEB_SERVER`, and a later run without the flag
+  keeps it. A later run that asks for the other one stops, since moving
+  a server from one to the other is not built yet. So does a later run
+  on a server where the install record shows the install set Caddy up,
+  once that line in `server.env` was changed to `none` by hand:
+
+  ```text
+  gophenberg: GOPHENBERG_INSTALL_WEB_SERVER: this server was set up with caddy, and a later run cannot move it to none, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env
+  ```
+
+  Any other name stops the run before anything else is read, as a bad
+  domain does.
+- `-skip-domain-check` skips the check that the domain points at this
+  server, for a server behind a proxy the check cannot cross.
+- `-dry-run` runs every check, then prints each step and every file,
+  and changes nothing. It asks no questions.
+
+Without `-dry-run`, it runs the same checks, then stops with exit
+code 1:
+
+```text
+gophenberg: this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed
+```
+
+A run goes in this order:
+
+1. It reads [the server settings](/self-hosting/configuration/#the-server-settings)
+   and stops on a bad value, naming every bad value at once. On a
+   server an earlier run set up, a run that is not root's stops here
+   with the root line below, since root alone may read `server.env`
+   and the install record.
+2. It reads the install record,
+   `/var/lib/gophenberg-installer/install.json`, when one is there.
+   It stops when the record names a newer installer than this one, so
+   an older binary never writes its files over newer ones.
+3. It checks the server, as listed below.
+4. With `-dry-run`, it prints the steps.
+
+It never reads the `.env` file of the folder it runs in, since the
+site's own user can write such a file. Every program it starts, such
+as `systemctl` or `systemd-run`, is looked up only in `/usr/sbin`,
+`/usr/bin`, `/sbin` and `/bin`, and gets an environment that holds
+only that `PATH` and `LC_ALL=C`, so no setting of the person running
+it reaches that program. Each also runs in a session of its own, with
+no terminal, so none can type into or read from the terminal of the
+person running it.
+
+#### The checks
+
+A check that fails stops the run with exit code 1 and a line that
+says why and ends with `so nothing was changed`. In order:
+
+- **Root.** It runs as root, such as with `sudo`.
+- **The system.** `/etc/os-release` names Ubuntu 24.04, Debian 12 or
+  Debian 13. On Debian it also prints that Gophenberg's CI tests
+  Ubuntu 24.04 only, such as
+  `Debian GNU/Linux 12 (bookworm) is not yet tested in Gophenberg's CI, which tests Ubuntu 24.04`.
+- **systemd.** systemd runs the server, so `/run/systemd/system` is a
+  folder, and `systemctl --version` names systemd 251 or newer.
+- **The sandbox.** systemd can set up the sandbox the site's service
+  runs in. It runs `/bin/true` through `systemd-run` with
+  `ProtectSystem=strict`, `PrivateTmp=yes` and `NoNewPrivileges=yes`.
+  A container plan without nesting fails here, and the line names what
+  `systemd-detect-virt` reports, such as `lxc`.
+- **Memory.** `MemTotal` in `/proc/meminfo` is at least
+  `GOPHENBERG_INSTALL_MEMORY_FLOOR_MB`, 900 MB unless set, a little
+  under 1 GB, since a server sold with 1 GB reports less than that.
+- **The install root.** Every parent of the install root that exists,
+  such as `/opt`, is a real folder, not a link, owned by root and
+  writable by root alone. The install root itself, when it exists, is
+  a real folder and empty. So `GOPHENBERG_INSTALL_ROOT=/etc` stops
+  here. The site's own user will own the install root, so it must not
+  be or hold a folder whose files root runs or reads: the folder of
+  any file the install writes, such as `/etc/gophenberg`,
+  `/etc/apt/keyrings` or `/usr/local/bin`, or a folder root finds
+  programs in, such as `/usr/bin`. So
+  `GOPHENBERG_INSTALL_ROOT=/usr/local` stops here too.
+- **Disk.** At least `GOPHENBERG_INSTALL_DISK_FLOOR_MB`, 1024 MB unless
+  set, is free under the install root and under `/var/lib`, each
+  measured at its nearest folder that exists.
+- **Ports.** Nothing listens on TCP 80, TCP 443, UDP 443, the site's
+  own address in `GOPHENBERG_ADDR` or TCP 5432. Each is checked by
+  listening on it for a moment. The port of `GOPHENBERG_ADDR` must
+  also not be one the install hands another piece, whatever address
+  it names: 5432 for PostgreSQL, and with Caddy 80 and 443. So
+  `GOPHENBERG_ADDR=127.0.0.1:443` stops here, on a later run too.
+- **A fresh server.** No PostgreSQL, Caddy or `gophenberg` service is
+  there yet, found by `/etc/postgresql`, `/usr/lib/postgresql`,
+  `/var/lib/postgresql`, `/etc/caddy`, `/usr/bin/caddy` and the units
+  `gophenberg.service` and `gophenberg-rollback.service` in
+  `/etc/systemd/system`. `GOPHENBERG_DATABASE_URL` must not be set
+  either, since the install sets up a PostgreSQL of its own.
+- **The domain.** The domain has an A or AAAA record. An address that
+  never leaves the server, a loopback address such as `127.0.1.1` or
+  an unspecified one such as `0.0.0.0`, stops the run, since Let's
+  Encrypt asks for the domain from outside. Such an answer most often
+  comes from a line in `/etc/hosts` that names the server after its
+  domain. Once the domain's public record points at the server,
+  `-skip-domain-check` passes over that line. When every
+  address it names is one of the server's own, the check passes.
+  Otherwise the check listens on TCP port 80 for a moment, answers a
+  random token at `/.well-known/gophenberg-install/<token>`, and
+  fetches that page through each address that is not the server's
+  own, giving each fetch `GOPHENBERG_INSTALL_DOMAIN_CHECK_TIMEOUT`, 10
+  seconds unless set. An address that gives any other answer, a
+  redirect included, or none in time, stops the run. The line then
+  names both likely causes: the domain points at another server, or
+  the network does not route a request from the server to its own
+  public address back to it. On a later run for a new domain whose
+  address is not one of the server's own, the Caddy an earlier run
+  set up holds TCP port 80, so the check cannot listen there and
+  stops with a line that says so. Once the new domain points at the
+  server, `-skip-domain-check` passes over it. The check is skipped
+  for `localhost` and with `-skip-domain-check`. Whenever it runs, it
+  also prints that the hosting provider's firewall must let TCP 80,
+  TCP 443 and UDP 443 in, since no check can see that firewall.
+- **The clock.** When `timedatectl` says the clock is not
+  synchronized, it prints a warning and goes on, since HTTPS and the
+  signed update index both need the right time.
+
+When the install record says an earlier run installed a piece, such
+as Caddy, the checks skip that piece and its ports. The domain check
+also skips the domain the record names.
+
+With `-web-server none`, the ports check leaves out TCP 80, TCP 443
+and UDP 443, the fresh server check leaves out Caddy, and the domain
+check does not run, since your own web server answers on those ports
+and gets its own HTTPS certificate. The site's own address, TCP 5432
+and every other check stay. The domain must still follow the host
+name rule, since it goes into `GOPHENBERG_PUBLIC_URL`.
+
+Some stop lines, as they read for `-domain example.com`:
+
+```text
+gophenberg: server:install must run as root, such as with sudo, so nothing was changed
+gophenberg: this server has 512 MB of memory, less than the 900 MB GOPHENBERG_INSTALL_MEMORY_FLOOR_MB asks, so nothing was changed
+gophenberg: something already listens on TCP port 80, which Caddy answers on, so nothing was changed
+gophenberg: this server already has PostgreSQL at /etc/postgresql, and server:install sets up a fresh server only, so nothing was changed
+gophenberg: /opt, a parent of the install root /opt/gophenberg, must be owned by root and writable by root alone, so nothing was changed
+gophenberg: cannot find an A or AAAA record of example.com, which must point at this server: lookup example.com: no such host, so nothing was changed
+```
+
+A line whose message starts with `installer:`, such as
+`gophenberg: installer: ...`, instead names something the run could
+not read, such as a file it may not open. It is not a verdict on the
+server, so it does not end that way.
+
+#### What a dry run prints
+
+Once every check passes, a dry run prints each step to standard
+output, and the notes and warnings of the checks stay on standard
+error. Under each step comes every file it would write, with its
+owner and mode, then its full text indented by four spaces. For
+`-domain example.com -admin-email admin@example.com` on a fresh
+server it begins:
+
+```text
+Every check passed, and nothing was changed. Without -dry-run, server:install would take these steps.
+
+Step 1: start the install record /var/lib/gophenberg-installer/install.json and write the server settings
+  writes /etc/gophenberg/server.env, owned by root with mode 0600:
+    # Written by gophenberg server:install.
+    GOPHENBERG_INSTALL_ROOT=/opt/gophenberg
+    GOPHENBERG_PUBLIC_URL=https://example.com
+```
+
+The fifteen steps of that run are these:
+
+```text
+Step 1: start the install record /var/lib/gophenberg-installer/install.json and write the server settings
+Step 2: install PostgreSQL and Caddy with apt-get, Caddy from its own apt repository
+Step 3: make the system user gophenberg, which runs the site and signs in to PostgreSQL
+Step 4: make the install root /opt/gophenberg and its folders, owned by gophenberg
+Step 5: make the database role gophenberg and its database gophenberg as the postgres user
+Step 6: unpack the release archive into /opt/gophenberg/versions and point /opt/gophenberg/current at it
+Step 7: keep a copy of this installer at /usr/local/lib/gophenberg/gophenberg, the one root runs for server:install and server:uninstall
+Step 8: write the site's settings, then run check as gophenberg in /opt/gophenberg
+Step 9: write the systemd units and Caddy's drop-in, then reload systemd and enable gophenberg.service
+Step 10: write the gophenberg command on the path
+Step 11: write Caddy's files, keep the package's Caddyfile as /etc/caddy/Caddyfile.before-gophenberg, check them with caddy validate and restart Caddy
+Step 12: start gophenberg.service and wait until /admin/, /api/locale and / answer on 127.0.0.1:8081
+Step 13: create the first administrator with account:create-admin as gophenberg
+Step 14: check that https://example.com/admin/ answers within 2m0s
+Step 15: print the summary and end the install record
+```
+
+And these are the files it shows:
+
+| File | Owner and mode | What it is |
+| --- | --- | --- |
+| `/etc/gophenberg/server.env` | root, 0600 | The server settings, see [the server.env file](/self-hosting/configuration/#the-serverenv-file) |
+| `/etc/apt/keyrings/caddy.asc` | root, 0644 | The key that signs Caddy's own apt repository |
+| `/etc/apt/sources.list.d/caddy.sources` | root, 0644 | Caddy's apt repository, signed by that key |
+| `/etc/apt/preferences.d/gophenberg-caddy` | root, 0644 | The pin that gives the `caddy` package priority 500 and every other package from any repository on `dl.cloudsmith.io` priority -1, so a repository you add there later needs a pin of its own |
+| `/etc/apt/apt.conf.d/52gophenberg-caddy` | root, 0644 | The line that lets `unattended-upgrades` install Caddy's fixes, shown only where that package is installed |
+| `/opt/gophenberg/.env` | gophenberg, 0600 | The site's settings, see [the site's .env on a server install](/self-hosting/configuration/#the-sites-env-on-a-server-install) |
+| `/etc/systemd/system/gophenberg.service` | root, 0644 | The unit that runs the site |
+| `/etc/systemd/system/gophenberg-rollback.service` | root, 0644 | The unit that takes back an update whose new build fails to start |
+| `/etc/systemd/system/caddy.service.d/gophenberg.conf` | root, 0644 | Gives Caddy the folder of its admin socket |
+| `/usr/local/bin/gophenberg` | root, 0755 | The `gophenberg` command on the path |
+| `/usr/local/share/gophenberg/maintenance/index.html` | root, 0644 | The page Caddy shows while the site restarts |
+| `/etc/caddy/gophenberg.caddy` | root, 0644 | Gophenberg's Caddy site |
+| `/etc/caddy/Caddyfile` | root, 0644 | Caddy's own settings, which import Gophenberg's site |
+
+For `localhost`, which Caddy serves with a certificate of its own, the
+Caddyfile names no email. It names none either when the run knows no
+certificate email.
+
+The list follows what the server already holds. When the install
+record says the Caddy step ended, the list leaves the Caddyfile alone
+and reloads Caddy. When it says the start step ended, the list
+restarts the site, and when it says the admin step ended, the list
+creates no administrator. A `current` link under the install root
+keeps the build it names, since updates go through
+[`update:apply`](#updateapply).
+
+#### With your own web server
+
+Gophenberg needs no given web server. It listens on its own loopback
+address, `GOPHENBERG_ADDR`, and any web server on the same server can
+sit in front of it. On a server that already runs nginx, Caddy,
+Traefik or Apache for other sites, run the install with
+`-web-server none`:
+
+```sh
+sudo ./gophenberg server:install -dry-run -domain example.com -admin-email admin@example.com -web-server none
+```
+
+The steps then leave out the Caddy apt files, Caddy's drop-in, the
+Caddy files, the maintenance page, Caddy's restart and the HTTPS
+check. The systemd units, the site's `.env` and the command on the
+path stay as they are. So the site still listens on loopback alone,
+and your web server must run on the same server. A web server in a
+container needs the server's own network, such as `network_mode: host`
+in Docker Compose, since a container's loopback address is its own.
+Its fourteen steps are these:
+
+```text
+Step 1: start the install record /var/lib/gophenberg-installer/install.json and write the server settings
+Step 2: install PostgreSQL with apt-get
+Step 3: make the system user gophenberg, which runs the site and signs in to PostgreSQL
+Step 4: make the install root /opt/gophenberg and its folders, owned by gophenberg
+Step 5: make the database role gophenberg and its database gophenberg as the postgres user
+Step 6: unpack the release archive into /opt/gophenberg/versions and point /opt/gophenberg/current at it
+Step 7: keep a copy of this installer at /usr/local/lib/gophenberg/gophenberg, the one root runs for server:install and server:uninstall
+Step 8: write the site's settings, then run check as gophenberg in /opt/gophenberg
+Step 9: write the systemd units, then reload systemd and enable gophenberg.service
+Step 10: write the gophenberg command on the path
+Step 11: start gophenberg.service and wait until /admin/, /api/locale and / answer on 127.0.0.1:8081
+Step 12: create the first administrator with account:create-admin as gophenberg
+Step 13: print the summary and end the install record
+Step 14: print the lines for nginx, Caddy, Traefik and Apache that send example.com to the site at 127.0.0.1:8081
+```
+
+The last step prints, under a `prints:` line, the lines each of the
+four web servers needs to send the domain to the site. The dry run
+prints the same text the install will. Each block passes on the
+`Host` the visitor sent, which the site builds some links from, such
+as those of the RSS feed. Each also sends the three headers the site
+trusts from `GOPHENBERG_TRUSTED_PROXIES`: `X-Forwarded-Host`,
+`X-Forwarded-For` and `X-Forwarded-Proto`. Caddy and Traefik do both
+on their own.
+
+The nginx and Apache blocks also raise the limit on a request body to
+the largest upload the site takes, since nginx takes no more than 1 MB
+by default. That is the larger of `GOPHENBERG_MEDIA_UPLOAD_CAP_MB`,
+which the run reads from the site's `.env`, 128 MB unless set, and the
+64 MB a theme may hold, with 64 KB more for the form around the file.
+nginx gets it in kilobytes and Apache in bytes. For
+`-domain example.com` with the defaults, the nginx block is:
+
+```nginx
+client_max_body_size 131136k;
+
+location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Traefik sets no size limit, but Traefik 3 cuts a request it has not
+read in full within the entry point's
+`transport.respondingTimeouts.readTimeout`, 60 seconds by default. So
+the text asks you to raise it in Traefik's install configuration to
+at least `GOPHENBERG_UPLOAD_TIMEOUT`, 5 minutes unless the site's
+`.env` sets it, or to 0.
+
+Your web server provides HTTPS for the domain, so the site's own
+address stays `https://`. While the site restarts after an update,
+your web server shows its own error page, unless it can hold requests
+until the site answers again, as the Caddy the install sets up does.
 
 ### update:check
 

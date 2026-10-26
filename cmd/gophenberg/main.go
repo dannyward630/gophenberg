@@ -11,8 +11,10 @@ import (
 	"github.com/gopherium/gophenberg/internal/app"
 )
 
-// main runs the gophenberg command line over the compiled plugins.
+// main runs the gophenberg command line over the compiled plugins, after .env unless a server: command runs.
 func main() {
-	_ = godotenv.Load()
+	if app.ReadsDotEnv(os.Args[1:]) {
+		_ = godotenv.Load()
+	}
 	os.Exit(app.Main(os.Getenv, registerPlugins))
 }

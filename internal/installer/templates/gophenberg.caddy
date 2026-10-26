@@ -1,0 +1,14 @@
+# Written by gophenberg server:install.
+{{.Domain}} {
+	reverse_proxy {{.Addr}} {
+		lb_try_duration {{.ProxyRetry}}
+	}
+	handle_errors 502 503 {
+		root * {{.Maintenance}}
+		rewrite * /index.html
+		header Retry-After {{.RetryAfter}}
+		file_server {
+			status 503
+		}
+	}
+}
