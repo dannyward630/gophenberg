@@ -113,7 +113,7 @@ func (s *server) handleMediaUpload() http.HandlerFunc {
 			})
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, s.media.Cap()+uploadEnvelope)
+		r.Body = http.MaxBytesReader(w, r.Body, s.media.Cap()+UploadEnvelope)
 		file, header, err := r.FormFile(mediaUploadField)
 		defer s.removeUploadScratch(r)
 		if err != nil {
