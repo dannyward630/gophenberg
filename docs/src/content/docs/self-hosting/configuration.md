@@ -568,7 +568,7 @@ first of these that gives it a value:
 | --- | --- | --- |
 | `GOPHENBERG_INSTALL_ROOT` | `/opt/gophenberg` | The install root, an absolute path of letters, digits, dots, hyphens, underscores and slashes alone |
 | `GOPHENBERG_PUBLIC_URL` | | `https://` and the domain the site answers at, with nothing after it. Every run needs it, from `-domain`, the environment or `server.env` |
-| `GOPHENBERG_ADDR` | `127.0.0.1:8081` | The address the site listens on. It must be a loopback address with a port, since Caddy, or your own web server, runs on the same server and forwards to it |
+| `GOPHENBERG_ADDR` | `127.0.0.1:8081` | The address the site listens on. It must be a loopback address with a port, since Caddy, or your own web server, runs on the same server and forwards to it. Its port must not be 5432, PostgreSQL's, or with Caddy 80 or 443 |
 | `GOPHENBERG_INSTALL_WEB_SERVER` | `caddy` | The web server in front of the site, from the `-web-server` flag. `caddy` has the install set Caddy up, and `none` keeps a web server of your own, see [with your own web server](/self-hosting/commands/#with-your-own-web-server). A later run keeps it. It stops when a flag or the environment asks for the other one, and when the line says `none` on a server the install set Caddy up on |
 | `GOPHENBERG_INSTALL_CERTIFICATE_EMAIL` | The `-admin-email` flag | The email Caddy gives Let's Encrypt for the HTTPS certificate, one plain address with no braces. Empty leaves it out, and `localhost` never uses it |
 | `GOPHENBERG_SERVICE_RESTART_DELAY` | `5s` | How long systemd waits before it starts the site again, `RestartSec` of the site's unit, in whole seconds |

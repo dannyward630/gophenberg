@@ -641,7 +641,10 @@ says why and ends with `so nothing was changed`. In order:
   measured at its nearest folder that exists.
 - **Ports.** Nothing listens on TCP 80, TCP 443, UDP 443, the site's
   own address in `GOPHENBERG_ADDR` or TCP 5432. Each is checked by
-  listening on it for a moment.
+  listening on it for a moment. The port of `GOPHENBERG_ADDR` must
+  also not be one the install hands another piece, whatever address
+  it names: 5432 for PostgreSQL, and with Caddy 80 and 443. So
+  `GOPHENBERG_ADDR=127.0.0.1:443` stops here, on a later run too.
 - **A fresh server.** No PostgreSQL, Caddy or `gophenberg` service is
   there yet, found by `/etc/postgresql`, `/usr/lib/postgresql`,
   `/var/lib/postgresql`, `/etc/caddy`, `/usr/bin/caddy` and the units
@@ -664,7 +667,11 @@ says why and ends with `so nothing was changed`. In order:
   redirect included, or none in time, stops the run. The line then
   names both likely causes: the domain points at another server, or
   the network does not route a request from the server to its own
-  public address back to it. The check is skipped
+  public address back to it. On a later run for a new domain whose
+  address is not one of the server's own, the Caddy an earlier run
+  set up holds TCP port 80, so the check cannot listen there and
+  stops with a line that says so. Once the new domain points at the
+  server, `-skip-domain-check` passes over it. The check is skipped
   for `localhost` and with `-skip-domain-check`. Whenever it runs, it
   also prints that the hosting provider's firewall must let TCP 80,
   TCP 443 and UDP 443 in, since no check can see that firewall.
