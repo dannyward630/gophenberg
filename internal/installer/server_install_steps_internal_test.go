@@ -3,9 +3,13 @@
 package installer
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"net"
@@ -16,7 +20,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"testing/synctest"
 
 	"github.com/cucumber/godog"
 
@@ -26,8 +32,8 @@ import (
 // serverInstallFeature is the feature server:install answers to on a fake server.
 const serverInstallFeature = "../../test/features/features/server-install.feature"
 
-// earlierRecord is the install record of an earlier run for example.com that ended every step.
-const earlierRecord = `{"installer": "0.0.1", "domain": "example.com",
+// earlierRecord is the record of an earlier run for example.com that ended every step, its Caddyfile's sum left open.
+const earlierRecord = `{"installer": "0.0.1", "domain": "example.com", "caddyfile": "%s",
 "installed": ["postgresql", "caddy", "gophenberg.service", "/opt/gophenberg"],
 "steps": {"server-env": "ended", "packages": "ended", "user": "ended", "install-root": "ended", "database": "ended",
 "build": "ended", "installer-copy": "ended", "site-env": "ended", "units": "ended", "command": "ended",
@@ -55,6 +61,9 @@ type installScenario struct {
 	stderr  string
 	err     error
 	checked map[string]bool
+	planned string
+	archive string
+	copied  fs.FileInfo
 }
 
 // initializeServerInstall returns the binding of the server:install steps, t holding every fake server.
@@ -89,9 +98,35 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 		sc.Given(`^unattended-upgrades is installed on the server$`, s.installUnattended)
 		sc.Given(`^the environment sets (GOPHENBERG_[A-Z_]+) to (\S+)$`, s.setEnv)
 		initializeServerInstallAnswers(sc, s)
+		initializeServerInstallCutOffs(sc, s)
 		sc.When(`^the operator runs "([^"]*)"$`, s.runLine)
 		initializeServerInstallOutcomes(sc, s)
+		initializeServerInstallChanges(sc, s)
+		initializeServerInstallApplies(sc, s)
 	}
+}
+
+// initializeServerInstallCutOffs binds the steps that leave the server as a first run cut off part way left it.
+func initializeServerInstallCutOffs(sc *godog.ScenarioContext, s *installScenario) {
+	sc.Given(`^a first run for example.com was cut off while apt-get installed PostgreSQL$`, s.cutOffInPackages)
+	sc.Given(`^a first run for example.com was cut off after createuser made the database role gophenberg$`,
+		s.cutOffAfterCreateuser)
+	sc.Given(`^a first run for example.com was cut off after it unpacked part of the build of this installer$`,
+		s.cutOffInBuild)
+}
+
+// initializeServerInstallChanges binds the steps that check what a server:install run changed on the server.
+func initializeServerInstallChanges(sc *godog.ScenarioContext, s *installScenario) {
+	sc.Then(`^the server holds every file the dry run printed, with its owner and mode$`, s.holdsPrintedFiles)
+	sc.Then(`^the server holds these folders:$`, s.holdsFolders)
+	sc.Then(`^the server holds the install record, owned by (root|gophenberg) with mode (0[0-7]{3})$`, s.holdsRecord)
+	sc.Then(`^the server holds the installer's own copy, owned by (root|gophenberg) with mode (0[0-7]{3})$`,
+		s.holdsInstallerCopy)
+	sc.Then(`^the build folder of this installer holds only the files of its archive, owned by gophenberg$`,
+		s.holdsOwnBuild)
+	sc.Then(`^the current link names the build of this installer, owned by gophenberg$`, s.pointsAtOwnBuild)
+	sc.Then(`^the run ran "([^"]*)" (before|after) "([^"]*)"$`, s.ranInOrder)
+	sc.Then(`^the install record marks the step (\S+) (started|ended)$`, s.recordMarks)
 }
 
 // initializeServerInstallAnswers binds the steps that give a run its archive, its answers and the files it checks.
@@ -230,8 +265,12 @@ func (s *installScenario) recordInstaller(installer string) {
 func (s *installScenario) installEarlier() {
 	server := s.server
 	server.write(serverEnvPath, firstServerEnv)
-	server.write(recordPath, earlierRecord)
-	server.folder("/etc/postgresql/16/main")
+	server.write(recordPath, fmt.Sprintf(earlierRecord, caddyfileSum(wantedCaddyfile)))
+	server.installPackage(piecePostgreSQL)
+	server.installPackage(pieceCaddy)
+	server.addUser(siteUser, "/opt/gophenberg")
+	server.running["caddy.service"], server.running["gophenberg.service"] = true, true
+	server.write(keptCaddyfilePath, packageCaddyfile)
 	server.write("/etc/caddy/Caddyfile", wantedCaddyfile)
 	server.write("/etc/systemd/system/gophenberg.service", wantedSiteUnit)
 	server.write(commandPath, wantedCommand)
@@ -292,6 +331,7 @@ func (s *installScenario) answerOnTerminal(answers *godog.DocString) {
 // putOwnArchive puts the release archive of this installer for this server at path.
 func (s *installScenario) putOwnArchive(path string) {
 	s.server.write(path, releaseArchiveOf(s.t, version.Version(), thisPlatform))
+	s.archive = path
 }
 
 // putArchiveOfVersion puts a release archive of Gophenberg release for this server at path.
@@ -345,15 +385,26 @@ func (s *installScenario) deleteCurrentBuild() {
 	s.server.remove("/opt/gophenberg/versions/0.19.0")
 }
 
-// runLine runs the server:install line on the scenario's server, noting what was on the server before.
+// runLine runs the server:install line on the scenario's server in a bubble of fake time, so no wait takes real time.
 func (s *installScenario) runLine(line string) error {
 	request, err := requestOf(line)
 	if err != nil {
 		return err
 	}
 	s.before = s.server.snapshot()
-	s.stdout, s.stderr, s.err = dryRunUnder(s.server, s.env, request)
+	s.server.forgetRun()
+	synctest.Test(s.t, func(t *testing.T) {
+		s.stdout, s.stderr, s.err = installUnder(t.Context(), s.server, s.env, request)
+	})
+	if request.DryRun {
+		s.planned = s.stdout
+	}
 	return nil
+}
+
+// forgetRun forgets the programs, the HTTPS pages and the terminals an earlier run of the scenario asked for.
+func (s *fakeServer) forgetRun() {
+	s.runs, s.ran, s.fetchedHTTPS, s.httpsRoots, s.terminals = nil, nil, nil, nil, 0
 }
 
 // requestOf returns what the server:install line asks for.
@@ -550,19 +601,25 @@ func (s *installScenario) writesOnly(want *godog.DocString) error {
 
 // printsForWebServer fails unless the text a step of the dry run prints is want, line for line.
 func (s *installScenario) printsForWebServer(want *godog.DocString) error {
-	_, after, found := strings.Cut(s.stdout, "\n  prints:\n")
+	got, found := printedText(s.stdout)
 	if !found {
 		return fmt.Errorf("the dry run printed\n%s\nwith no step that prints a text", s.stdout)
 	}
+	if got != want.Content+"\n" {
+		return fmt.Errorf("the dry run prints\n%s\nwant\n%s", got, want.Content)
+	}
+	return nil
+}
+
+// printedText returns the text the step of a dry run that prints a text prints, as its stdout shows it indented.
+func printedText(stdout string) (string, bool) {
+	_, after, found := strings.Cut(stdout, "\n  prints:\n")
 	block, _, _ := strings.Cut(after, "\nStep ")
 	var printed strings.Builder
 	for line := range strings.Lines(block) {
 		printed.WriteString(strings.TrimPrefix(line, "    "))
 	}
-	if got := printed.String(); got != want.Content+"\n" {
-		return fmt.Errorf("the dry run prints\n%s\nwant\n%s", got, want.Content)
-	}
-	return nil
+	return printed.String(), found
 }
 
 // listsSteps fails unless the steps the dry run lists are want, line for line.
@@ -650,7 +707,7 @@ func (s *installScenario) writesNoOtherFile() error {
 func (s *installScenario) writesAsForExample() error {
 	example := newFakeServer(s.t)
 	example.program(unattendedUpgrade)
-	stdout, _, err := dryRun(example, Request{Domain: "example.com", AdminEmail: "admin@example.com", DryRun: true})
+	stdout, _, err := runInstall(example, Request{Domain: "example.com", AdminEmail: "admin@example.com", DryRun: true})
 	if err != nil {
 		return fmt.Errorf("the dry run for example.com stopped with %w", err)
 	}
@@ -676,6 +733,256 @@ func (s *installScenario) unitHolds(holds, line string) error {
 	if held != (holds == "holds") {
 		return fmt.Errorf("the site's unit holding the line %q is %s, want the unit that %s it:\n%s", line,
 			strconv.FormatBool(held), holds, unit)
+	}
+	return nil
+}
+
+// ownBuild is the build folder of this installer in the install root, named from the top of the server.
+var ownBuild = "/opt/gophenberg/versions/" + version.Version()
+
+// cutOffIn leaves the server as a first run for example.com left it, cut off in the step id, owning installed.
+func (s *installScenario) cutOffIn(id string, installed ...string) error {
+	s.server.write(serverEnvPath, firstServerEnv)
+	record := Record{Installer: version.Version(), Domain: "example.com", Steps: map[string]string{}, Installed: installed}
+	for _, done := range stepIDs[:slices.Index(stepIDs, id)] {
+		record.Steps[done] = stepEnded
+		record.Installed = append(record.Installed, s.leftBy(done)...)
+	}
+	record.Steps[id] = stepStarted
+	body, err := json.Marshal(record)
+	s.server.write(recordPath, string(body))
+	return err
+}
+
+// leftBy puts on the server what the step called id leaves once it ended, returning the pieces the record then owns.
+func (s *installScenario) leftBy(id string) []string {
+	switch id {
+	case "packages":
+		s.server.installPackage(piecePostgreSQL)
+		s.server.installPackage(pieceCaddy)
+		return []string{piecePostgreSQL, pieceCaddy}
+	case "user":
+		s.server.addUser("gophenberg", "/opt/gophenberg")
+	case "install-root":
+		s.server.folder("/opt/gophenberg/versions", "/opt/gophenberg/downloads", "/opt/gophenberg/state",
+			"/opt/gophenberg/backups", "/opt/gophenberg/media", "/opt/gophenberg/themes")
+		return []string{"/opt/gophenberg"}
+	}
+	return nil
+}
+
+// cutOffInPackages leaves the server as a first run left it when it was cut off while dpkg set up PostgreSQL.
+func (s *installScenario) cutOffInPackages() error {
+	s.server.folder("/etc/postgresql/16/main")
+	s.server.dpkg[piecePostgreSQL] = "iF"
+	return s.cutOffIn("packages", piecePostgreSQL, pieceCaddy)
+}
+
+// cutOffAfterCreateuser leaves the server as a first run left it when it was cut off right after createuser.
+func (s *installScenario) cutOffAfterCreateuser() error {
+	s.server.answers["createuser"] = answer{
+		printed: "createuser: error: creation of new role failed: ERROR:  role \"gophenberg\" already exists\n",
+		err:     errors.New("installer: run createuser: exit status 1"),
+	}
+	return s.cutOffIn("database")
+}
+
+// cutOffInBuild leaves the server as a first run left it when it was cut off while it unpacked this installer's build.
+func (s *installScenario) cutOffInBuild() error {
+	s.server.write(ownBuild+"/gophenberg", "#!/bin/sh\n# cut off while it was written\n")
+	s.server.folder(ownBuild + "/LICENSES")
+	return s.cutOffIn("build")
+}
+
+// holdsPrintedFiles fails unless the server holds every file the dry run printed, with its text, owner and mode.
+func (s *installScenario) holdsPrintedFiles() error {
+	if s.planned == "" {
+		return errors.New("the scenario ran no dry run")
+	}
+	for path, printed := range (&installScenario{stdout: s.planned}).printedFiles() {
+		owned, _ := strings.CutPrefix(printed.header, "  writes "+path+", owned by ")
+		owner, mode, _ := strings.Cut(strings.TrimSuffix(owned, ":"), " with mode ")
+		if err := s.holdsFile(path, owner, mode, printed.text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// holdsFile fails unless the server holds a regular file at path that holds text, owned by owner with mode.
+func (s *installScenario) holdsFile(path, owner, mode, text string) error {
+	held, err := os.ReadFile(s.server.at(path))
+	if err != nil {
+		return fmt.Errorf("the server holds no file %s: %w", path, err)
+	}
+	if string(held) != text {
+		return fmt.Errorf("the server holds %s as\n%s\nwant\n%s", path, held, text)
+	}
+	return s.ownedAs(path, owner, mode, 0)
+}
+
+// holdsFolders fails unless the server holds each folder the table names, not a link, owned by its owner with its mode.
+func (s *installScenario) holdsFolders(folders *godog.Table) error {
+	for _, row := range folders.Rows[1:] {
+		if err := s.ownedAs(row.Cells[0].Value, row.Cells[1].Value, row.Cells[2].Value, fs.ModeDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ownedAs fails unless the server holds an entry of the type kind at path, owned by owner with mode.
+func (s *installScenario) ownedAs(path, owner, mode string, kind fs.FileMode) error {
+	info, err := os.Lstat(s.server.at(path))
+	if err != nil {
+		return fmt.Errorf("the server holds nothing at %s: %w", path, err)
+	}
+	if info.Mode().Type() != kind {
+		return fmt.Errorf("the server holds %s as %s, want the type %s", path, info.Mode(), kind)
+	}
+	if got := fmt.Sprintf("%04o", info.Mode().Perm()); got != mode {
+		return fmt.Errorf("the server holds %s with mode %s, want %s", path, got, mode)
+	}
+	return s.ownedBy(path, owner)
+}
+
+// ownedBy fails unless the entry at path, not what a link leads to, belongs to the ids the server gives owner.
+func (s *installScenario) ownedBy(path, owner string) error {
+	info, err := os.Lstat(s.server.at(path))
+	if err != nil {
+		return err
+	}
+	uid, gid, err := s.idsOf(owner)
+	if err != nil {
+		return err
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	if int(stat.Uid) != uid || int(stat.Gid) != gid {
+		return fmt.Errorf("%s belongs to %d:%d, want %s's %d:%d", path, stat.Uid, stat.Gid, owner, uid, gid)
+	}
+	return nil
+}
+
+// idsOf returns the ids of owner on the server, root's own the test's, since a test may give a file to no other ids.
+func (s *installScenario) idsOf(owner string) (uid, gid int, err error) {
+	if owner == "root" {
+		return os.Getuid(), os.Getgid(), nil
+	}
+	found, held := s.server.users[owner]
+	if !held {
+		return 0, 0, fmt.Errorf("the server has no user %s", owner)
+	}
+	uid, uidErr := strconv.Atoi(found.Uid)
+	gid, gidErr := strconv.Atoi(found.Gid)
+	return uid, gid, errors.Join(uidErr, gidErr)
+}
+
+// holdsRecord fails unless the server holds an install record it can read, owned by owner with mode.
+func (s *installScenario) holdsRecord(owner, mode string) error {
+	if _, err := readRecord(s.server.machine()); err != nil {
+		return err
+	}
+	return s.ownedAs(recordPath, owner, mode, 0)
+}
+
+// holdsInstallerCopy fails unless the installer's own copy holds the installer that ran, owned by owner with mode.
+func (s *installScenario) holdsInstallerCopy(owner, mode string) error {
+	running, err := os.ReadFile(s.server.at(fakeInstaller))
+	if err != nil {
+		return err
+	}
+	return s.holdsFile(installerCopy, owner, mode, string(running))
+}
+
+// holdsOwnBuild fails unless this installer's build folder holds the files of its archive alone, owned by gophenberg.
+func (s *installScenario) holdsOwnBuild() error {
+	want, err := archived(s.server.at(s.archive))
+	if err != nil {
+		return err
+	}
+	got := map[string]string{}
+	err = filepath.WalkDir(s.server.at(ownBuild), func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := s.ownedBy(s.server.serverPath(path), "gophenberg"); err != nil || entry.IsDir() {
+			return err
+		}
+		held, err := os.ReadFile(path)
+		got[strings.TrimPrefix(path, s.server.at(ownBuild)+"/")] = string(held)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if !maps.Equal(got, want) {
+		return fmt.Errorf("the build folder %s holds %v, want the files of its archive %v", ownBuild, got, want)
+	}
+	return nil
+}
+
+// archived returns each file of the release archive at path by its name, with what it holds.
+func archived(path string) (map[string]string, error) {
+	archive, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = archive.Close() }()
+	unzipped, err := gzip.NewReader(archive)
+	if err != nil {
+		return nil, err
+	}
+	entries, files := tar.NewReader(unzipped), map[string]string{}
+	for {
+		header, err := entries.Next()
+		if errors.Is(err, io.EOF) {
+			return files, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(entries)
+		if err != nil {
+			return nil, err
+		}
+		files[header.Name] = string(body)
+	}
+}
+
+// pointsAtOwnBuild fails unless the current link names this installer's build and belongs to gophenberg.
+func (s *installScenario) pointsAtOwnBuild() error {
+	const current = "/opt/gophenberg/current"
+	target, err := os.Readlink(s.server.at(current))
+	if err != nil {
+		return err
+	}
+	if want := "versions/" + version.Version(); target != want {
+		return fmt.Errorf("the current link names %s, want %s", target, want)
+	}
+	return s.ownedBy(current, "gophenberg")
+}
+
+// ranInOrder fails unless the run ran the program line first, then second when order is after, or the other way.
+func (s *installScenario) ranInOrder(first, order, second string) error {
+	at, other := slices.Index(s.server.ran, first), slices.Index(s.server.ran, second)
+	ran := strings.Join(s.server.ran, "\n")
+	if at < 0 || other < 0 {
+		return fmt.Errorf("the run ran\n%s\nwant it to run both %q and %q", ran, first, second)
+	}
+	if (at < other) != (order == "before") {
+		return fmt.Errorf("the run ran\n%s\nwant %q %s %q", ran, first, order, second)
+	}
+	return nil
+}
+
+// recordMarks fails unless the install record on the server marks the step called id as mark.
+func (s *installScenario) recordMarks(id, mark string) error {
+	record, err := readRecord(s.server.machine())
+	if err != nil {
+		return err
+	}
+	if got := record.Steps[id]; got != mark {
+		return fmt.Errorf("the install record marks the step %s %q, want %s", id, got, mark)
 	}
 	return nil
 }
