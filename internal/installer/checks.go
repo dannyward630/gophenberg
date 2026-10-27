@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/gopherium/framework/gonsole"
@@ -15,8 +18,24 @@ import (
 // nothingChanged ends every message a machine check stops the run with.
 const nothingChanged = ", so nothing was changed"
 
+// installCommand is the name of the command that installs Gophenberg on a server.
+const installCommand = "server:install"
+
 // varLib is the folder PostgreSQL, Caddy and the install record keep their data under, from the top of the server.
 const varLib = "/var/lib"
+
+// caddyfilePath is Caddy's own settings file, which the first run writes and no later run writes again.
+const caddyfilePath = "/etc/caddy/Caddyfile"
+
+// caddyfileLines are the lines of the Caddyfile the first run writes that every later run needs, each with why.
+var caddyfileLines = []struct{ line, why string }{
+	{"import " + caddySitePath, "which has Caddy serve the site"},
+	{"admin unix//run/caddy/admin.sock", "which keeps Caddy's admin address off the loopback port any local user can " +
+		"reach"},
+}
+
+// commandHeader is how the gophenberg command server:install writes begins, which shows that it wrote the file.
+var commandHeader = strings.Join(strings.SplitAfter(render("gophenberg", fileData{}), "\n")[:2], "")
 
 // sandboxProbe runs /bin/true in the sandbox of the site's unit, which only a server that can run the unit passes.
 var sandboxProbe = Program{Name: "systemd-run", Args: []string{
@@ -29,8 +48,8 @@ var clockProbe = Program{Name: "timedatectl", Args: []string{"show", "-p", "NTPS
 
 // machineChecks are the checks of the machine in the order server:install runs them, before anything changes.
 var machineChecks = []func(context.Context, *machineCheck) error{
-	checkRoot, checkSystem, checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkDisk, checkSitePort,
-	checkPorts, checkPieces, checkDatabaseURL, checkDomain, checkClock,
+	checkRoot, checkSystem, checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkCurrent, checkDisk,
+	checkSitePort, checkPorts, checkPieces, checkCommand, checkCaddyfile, checkDatabaseURL, checkDomain, checkClock,
 }
 
 // machineCheck is one run of the machine checks, with what they read, where their notes go and what they find.
@@ -44,9 +63,10 @@ type machineCheck struct {
 	found    facts
 }
 
-// facts is what the machine checks find that the files server:install writes depend on.
+// facts is what the machine checks find that the steps of server:install depend on.
 type facts struct {
 	systemd int
+	current string
 }
 
 // run runs every machine check in turn and stops at the first one that fails.
@@ -67,14 +87,72 @@ func stop(format string, args ...any) error {
 // checkRoot stops a run that is not root's, since the steps after the checks change the whole server.
 func checkRoot(_ context.Context, c *machineCheck) error {
 	if c.machine.Euid() != 0 {
-		return notRoot()
+		return notRoot(installCommand)
 	}
 	return nil
 }
 
-// notRoot returns the stop of a run that is not root's.
-func notRoot() error {
-	return stop("server:install must run as root, such as with sudo")
+// notRoot returns the stop of a run of command that is not root's.
+func notRoot(command string) error {
+	return stop("%s must run as root, such as with sudo", command)
+}
+
+// checkCommand stops where a gophenberg command server:install did not write sits on the path, which it would replace.
+func checkCommand(_ context.Context, c *machineCheck) error {
+	info, err := c.machine.lstat(commandPath)
+	if err != nil || info == nil {
+		return err
+	}
+	head := ""
+	if info.Mode().IsRegular() {
+		if head, err = c.machine.head(commandPath, len(commandHeader)); err != nil {
+			return fmt.Errorf("installer: %w", err)
+		}
+	}
+	if head != commandHeader {
+		return stop("this server already has a %s that server:install did not write, and server:install puts the "+
+			"gophenberg command there", commandPath)
+	}
+	return nil
+}
+
+// checkCaddyfile stops a later run whose Caddyfile lost a line the first run wrote, since no later run writes it again.
+func checkCaddyfile(_ context.Context, c *machineCheck) error {
+	if !c.settings.withCaddy() || !c.record.ended(stepCaddy) {
+		return nil
+	}
+	body, err := c.machine.read(caddyfilePath)
+	if err != nil {
+		return err
+	}
+	held := trimmedLines(string(body))
+	for _, needed := range caddyfileLines {
+		if !slices.Contains(held, needed.line) {
+			return stop("%s lacks the line %q that an earlier run wrote, %s, and it must go back in before "+
+				"server:install runs again", caddyfilePath, needed.line, needed.why)
+		}
+	}
+	return nil
+}
+
+// head returns at most n bytes from the start of the file at path, named from the top of the server.
+func (m Machine) head(path string, n int) (string, error) {
+	file, err := os.Open(filepath.Join(m.Root, path))
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	read, err := io.ReadAll(io.LimitReader(file, int64(n)))
+	return string(read), err
+}
+
+// trimmedLines returns each line of text without the spaces and tabs around it.
+func trimmedLines(text string) []string {
+	var lines []string
+	for line := range strings.Lines(text) {
+		lines = append(lines, strings.TrimSpace(line))
+	}
+	return lines
 }
 
 // checkSandbox stops where systemd cannot set up the site's sandbox, naming what systemd-detect-virt reports.

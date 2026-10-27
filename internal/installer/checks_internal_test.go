@@ -4,6 +4,7 @@ package installer
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -70,28 +72,33 @@ func (i ownedInfo) Sys() any {
 
 // fakeServer is a server every machine check passes on, which records what the checks ask of it.
 type fakeServer struct {
-	t           *testing.T
-	root        string
-	euid        int
-	answers     map[string]answer
-	taken       map[string]error
-	freeMB      map[string]uint64
-	owners      map[string]uint32
-	broken      map[string]error
-	described   map[string]fs.FileInfo
-	unmeasured  map[string]error
-	addresses   []netip.Addr
-	unresolved  error
-	own         []net.Addr
-	unlisted    error
-	answerFetch func(request *http.Request) (*http.Response, error)
-	notes       strings.Builder
-	ran         []string
-	listened    []string
-	listeners   []*pipeListener
-	measured    []string
-	resolved    []string
-	fetched     []string
+	t            *testing.T
+	root         string
+	euid         int
+	answers      map[string]answer
+	taken        map[string]error
+	freeMB       map[string]uint64
+	owners       map[string]uint32
+	broken       map[string]error
+	described    map[string]fs.FileInfo
+	unmeasured   map[string]error
+	addresses    []netip.Addr
+	unresolved   error
+	own          []net.Addr
+	unlisted     error
+	answerFetch  func(request *http.Request) (*http.Response, error)
+	answerHTTPS  func(request *http.Request) (*http.Response, error)
+	prompt       *fakePrompt
+	users        map[string]*user.User
+	notes        strings.Builder
+	ran          []string
+	listened     []string
+	listeners    []*pipeListener
+	measured     []string
+	resolved     []string
+	fetched      []string
+	fetchedHTTPS []string
+	terminals    int
 }
 
 // newFakeServer returns a fake server every machine check passes on.
@@ -105,7 +112,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 			"timedatectl": {printed: "yes\n"},
 		},
 		taken: map[string]error{}, freeMB: map[string]uint64{}, owners: map[string]uint32{}, broken: map[string]error{},
-		described: map[string]fs.FileInfo{}, unmeasured: map[string]error{},
+		described: map[string]fs.FileInfo{}, unmeasured: map[string]error{}, users: map[string]*user.User{},
 		addresses: addresses("::ffff:203.0.113.7"),
 		own:       []net.Addr{cardAddress("127.0.0.1/8"), cardAddress("203.0.113.7/24"), cardAddress("::1/128")},
 	}
@@ -114,8 +121,12 @@ func newFakeServer(t *testing.T) *fakeServer {
 	server.folder("/run/systemd/system", "/opt", "/var/lib")
 	server.program("/usr/bin/systemctl")
 	server.program("/usr/sbin/runuser")
+	server.program(fakeInstaller)
 	return server
 }
+
+// fakeInstaller is where the installer a fake server runs sits, named from the top of the server.
+const fakeInstaller = "/root/installer/gophenberg"
 
 // program puts a program anybody may run at path, named from the top of the server.
 func (s *fakeServer) program(path string) {
@@ -161,6 +172,18 @@ func (s *fakeServer) link(path, target string) {
 	}
 }
 
+// earlierBuild is the build an earlier run left the current link naming.
+const earlierBuild = "0.19.0"
+
+// pointCurrent puts the earlier build with its program in the install root and points current at it, as Point does.
+func (s *fakeServer) pointCurrent() {
+	s.t.Helper()
+	s.program("/opt/gophenberg/versions/" + earlierBuild + "/gophenberg")
+	if err := os.Symlink("versions/"+earlierBuild, s.at("/opt/gophenberg/current")); err != nil {
+		s.t.Fatalf("pointing current at %s: %v", earlierBuild, err)
+	}
+}
+
 // remove takes the file or folder at path away, named from the top of the server.
 func (s *fakeServer) remove(path string) {
 	s.t.Helper()
@@ -186,8 +209,41 @@ func (s *fakeServer) serverPath(path string) string {
 func (s *fakeServer) machine() Machine {
 	return Machine{
 		Run: s.run, Root: s.root, Lstat: s.lstat, Free: s.free, Listen: s.listen, ListenPacket: s.listenPacket,
-		Fetch: s.fetch, Resolve: s.resolve, Addresses: s.ownAddresses, Euid: func() int { return s.euid },
+		Fetch: s.fetch, Resolve: s.resolve, Addresses: s.ownAddresses, Terminal: s.terminal,
+		Executable: s.executable, LookupUser: s.lookupUser, FetchHTTPS: s.fetchHTTPS,
+		Euid: func() int { return s.euid },
 	}
+}
+
+// terminal returns the fake terminal a test gave the server, or the error of a run with no terminal at all.
+func (s *fakeServer) terminal() (Prompt, error) {
+	s.terminals++
+	if s.prompt == nil {
+		return nil, &fs.PathError{Op: "open", Path: "/dev/tty", Err: syscall.ENXIO}
+	}
+	return s.prompt, nil
+}
+
+// executable returns the installer the fake server runs, on the test's own disk.
+func (s *fakeServer) executable() (string, error) {
+	return s.at(fakeInstaller), nil
+}
+
+// lookupUser returns the OS user called name that a test or a fake program gave the server.
+func (s *fakeServer) lookupUser(name string) (*user.User, error) {
+	if found, held := s.users[name]; held {
+		return found, nil
+	}
+	return nil, user.UnknownUserError(name)
+}
+
+// fetchHTTPS records the page asked for and whether roots came with it, then answers as the test says.
+func (s *fakeServer) fetchHTTPS(request *http.Request, roots *x509.CertPool) (*http.Response, error) {
+	s.fetchedHTTPS = append(s.fetchedHTTPS, fmt.Sprintf("%s with roots %t", request.URL, roots != nil))
+	if s.answerHTTPS == nil {
+		return nil, errors.New("the fake server answers no HTTPS")
+	}
+	return s.answerHTTPS(request)
 }
 
 // run answers program as the answers say, failing the test for a program no answer covers.
@@ -327,6 +383,158 @@ func TestTheMachineChecksStopARunThatIsNotRoots(t *testing.T) {
 	wantRefused(t, err, "server:install must run as root, such as with sudo, so nothing was changed")
 	if len(server.ran) != 0 {
 		t.Errorf("the checks ran %q as a plain user, want nothing run", server.ran)
+	}
+}
+
+func TestNotRootNamesTheCommandThatMustRunAsRoot(t *testing.T) {
+	t.Parallel()
+
+	wantRefused(t, notRoot("server:uninstall"), "server:uninstall must run as root, such as with sudo, so nothing "+
+		"was changed")
+}
+
+// otherCommand is the stop of a run that finds a gophenberg command on the path server:install did not write.
+const otherCommand = "this server already has a /usr/local/bin/gophenberg that server:install did not write, and " +
+	"server:install puts the gophenberg command there, so nothing was changed"
+
+func TestTheMachineChecksPassAGophenbergCommandServerInstallWrote(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.write(commandPath, wantedCommand)
+
+	err := server.check().run(t.Context())
+
+	server.wantPassed(err, "")
+}
+
+func TestTheMachineChecksStopAtAGophenbergCommandServerInstallDidNotWrite(t *testing.T) {
+	t.Parallel()
+
+	for what, put := range map[string]func(*fakeServer){
+		"another script": func(s *fakeServer) { s.write(commandPath, "#!/bin/sh\nexec /opt/other/gophenberg \"$@\"\n") },
+		"a shorter file": func(s *fakeServer) { s.write(commandPath, "#!/bin/sh\n") },
+		"a folder":       func(s *fakeServer) { s.folder(commandPath) },
+		"a link to the command server:install writes": func(s *fakeServer) {
+			s.write("/usr/local/share/gophenberg/command", wantedCommand)
+			s.link(commandPath, "/usr/local/share/gophenberg/command")
+		},
+	} {
+		server := newFakeServer(t)
+		put(server)
+
+		err := server.check().run(t.Context())
+
+		if err == nil || err.Error() != otherCommand {
+			t.Errorf("the checks of %s on the path = %v, want %q", what, err, otherCommand)
+		}
+	}
+}
+
+func TestTheMachineChecksRefuseAGophenbergCommandTheyCannotReadOrDescribe(t *testing.T) {
+	t.Parallel()
+
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file of mode 0000")
+	}
+	locked := newFakeServer(t)
+	locked.write(commandPath, wantedCommand)
+	locked.chmod(commandPath, 0)
+	broken := newFakeServer(t)
+	broken.broken[commandPath] = syscall.EIO
+
+	for server, want := range map[*fakeServer]string{
+		locked: "installer: open " + locked.at(commandPath) + ": permission denied",
+		broken: "installer: input/output error",
+	} {
+		err := server.check().run(t.Context())
+
+		wantRefused(t, err, want)
+	}
+}
+
+// laterCheck returns the machine check of server for a later run, whose record owns Caddy and ended its step.
+func laterCheck(server *fakeServer) *machineCheck {
+	check := server.check()
+	check.record.Installed = []string{pieceCaddy}
+	check.record.Steps = map[string]string{stepCaddy: stepEnded}
+	return check
+}
+
+func TestTheMachineChecksPassALaterRunWhoseCaddyfileHoldsTheLinesTheFirstRunWrote(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.write(caddyfilePath, wantedCaddyfile+"\nexample.org {\n\trespond \"Maria Perez's own site\"\n}\n")
+
+	err := laterCheck(server).run(t.Context())
+
+	server.wantPassed(err, "")
+}
+
+func TestTheMachineChecksStopALaterRunWhoseCaddyfileLostALineTheFirstRunWrote(t *testing.T) {
+	t.Parallel()
+
+	for _, lost := range caddyfileLines {
+		server := newFakeServer(t)
+		server.write(caddyfilePath, strings.Replace(wantedCaddyfile, lost.line+"\n", "", 1))
+
+		err := laterCheck(server).run(t.Context())
+
+		wantRefused(t, err, `/etc/caddy/Caddyfile lacks the line "`+lost.line+`" that an earlier run wrote, `+lost.why+
+			", and it must go back in before server:install runs again, so nothing was changed")
+	}
+}
+
+func TestTheMachineChecksStopALaterRunWhoseCaddyfileIsGone(t *testing.T) {
+	t.Parallel()
+
+	err := laterCheck(newFakeServer(t)).run(t.Context())
+
+	wantRefused(t, err, `/etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy" that an earlier `+
+		"run wrote, which has Caddy serve the site, and it must go back in before server:install runs again, so "+
+		"nothing was changed")
+}
+
+func TestTheMachineChecksRefuseACaddyfileTheyCannotRead(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.folder(caddyfilePath)
+
+	err := laterCheck(server).run(t.Context())
+
+	wantRefused(t, err, "installer: read "+server.at(caddyfilePath)+": is a directory")
+}
+
+func TestTheMachineChecksLeaveTheCaddyfileAloneOnAFirstRunAndWithoutCaddy(t *testing.T) {
+	t.Parallel()
+
+	own := newFakeServer(t).ownWebServerCheck()
+	own.record.Steps = map[string]string{stepCaddy: stepEnded}
+
+	for _, check := range []*machineCheck{newFakeServer(t).check(), own} {
+		err := check.run(t.Context())
+
+		if err != nil {
+			t.Errorf("the checks without a Caddyfile to check = %v, want them passed", err)
+		}
+	}
+}
+
+func TestTheLinesALaterRunNeedsAreLinesOfTheCaddyfileTheFirstRunWrites(t *testing.T) {
+	t.Parallel()
+
+	for _, domain := range []string{"example.com", "localhost"} {
+		files := firstSite(t, domain, 255).caddyFiles()
+		caddyfile := files[len(files)-1]
+
+		for _, needed := range caddyfileLines {
+			if caddyfile.path != caddyfilePath || !slices.Contains(trimmedLines(caddyfile.text), needed.line) {
+				t.Errorf("the first run writes %s for %s as\n%s\nwant it to hold the line %q", caddyfile.path, domain,
+					caddyfile.text, needed.line)
+			}
+		}
 	}
 }
 
