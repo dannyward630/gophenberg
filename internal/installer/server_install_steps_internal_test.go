@@ -3,6 +3,7 @@
 package installer
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +33,9 @@ const earlierRecord = `{"installer": "0.0.1", "domain": "example.com",
 "build": "ended", "installer-copy": "ended", "site-env": "ended", "units": "ended", "command": "ended",
 "caddy": "ended", "start": "ended", "admin": "ended", "https": "ended", "summary": "ended"}}
 `
+
+// thisPlatform is the platform of this server as a release.json names it.
+const thisPlatform = "linux/" + runtime.GOARCH
 
 // probes are the programs the checks run, none of which changes a server.
 var probes = []string{"systemctl --version", sandboxLine, "systemd-detect-virt", clockLine}
@@ -83,15 +88,36 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 			s.addEscapedSiteEnvLine)
 		sc.Given(`^unattended-upgrades is installed on the server$`, s.installUnattended)
 		sc.Given(`^the environment sets (GOPHENBERG_[A-Z_]+) to (\S+)$`, s.setEnv)
+		initializeServerInstallAnswers(sc, s)
 		sc.When(`^the operator runs "([^"]*)"$`, s.runLine)
 		initializeServerInstallOutcomes(sc, s)
 	}
+}
+
+// initializeServerInstallAnswers binds the steps that give a run its archive, its answers and the files it checks.
+func initializeServerInstallAnswers(sc *godog.ScenarioContext, s *installScenario) {
+	sc.Given(`^the operator's terminal answers:$`, s.answerOnTerminal)
+	sc.Given(`^the release archive of this installer is at (/\S+)$`, s.putOwnArchive)
+	sc.Given(`^a release archive of Gophenberg ([0-9.]+) is at (/\S+)$`, s.putArchiveOfVersion)
+	sc.Given(`^a release archive of this installer built for (\S+) is at (/\S+)$`, s.putArchiveForPlatform)
+	sc.Given(`^the file (/\S+) holds the line "([^"]*)"$`, s.writeLine)
+	sc.Given(`^the file (/\S+) holds the line "([^"]*)" ending in a carriage return$`, s.writeLineWithReturn)
+	sc.Given(`^another package put a gophenberg command at /usr/local/bin/gophenberg$`, s.putOtherCommand)
+	sc.Given(`^the line "([^"]*)" was taken out of /etc/caddy/Caddyfile$`, s.takeOutCaddyfileLine)
+	sc.Given(`^the current link of the install root names /opt/gophenberg/versions/0.19.0 by its full path$`,
+		s.pointCurrentByFullPath)
+	sc.Given(`^the current link of the install root names versions/0.19.0, a build folder deleted by hand$`,
+		s.deleteCurrentBuild)
 }
 
 // initializeServerInstallOutcomes binds the steps that check what a server:install run did to s.
 func initializeServerInstallOutcomes(sc *godog.ScenarioContext, s *installScenario) {
 	sc.Then(`^the run stops with "(.*)"$`, s.stopsWith)
 	sc.Then(`^the run stops because this installer is older than the ([0-9.]+) installer$`, s.stopsAsOlder)
+	sc.Then(`^the run stops because the archive (\S+) holds Gophenberg ([0-9.]+)$`, s.stopsAsOtherVersion)
+	sc.Then(`^the run stops because the archive (\S+) is built for (\S+)$`, s.stopsAsOtherPlatform)
+	sc.Then(`^the run asked nothing on the terminal$`, s.askedNothing)
+	sc.Then(`^the terminal showed:$`, s.terminalShowed)
 	sc.Then(`^the run succeeds$`, s.succeeds)
 	sc.Then(`^the run notes "([^"]*)"$`, s.notes)
 	sc.Then(`^the run notes nothing$`, s.notesNothing)
@@ -205,10 +231,12 @@ func (s *installScenario) installEarlier() {
 	server := s.server
 	server.write(serverEnvPath, firstServerEnv)
 	server.write(recordPath, earlierRecord)
-	server.folder("/etc/postgresql/16/main", "/etc/caddy", "/opt/gophenberg/versions/0.19.0")
+	server.folder("/etc/postgresql/16/main")
+	server.write("/etc/caddy/Caddyfile", wantedCaddyfile)
 	server.write("/etc/systemd/system/gophenberg.service", wantedSiteUnit)
+	server.write(commandPath, wantedCommand)
 	server.write(siteEnvAt, wantedSiteEnv)
-	server.link("/opt/gophenberg/current", "/opt/gophenberg/versions/0.19.0")
+	server.pointCurrent()
 	for _, held := range portListens {
 		network, address, _ := strings.Cut(held, " ")
 		server.taken[held] = inUse(network, address)
@@ -256,6 +284,67 @@ func (s *installScenario) setEnv(key, value string) {
 	s.env[key] = value
 }
 
+// answerOnTerminal gives the run a terminal that answers each line of answers in turn, an empty line by Enter alone.
+func (s *installScenario) answerOnTerminal(answers *godog.DocString) {
+	s.server.prompt = &fakePrompt{answers: strings.Split(answers.Content, "\n")}
+}
+
+// putOwnArchive puts the release archive of this installer for this server at path.
+func (s *installScenario) putOwnArchive(path string) {
+	s.server.write(path, releaseArchiveOf(s.t, version.Version(), thisPlatform))
+}
+
+// putArchiveOfVersion puts a release archive of Gophenberg release for this server at path.
+func (s *installScenario) putArchiveOfVersion(release, path string) {
+	s.server.write(path, releaseArchiveOf(s.t, release, thisPlatform))
+}
+
+// putArchiveForPlatform puts a release archive of this installer built for platform at path.
+func (s *installScenario) putArchiveForPlatform(platform, path string) {
+	s.server.write(path, releaseArchiveOf(s.t, version.Version(), platform))
+}
+
+// writeLine puts a file at path that holds line and its newline.
+func (s *installScenario) writeLine(path, line string) {
+	s.server.write(path, line+"\n")
+}
+
+// writeLineWithReturn puts a file at path that holds line ended by a carriage return and a newline.
+func (s *installScenario) writeLineWithReturn(path, line string) {
+	s.server.write(path, line+"\r\n")
+}
+
+// putOtherCommand puts a gophenberg command on the path that another package wrote.
+func (s *installScenario) putOtherCommand() {
+	s.server.write(commandPath, "#!/bin/sh\nexec /opt/other/bin/gophenberg \"$@\"\n")
+	s.server.chmod(commandPath, 0o755)
+}
+
+// takeOutCaddyfileLine takes line out of the Caddyfile an earlier run wrote, as a hand edit does.
+func (s *installScenario) takeOutCaddyfileLine(line string) error {
+	held, err := os.ReadFile(s.server.at("/etc/caddy/Caddyfile"))
+	if err != nil {
+		return err
+	}
+	kept := strings.Replace(string(held), line+"\n", "", 1)
+	if kept == string(held) {
+		return fmt.Errorf("the Caddyfile\n%s\nholds no line %q", held, line)
+	}
+	s.server.write("/etc/caddy/Caddyfile", kept)
+	return nil
+}
+
+// pointCurrentByFullPath points the current link at its build by the full path, which updater.Point never writes.
+func (s *installScenario) pointCurrentByFullPath() error {
+	s.server.remove("/opt/gophenberg/current")
+	return os.Symlink("/opt/gophenberg/versions/0.19.0", s.server.at("/opt/gophenberg/current"))
+}
+
+// deleteCurrentBuild deletes the build folder the current link names and leaves the link, as a hand deletion does.
+func (s *installScenario) deleteCurrentBuild() {
+	s.server.remove("/opt/gophenberg/versions/0.19.0")
+}
+
 // runLine runs the server:install line on the scenario's server, noting what was on the server before.
 func (s *installScenario) runLine(line string) error {
 	request, err := requestOf(line)
@@ -278,6 +367,8 @@ func requestOf(line string) (Request, error) {
 	flags.StringVar(&request.Domain, "domain", "", "")
 	flags.StringVar(&request.Archive, "archive", "", "")
 	flags.StringVar(&request.AdminEmail, "admin-email", "", "")
+	flags.StringVar(&request.AdminName, "admin-name", "", "")
+	flags.StringVar(&request.AdminPasswordFile, "admin-password-file", "", "")
 	flags.StringVar(&request.WebServer, "web-server", "", "")
 	flags.BoolVar(&request.SkipDomainCheck, "skip-domain-check", false, "")
 	flags.BoolVar(&request.DryRun, "dry-run", false, "")
@@ -329,6 +420,40 @@ func (s *installScenario) stopsWith(want string) error {
 func (s *installScenario) stopsAsOlder(recorded string) error {
 	return s.stopsWith("this installer is " + version.Version() + ", and this server was set up by the " + recorded +
 		" installer, so run the install.sh line again")
+}
+
+// stopsAsOtherVersion fails unless the run stopped because the archive at path holds Gophenberg release.
+func (s *installScenario) stopsAsOtherVersion(path, release string) error {
+	return s.stopsWith("the archive " + path + " holds Gophenberg " + release + ", not this installer's " +
+		version.Version() + ", and server:install installs its own release only, so nothing was changed")
+}
+
+// stopsAsOtherPlatform fails unless the run stopped because the archive at path is built for platform.
+func (s *installScenario) stopsAsOtherPlatform(path, platform string) error {
+	return s.stopsWith("the archive " + path + " is built for " + platform + ", not for this server's " +
+		thisPlatform + ", so nothing was changed")
+}
+
+// askedNothing fails when the run opened the terminal at all.
+func (s *installScenario) askedNothing() error {
+	if s.server.terminals != 0 {
+		return fmt.Errorf("the run opened the terminal %d times, want it never opened", s.server.terminals)
+	}
+	return nil
+}
+
+// terminalShowed fails unless the terminal showed the questions and lines want lists, one a line, in order.
+func (s *installScenario) terminalShowed(want *godog.DocString) error {
+	if s.server.prompt == nil {
+		return errors.New("the scenario gave the run no terminal")
+	}
+	if got := s.server.prompt.shown(); got != want.Content {
+		return fmt.Errorf("the terminal showed\n%s\nwant\n%s", got, want.Content)
+	}
+	if !s.server.prompt.closed {
+		return errors.New("the run left the terminal open")
+	}
+	return nil
 }
 
 // succeeds fails unless the run passed every check.

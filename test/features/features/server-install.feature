@@ -9,15 +9,23 @@ Feature: Check a Linux server before installing Gophenberg
   nothing was changed. A later run skips the ports and the pieces the
   install record says an earlier run installed. With -dry-run the run then
   prints each step it would take and the full text of every file it would
-  write, and still changes nothing. Root never takes a setting from the
-  site's .env, since the site's own user can write it. It reads only the
-  five stop graces from it, as plain numbers, for the time systemd gives
-  the site to stop, and on a server that keeps its own web server the
-  upload cap. With -web-server none the server keeps a web server of its
-  own: the run leaves out Caddy, the ports Caddy answers on and the
-  domain check, and its last step prints the lines that web server needs
-  to send the domain to the site. A later run never moves a server from
-  one web server to the other.
+  write, and still changes nothing. Without -dry-run it then opens the
+  release archive -archive names and checks that its release.json names
+  this installer's version and this server's platform. While the first
+  administrator is still to be made, it asks on the terminal for what the
+  flags leave out: the email, the name and the password, typed twice and
+  never shown. A typed answer the account rules refuse is asked again.
+  The checks also stop at a gophenberg command on the path that the
+  installer did not write, at a Caddyfile that lost a line an earlier run
+  wrote, and at a current link that names no build. Root never takes a
+  setting from the site's .env, since the site's own user can write it.
+  It reads only the five stop graces from it, as plain numbers, for the
+  time systemd gives the site to stop, and on a server that keeps its own
+  web server the upload cap. With -web-server none the server keeps a web
+  server of its own: the run leaves out Caddy, the ports Caddy answers on
+  and the domain check, and its last step prints the lines that web server
+  needs to send the domain to the site. A later run never moves a server
+  from one web server to the other.
 
   Background:
     Given a fresh Ubuntu 24.04 server run by systemd 255
@@ -645,3 +653,198 @@ Feature: Check a Linux server before installing Gophenberg
       ProxyPass / http://127.0.0.1:8081/
       ProxyPassReverse / http://127.0.0.1:8081/
       """
+
+  Scenario: A dry run asks no question and opens no archive
+    Given the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -dry-run -domain example.com -archive /var/lib/gophenberg-installer/missing.tar.gz"
+    Then the run succeeds
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A first run without -archive is refused before anything changes
+    Given the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -domain example.com"
+    Then the run stops with "-archive is required while /opt/gophenberg/current names no build, such as the archive install.sh downloads into /var/lib/gophenberg-installer, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: An archive of another version than this installer is refused
+    Given a release archive of Gophenberg 0.0.1 is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops because the archive /var/lib/gophenberg-installer/release.tar.gz holds Gophenberg 0.0.1
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: An archive built for another platform is refused
+    Given a release archive of this installer built for windows/arm64 is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops because the archive /var/lib/gophenberg-installer/release.tar.gz is built for windows/arm64
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A password file that is not an absolute path is refused before the server is read
+    When the operator runs "server:install -domain example.com -admin-password-file admin-password"
+    Then the run stops with "-admin-password-file: must be an absolute path, got "admin-password""
+    And the checks listened on no port
+    And nothing on the server changed
+
+  Scenario: A password file whose first line ends in a carriage return is refused
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple" ending in a carriage return
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "-admin-password-file: the first line of /root/admin-password ends in a carriage return, as a file saved with Windows line endings does, and a password never holds one, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A password shorter than 12 characters is refused before anything changes
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "too short"
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "-admin-password-file: password shorter than 12 characters, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A first run given the archive and every answer as a flag asks nothing
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: Two typed passwords that differ are asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      Maria Perez
+      correct horse battery staple
+      correct horse battery stable
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed"
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      Password again: (unseen)
+      the two passwords differ, so type them again
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And nothing on the server changed
+
+  Scenario: A typed answer the account rules refuse is asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      maria
+      admin@example.com
+
+      too short
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed"
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      invalid email, so type it again
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      password shorter than 12 characters, so type it again
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And nothing on the server changed
+
+  Scenario: A typed email that cannot become the certificate email is asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      maria{perez}@example.com
+      admin@example.com
+
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed"
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      the email also becomes GOPHENBERG_INSTALL_CERTIFICATE_EMAIL, which must be one plain email address such as admin@example.com, got "maria{perez}@example.com", so type it again
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And nothing on the server changed
+
+  Scenario: A run that must ask for the first administrator without a terminal is refused, naming the flags
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com"
+    Then the run stops with "this run has no terminal to ask the first administrator's name and password on, so give -admin-name and -admin-password-file: open /dev/tty: no such device or address, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A terminal that ends before every answer is given stops the run
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "asking for the first administrator's name ended: the terminal gave no more input, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A later run needs no archive and asks nothing
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install"
+    Then the run stops with "this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A gophenberg command on the path that the installer did not write is refused
+    Given another package put a gophenberg command at /usr/local/bin/gophenberg
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "this server already has a /usr/local/bin/gophenberg that server:install did not write, and server:install puts the gophenberg command there, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario Outline: A later run whose Caddyfile lost a line an earlier run wrote is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the line "<line>" was taken out of /etc/caddy/Caddyfile
+    When the operator runs "server:install -dry-run"
+    Then the run stops with "/etc/caddy/Caddyfile lacks the line "<line>" that an earlier run wrote, <why>, and it must go back in before server:install runs again, so nothing was changed"
+    And nothing on the server changed
+
+    Examples:
+      | line                               | why                                                                               |
+      | import /etc/caddy/gophenberg.caddy | which has Caddy serve the site                                                    |
+      | admin unix//run/caddy/admin.sock   | which keeps Caddy's admin address off the loopback port any local user can reach |
+
+  Scenario Outline: A current link that names no build is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the current link of the install root <names>
+    When the operator runs "server:install -dry-run"
+    Then the run stops with "cannot tell which build /opt/gophenberg/current names: <why>, so nothing was changed"
+    And nothing on the server changed
+
+    Examples:
+      | names                                                  | why                                                                                      |
+      | names /opt/gophenberg/versions/0.19.0 by its full path | updater: the current link names /opt/gophenberg/versions/0.19.0, not a build in versions |
+      | names versions/0.19.0, a build folder deleted by hand  | /opt/gophenberg/versions/0.19.0/gophenberg is not there                                  |
