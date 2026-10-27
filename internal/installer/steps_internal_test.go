@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gopherium/framework/gonsole"
+
+	"github.com/gopherium/gophenberg/internal/version"
 )
 
 // wantedLead is the first line a dry run prints once every check passed.
@@ -313,8 +315,13 @@ func TestInstallStopsARunWithoutDryRunOnceEveryCheckPasses(t *testing.T) {
 	t.Parallel()
 
 	server := newFakeServer(t)
+	server.write(archivePath, releaseArchiveOf(t, version.Version(), serverPlatform))
+	server.write(passwordFile, goodPassword+"\n")
 
-	stdout, _, err := dryRun(server, Request{Domain: "example.com", AdminEmail: "admin@example.com"})
+	stdout, _, err := dryRun(server, Request{
+		Domain: "example.com", Archive: archivePath, AdminEmail: "admin@example.com", AdminName: "Maria Perez",
+		AdminPasswordFile: passwordFile,
+	})
 
 	wantRefused(t, err, "this build of server:install only checks the server, and -dry-run prints the steps it "+
 		"would take, so nothing was changed")

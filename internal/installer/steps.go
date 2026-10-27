@@ -86,7 +86,7 @@ func siteOn(machine Machine, check *machineCheck) (site, error) {
 	return site{
 		settings: check.settings, record: check.record, env: check.env, systemd: check.found.systemd,
 		systemctl: systemctl, runuser: runuser, unattended: machine.there(unattendedUpgrade),
-		current: machine.there(filepath.Join(root, "current")), dotEnv: dotEnv, graces: graces, uploadCapMB: uploadCap,
+		current: check.found.current != "", dotEnv: dotEnv, graces: graces, uploadCapMB: uploadCap,
 	}, nil
 }
 

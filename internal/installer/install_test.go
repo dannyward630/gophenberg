@@ -40,6 +40,16 @@ func TestInstallRefusesADomainThatIsNotAHostNameBeforeItReachesTheMachine(t *tes
 		`got "not a host name"`)
 }
 
+func TestInstallRefusesAPasswordFileThatIsNotAnAbsolutePathBeforeItReachesTheMachine(t *testing.T) {
+	t.Parallel()
+
+	err := installer.Install(t.Context(), installer.Machine{}, callOf(nil), installer.Request{
+		Domain: "example.com", AdminPasswordFile: "admin-password",
+	})
+
+	wantError(t, err, `-admin-password-file: must be an absolute path, got "admin-password"`)
+}
+
 func TestInstallRefusesAnInstallRootThatIsNotAbsoluteBeforeItChecksTheMachine(t *testing.T) {
 	t.Parallel()
 
