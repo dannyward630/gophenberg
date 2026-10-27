@@ -382,9 +382,13 @@ func TestAskAdminStopsWithTheErrorOfItsEndedContext(t *testing.T) {
 	}
 }
 
-// onlyChecking is how a run without -dry-run stops once every check passed and every answer came.
-const onlyChecking = "this build of server:install only checks the server, and -dry-run prints the steps it would " +
-	"take, so nothing was changed"
+// wantInstalled fails t unless the run ended with err nil, every step taken.
+func wantInstalled(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("install() = %v, want every step taken", err)
+	}
+}
 
 // certificateEmailTold is what the terminal is told of a typed email that cannot become the certificate email.
 const certificateEmailTold = "the email also becomes GOPHENBERG_INSTALL_CERTIFICATE_EMAIL, which must be one plain " +
@@ -411,7 +415,7 @@ func TestInstallReadsTheSettingsAgainWithTheEmailTyped(t *testing.T) {
 
 	check, err := installedOn(t, server, nil)
 
-	wantRefused(t, err, onlyChecking)
+	wantInstalled(t, err)
 	if check.settings.CertificateEmail != "admin@example.com" {
 		t.Errorf("the certificate email after the questions = %q, want the email typed", check.settings.CertificateEmail)
 	}
@@ -426,7 +430,7 @@ func TestInstallAsksAgainForATypedEmailThatCannotBecomeTheCertificateEmail(t *te
 
 	check, err := installedOn(t, server, nil)
 
-	wantRefused(t, err, onlyChecking)
+	wantInstalled(t, err)
 	wantAsked(t, prompt, slices.Concat(allAsked[:1], []asked{toldOn(certificateEmailTold)}, allAsked))
 	if check.settings.CertificateEmail != "admin@example.com" {
 		t.Errorf("the certificate email after the questions = %q, want the email typed again",
@@ -442,7 +446,7 @@ func TestInstallTakesATypedEmailTheAccountRulesTakeWhileASettingGivesTheCertific
 
 	check, err := installedOn(t, server, map[string]string{"GOPHENBERG_INSTALL_CERTIFICATE_EMAIL": "admin@example.com"})
 
-	wantRefused(t, err, onlyChecking)
+	wantInstalled(t, err)
 	if told := slices.IndexFunc(prompt.asked, func(shown asked) bool { return shown.told != "" }); told >= 0 {
 		t.Errorf("the terminal was told %q, want the email taken as typed", prompt.asked[told].told)
 	}

@@ -192,7 +192,7 @@ func TestTheStepsWithTheirOwnWebServerOfALaterRunStillPrintTheLinesForIt(t *test
 
 	running := ownSite(t, "example.com")
 	running.current = true
-	running.record.Steps = map[string]string{stepStart: stepEnded, stepAdmin: stepEnded}
+	running.record.Steps, running.record.Installed = map[string]string{stepAdmin: stepEnded}, []string{pieceService}
 
 	does, _ := doneOf(running.steps())
 

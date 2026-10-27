@@ -4,9 +4,12 @@ package installer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
+	"strings"
 
 	"github.com/gopherium/framework/gonsole"
 
@@ -25,7 +28,7 @@ type Request struct {
 	DryRun            bool
 }
 
-// Install checks machine for server:install as request asks, then prints the steps of a dry run or checks the rest.
+// Install checks machine for server:install as request asks, then prints the steps of a dry run or takes them.
 func Install(ctx context.Context, machine Machine, call gonsole.Call, request Request) error {
 	check, err := checkFor(ctx, machine, call, request)
 	if err != nil {
@@ -63,24 +66,91 @@ func checkFor(ctx context.Context, machine Machine, call gonsole.Call, request R
 	return check, check.run(ctx)
 }
 
-// install opens the release archive and asks for the first administrator, then stops, as this build changes nothing.
+// install opens the release archive and settles the first administrator, then takes every step on the server.
 func install(ctx context.Context, call gonsole.Call, request Request, check *machineCheck) error {
 	archive, err := check.openArchive(request.Archive)
 	if err != nil {
 		return err
 	}
 	defer closeArchive(archive)
-	if !check.record.ended(stepAdmin) {
-		answered, err := askAdmin(ctx, check.machine, request, check.typedEmailRule())
-		if err != nil {
-			return err
-		}
-		request.AdminEmail = answered.email
-		if check.settings, err = settingsOn(check.machine, call.Env, request); err != nil {
-			return err
-		}
+	answered, err := check.firstAdmin(ctx, call, request)
+	if err != nil {
+		return err
 	}
-	return stop("this build of server:install only checks the server, and -dry-run prints the steps it would take")
+	planned, err := siteOn(check.machine, check)
+	if err != nil {
+		return err
+	}
+	running, err := installingOn(check, planned, call)
+	if err != nil {
+		return err
+	}
+	defer running.close()
+	running.admin = answered
+	if archive != nil {
+		running.archive = archive
+	}
+	return running.run(ctx, planned.steps())
+}
+
+// firstAdmin returns the first administrator the run creates, asked for while the admin step is open, none after.
+func (c *machineCheck) firstAdmin(ctx context.Context, call gonsole.Call, request Request) (admin, error) {
+	if err := c.settleAdmin(ctx); err != nil || c.record.ended(stepAdmin) {
+		return admin{}, err
+	}
+	answered, err := askAdmin(ctx, c.machine, request, c.typedEmailRule())
+	if err != nil {
+		return admin{}, err
+	}
+	request.AdminEmail = answered.email
+	c.settings, err = settingsOn(c.machine, call.Env, request)
+	return answered, err
+}
+
+// settleAdmin ends the admin step a cut-off run started once account:list shows that run made an account under admin.
+func (c *machineCheck) settleAdmin(ctx context.Context) error {
+	if !c.record.started(stepAdmin) {
+		return nil
+	}
+	made, err := c.adminMade(ctx)
+	if err != nil {
+		return stop("cannot tell whether the run cut off in the admin step made the first administrator: %v", err)
+	}
+	if made {
+		c.record.Steps[stepAdmin] = stepEnded
+	}
+	return nil
+}
+
+// account is one account account:list -json lists, by its email and its role.
+type account struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// adminMade reports whether account:list, run as gophenberg in the install root, lists an account under admin.
+func (c *machineCheck) adminMade(ctx context.Context) (bool, error) {
+	printed, err := c.machine.Run(ctx, siteCommand(c.settings.Root, "account:list", "-json"))
+	if err != nil {
+		return false, withPrinted(err, printed)
+	}
+	listed, err := accountsIn(printed)
+	return slices.ContainsFunc(listed, func(held account) bool { return held.Role == adminRole }), err
+}
+
+// accountsIn returns the accounts account:list -json printed, past any line the site logged before them.
+func accountsIn(printed string) ([]account, error) {
+	start := strings.Index("\n"+printed, "\n{\n")
+	if start < 0 {
+		return nil, errors.New("account:list -json printed no accounts")
+	}
+	var listing struct {
+		Accounts []account `json:"accounts"`
+	}
+	if err := json.NewDecoder(strings.NewReader(printed[start:])).Decode(&listing); err != nil {
+		return nil, fmt.Errorf("account:list -json printed accounts that cannot be read: %w", err)
+	}
+	return listing.Accounts, nil
 }
 
 // typedEmailRule returns the rule a typed email keeps, the certificate email's too while no setting gives one.
