@@ -116,9 +116,9 @@ func checkCommand(_ context.Context, c *machineCheck) error {
 	return nil
 }
 
-// checkCaddyfile stops a later run whose Caddyfile lost a line the first run wrote, since no later run writes it again.
+// checkCaddyfile stops a run whose Caddyfile lost a line a first run wrote, once the record holds that Caddyfile's sum.
 func checkCaddyfile(_ context.Context, c *machineCheck) error {
-	if !c.settings.withCaddy() || !c.record.ended(stepCaddy) {
+	if !c.settings.withCaddy() || c.record.Caddyfile == "" {
 		return nil
 	}
 	body, err := c.machine.read(caddyfilePath)
