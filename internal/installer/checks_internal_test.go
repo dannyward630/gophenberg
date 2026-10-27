@@ -3,6 +3,7 @@
 package installer
 
 import (
+	"cmp"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -90,7 +92,14 @@ type fakeServer struct {
 	answerHTTPS  func(request *http.Request) (*http.Response, error)
 	prompt       *fakePrompt
 	users        map[string]*user.User
+	dpkg         map[string]string
+	effects      map[string]func(Program) answer
+	running      map[string]bool
+	siteDown     bool
+	accounts     []listedAccount
+	ranFrom      string
 	notes        strings.Builder
+	runs         []Program
 	ran          []string
 	listened     []string
 	listeners    []*pipeListener
@@ -98,6 +107,7 @@ type fakeServer struct {
 	resolved     []string
 	fetched      []string
 	fetchedHTTPS []string
+	httpsRoots   []*x509.CertPool
 	terminals    int
 }
 
@@ -107,14 +117,22 @@ func newFakeServer(t *testing.T) *fakeServer {
 	server := &fakeServer{
 		t: t, root: t.TempDir(),
 		answers: map[string]answer{
-			"systemctl":   {printed: "systemd 255 (255.4-1ubuntu8.6)\n+PAM +AUDIT +SELINUX +APPARMOR\n"},
-			"systemd-run": {printed: "Running as unit: run-u7.service\nFinished with result: success\n"},
-			"timedatectl": {printed: "yes\n"},
+			"systemctl":        {printed: "systemd 255 (255.4-1ubuntu8.6)\n+PAM +AUDIT +SELINUX +APPARMOR\n"},
+			"systemd-run":      {printed: "Running as unit: run-u7.service\nFinished with result: success\n"},
+			"timedatectl":      {printed: "yes\n"},
+			"createuser":       {},
+			"createdb":         {},
+			"gophenberg check": {printed: "every setting checks out\n"},
 		},
 		taken: map[string]error{}, freeMB: map[string]uint64{}, owners: map[string]uint32{}, broken: map[string]error{},
 		described: map[string]fs.FileInfo{}, unmeasured: map[string]error{}, users: map[string]*user.User{},
-		addresses: addresses("::ffff:203.0.113.7"),
-		own:       []net.Addr{cardAddress("127.0.0.1/8"), cardAddress("203.0.113.7/24"), cardAddress("::1/128")},
+		dpkg: map[string]string{}, running: map[string]bool{}, addresses: addresses("::ffff:203.0.113.7"),
+		own: []net.Addr{cardAddress("127.0.0.1/8"), cardAddress("203.0.113.7/24"), cardAddress("::1/128")},
+	}
+	server.effects = map[string]func(Program) answer{
+		"apt-get": server.aptGet, "dpkg-query": server.dpkgQuery, "dpkg": server.configurePackages,
+		"useradd": server.useradd, "systemctl": server.systemctl, "caddy": server.caddyValidate,
+		"gophenberg account:create-admin": server.createAdmin, "gophenberg account:list": server.listAccounts,
 	}
 	server.write("/etc/os-release", ubuntuRelease)
 	server.write("/proc/meminfo", meminfoOf(2048000))
@@ -127,6 +145,45 @@ func newFakeServer(t *testing.T) *fakeServer {
 
 // fakeInstaller is where the installer a fake server runs sits, named from the top of the server.
 const fakeInstaller = "/root/installer/gophenberg"
+
+// packageCaddyfile is the Caddyfile the caddy package puts on a server, which serves a page of its own on port 80.
+const packageCaddyfile = ":80 {\n\troot * /usr/share/caddy\n\tfile_server\n}\n"
+
+// installPackage puts the package called name on the server as apt-get does, dpkg then showing it installed.
+func (s *fakeServer) installPackage(name string) {
+	s.t.Helper()
+	switch name {
+	case "postgresql":
+		s.folder("/etc/postgresql/16/main", "/usr/lib/postgresql/16/bin", "/var/lib/postgresql/16/main")
+	case "caddy":
+		s.write(caddyfilePath, packageCaddyfile)
+		s.program("/usr/bin/caddy")
+		s.addUser("caddy", "/var/lib/caddy")
+	}
+	s.dpkg[name] = "ii"
+}
+
+// addUser gives the server the OS user called name with home, in the test's uid and siteGroup, so root's ids differ.
+func (s *fakeServer) addUser(name, home string) {
+	s.users[name] = &user.User{
+		Username: name, Uid: strconv.Itoa(os.Getuid()), Gid: strconv.Itoa(siteGroup(s.t)), HomeDir: home,
+	}
+}
+
+// siteGroup returns a group of the test's user other than its own where it has one, else its own.
+func siteGroup(t *testing.T) int {
+	t.Helper()
+	groups, err := os.Getgroups()
+	if err != nil {
+		t.Fatalf("listing the groups of the test's user: %v", err)
+	}
+	for _, group := range groups {
+		if group != os.Getgid() {
+			return group
+		}
+	}
+	return os.Getgid()
+}
 
 // program puts a program anybody may run at path, named from the top of the server.
 func (s *fakeServer) program(path string) {
@@ -224,9 +281,9 @@ func (s *fakeServer) terminal() (Prompt, error) {
 	return s.prompt, nil
 }
 
-// executable returns the installer the fake server runs, on the test's own disk.
+// executable returns the installer the fake server runs, on the test's own disk, the one a test ran it from if any.
 func (s *fakeServer) executable() (string, error) {
-	return s.at(fakeInstaller), nil
+	return s.at(cmp.Or(s.ranFrom, fakeInstaller)), nil
 }
 
 // lookupUser returns the OS user called name that a test or a fake program gave the server.
@@ -237,23 +294,89 @@ func (s *fakeServer) lookupUser(name string) (*user.User, error) {
 	return nil, user.UnknownUserError(name)
 }
 
-// fetchHTTPS records the page asked for and whether roots came with it, then answers as the test says.
+// fetchHTTPS records the page asked for and the roots that came with it, then answers as the test says, else as Caddy.
 func (s *fakeServer) fetchHTTPS(request *http.Request, roots *x509.CertPool) (*http.Response, error) {
 	s.fetchedHTTPS = append(s.fetchedHTTPS, fmt.Sprintf("%s with roots %t", request.URL, roots != nil))
+	s.httpsRoots = append(s.httpsRoots, roots)
 	if s.answerHTTPS == nil {
-		return nil, errors.New("the fake server answers no HTTPS")
+		return s.caddyPage(request)
 	}
 	return s.answerHTTPS(request)
 }
 
-// run answers program as the answers say, failing the test for a program no answer covers.
+// run records program, then answers it through its effect on the server or as the answers say, else fails the test.
 func (s *fakeServer) run(_ context.Context, program Program) (string, error) {
-	s.ran = append(s.ran, strings.Join(append([]string{program.Name}, program.Args...), " "))
-	reply, found := s.answers[program.Name]
+	s.runs = append(s.runs, program)
+	s.ran = append(s.ran, lineOf(program))
+	key := programKey(program)
+	if effect, found := s.effects[key]; found {
+		reply := effect(program)
+		return reply.printed, reply.err
+	}
+	reply, found := s.answers[key]
 	if !found {
-		s.t.Errorf("the checks ran %s, which the fake server does not answer", program.Name)
+		s.t.Errorf("the run ran %s, which the fake server does not answer", key)
 	}
 	return reply.printed, reply.err
+}
+
+// programKey names program as the fake server answers it, a command of the site by gophenberg and its first argument.
+func programKey(program Program) string {
+	if filepath.Base(program.Name) != siteUser || len(program.Args) == 0 {
+		return program.Name
+	}
+	return siteUser + " " + program.Args[0]
+}
+
+// lineOf returns the command line of program as the runner starts it, with runuser in front for another OS user.
+func lineOf(program Program) string {
+	line := strings.Join(append([]string{program.Name}, program.Args...), " ")
+	if program.User == "" {
+		return line
+	}
+	return "runuser -u " + program.User + " -- " + line
+}
+
+// aptGet installs each package an apt-get install line names, as apt-get does, and changes nothing on an update.
+func (s *fakeServer) aptGet(program Program) answer {
+	if !slices.Contains(program.Args, "install") {
+		return answer{printed: "Reading package lists... Done\n"}
+	}
+	for _, name := range []string{piecePostgreSQL, pieceCaddy} {
+		if slices.Contains(program.Args, name) {
+			s.installPackage(name)
+		}
+	}
+	return answer{printed: "Setting up postgresql (16+257build1.1) ...\n"}
+}
+
+// dpkgQuery prints the status of each package its line names, failing as dpkg-query does on one it cannot find.
+func (s *fakeServer) dpkgQuery(program Program) answer {
+	var reply answer
+	for _, name := range program.Args[3:] {
+		status, found := s.dpkg[name]
+		if !found {
+			reply.printed += "dpkg-query: no packages found matching " + name + "\n"
+			reply.err = errors.New("installer: run dpkg-query: exit status 1")
+			continue
+		}
+		reply.printed += fmt.Sprintf("%-3s\n", status)
+	}
+	return reply
+}
+
+// configurePackages sets up every package dpkg left half set up, as dpkg --configure -a does.
+func (s *fakeServer) configurePackages(Program) answer {
+	for name := range s.dpkg {
+		s.dpkg[name] = "ii"
+	}
+	return answer{}
+}
+
+// useradd adds the OS user its line names, at the home folder its line names, as useradd does.
+func (s *fakeServer) useradd(program Program) answer {
+	s.addUser(program.Args[len(program.Args)-1], program.Args[slices.Index(program.Args, "--home-dir")+1])
+	return answer{}
 }
 
 // lstat describes the file at path on the test's own disk as owned by root, or by the owner a test gave it.
@@ -319,13 +442,16 @@ func (s *fakeServer) ownAddresses() ([]net.Addr, error) {
 	return s.own, s.unlisted
 }
 
-// fetch records the page asked for, then answers as the test says or else through the newest TCP listener.
+// fetch records the page asked for, then answers as the test says, a token through the newest listener, else a page.
 func (s *fakeServer) fetch(request *http.Request) (*http.Response, error) {
 	s.fetched = append(s.fetched, request.Host+" "+request.URL.String())
 	if s.answerFetch != nil {
 		return s.answerFetch(request)
 	}
-	return s.listeners[len(s.listeners)-1].fetch(request)
+	if strings.HasPrefix(request.URL.Path, tokenFolder) {
+		return s.listeners[len(s.listeners)-1].fetch(request)
+	}
+	return s.sitePage(request)
 }
 
 // check returns the machine check of this fake server with checkedSettings, no install record and no environment.
@@ -453,12 +579,27 @@ func TestTheMachineChecksRefuseAGophenbergCommandTheyCannotReadOrDescribe(t *tes
 	}
 }
 
-// laterCheck returns the machine check of server for a later run, whose record owns Caddy and ended its step.
+// laterCheck returns the machine check of server for a later run, whose record owns Caddy and the Caddyfile it wrote.
 func laterCheck(server *fakeServer) *machineCheck {
 	check := server.check()
 	check.record.Installed = []string{pieceCaddy}
-	check.record.Steps = map[string]string{stepCaddy: stepEnded}
+	check.record.Caddyfile = caddyfileSum(wantedCaddyfile)
 	return check
+}
+
+func TestTheMachineChecksStopAtALostCaddyfileLineOnceTheRecordHoldsItsSumWhateverTheCaddyMark(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.write(caddyfilePath, strings.Replace(wantedCaddyfile, "import "+caddySitePath+"\n", "", 1))
+	check := laterCheck(server)
+	check.record.Steps = map[string]string{stepCaddy: stepStarted}
+
+	err := check.run(t.Context())
+
+	wantRefused(t, err, `/etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy" that an earlier `+
+		"run wrote, which has Caddy serve the site, and it must go back in before server:install runs again, so "+
+		"nothing was changed")
 }
 
 func TestTheMachineChecksPassALaterRunWhoseCaddyfileHoldsTheLinesTheFirstRunWrote(t *testing.T) {
@@ -511,9 +652,13 @@ func TestTheMachineChecksLeaveTheCaddyfileAloneOnAFirstRunAndWithoutCaddy(t *tes
 	t.Parallel()
 
 	own := newFakeServer(t).ownWebServerCheck()
-	own.record.Steps = map[string]string{stepCaddy: stepEnded}
+	own.record.Caddyfile = caddyfileSum(wantedCaddyfile)
+	unwritten := newFakeServer(t)
+	unwritten.write(caddyfilePath, packageCaddyfile)
+	cutOff := unwritten.check()
+	cutOff.record.Steps, cutOff.record.Installed = map[string]string{stepCaddy: stepStarted}, []string{pieceCaddy}
 
-	for _, check := range []*machineCheck{newFakeServer(t).check(), own} {
+	for _, check := range []*machineCheck{newFakeServer(t).check(), own, cutOff} {
 		err := check.run(t.Context())
 
 		if err != nil {
