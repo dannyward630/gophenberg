@@ -38,6 +38,41 @@ func TestReadRecordReadsWhatAnEarlierRunWroteAndSkipsWhatItDoesNotKnow(t *testin
 	}
 }
 
+func TestReadRecordReadsTheChecksumOfTheCaddyfileTheFirstRunWrote(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{recordPath: `{"installer": "0.20.0", "caddyfile": "` + abcSum + `"}`})
+
+	record, err := readRecord(machine)
+
+	if err != nil || record.Caddyfile != abcSum {
+		t.Errorf("readRecord() = %+v, %v, want the Caddyfile's checksum %s", record, err, abcSum)
+	}
+}
+
+// abcSum is the SHA-256 of abc in hex, the first example of FIPS 180-2.
+const abcSum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+func TestCaddyfileSumIsTheSHA256OfTheTextInHex(t *testing.T) {
+	t.Parallel()
+
+	if got := caddyfileSum("abc"); got != abcSum {
+		t.Errorf("caddyfileSum(abc) = %s, want %s", got, abcSum)
+	}
+}
+
+func TestStartedReportsAStepARunStartedAndDidNotEnd(t *testing.T) {
+	t.Parallel()
+
+	record := Record{Steps: map[string]string{"packages": "started", "user": "ended"}}
+
+	for id, want := range map[string]bool{"packages": true, "user": false, "database": false} {
+		if got := record.started(id); got != want {
+			t.Errorf("started(%s) = %t, want %t", id, got, want)
+		}
+	}
+}
+
 func TestReadRecordRefusesARecordItCannotRead(t *testing.T) {
 	t.Parallel()
 
