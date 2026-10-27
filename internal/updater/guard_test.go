@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -738,6 +739,142 @@ func TestServeLeavesAnUpdateThatStayedDownAsItWasWhenTheCheckFailsAgain(t *testi
 	f.wantCurrent(offered)
 	if logs := f.logs.String(); !strings.Contains(logs, "/admin/ answered 500, want 200") {
 		t.Errorf("the guard logged %q, want the failed check named", logs)
+	}
+}
+
+// checkedAddress is the address a test of the start check asks its pages at.
+const checkedAddress = "127.0.0.1:8081"
+
+// fetchedSite is a fetch answering the status statuses names for its paths and 200 for any other, or err when set.
+type fetchedSite struct {
+	statuses map[string]int
+	err      error
+	asked    []string
+	handed   []context.Context
+	closed   int
+}
+
+// fetch notes the address and the context of request and answers it with its status or the error of the site.
+func (s *fetchedSite) fetch(request *http.Request) (*http.Response, error) {
+	s.asked = append(s.asked, request.URL.String())
+	s.handed = append(s.handed, request.Context())
+	if s.err != nil {
+		return nil, s.err
+	}
+	status := cmp.Or(s.statuses[request.URL.Path], http.StatusOK)
+	return &http.Response{StatusCode: status, Body: closeCounter{closed: &s.closed}}, nil
+}
+
+// closeCounter is an empty answer body that counts each time it is closed.
+type closeCounter struct {
+	closed *int
+}
+
+// Read reports the end of the empty body.
+func (closeCounter) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+// Close counts one more close of the body.
+func (c closeCounter) Close() error {
+	*c.closed++
+	return nil
+}
+
+// pagesAt returns the address of each of the paths at the address the start check tests ask.
+func pagesAt(paths ...string) []string {
+	addresses := make([]string, 0, len(paths))
+	for _, path := range paths {
+		addresses = append(addresses, "http://"+checkedAddress+path)
+	}
+	return addresses
+}
+
+func TestCheckPagesTakesASiteThatAnswersEachPageThroughTheFetchHandedIn(t *testing.T) {
+	t.Parallel()
+
+	site := &fetchedSite{statuses: map[string]int{"/": http.StatusNotFound}}
+	ctx := t.Context()
+
+	if err := updater.CheckPages(ctx, site.fetch, checkedAddress); err != nil {
+		t.Fatalf("CheckPages() = %v, want nil", err)
+	}
+
+	if want := pagesAt("/admin/", "/api/locale", "/"); !slices.Equal(site.asked, want) {
+		t.Errorf("the check asked for %v, want %v", site.asked, want)
+	}
+	for _, handed := range site.handed {
+		if handed != ctx {
+			t.Errorf("the check asked under %v, want the context handed in", handed)
+		}
+	}
+	if site.closed != 3 {
+		t.Errorf("the check closed %d answers, want each of the 3", site.closed)
+	}
+}
+
+func TestCheckPagesRefusesTheFirstPageThatAnswersBadly(t *testing.T) {
+	t.Parallel()
+
+	for name, failing := range map[string]struct {
+		statuses map[string]int
+		asked    []string
+		says     string
+	}{
+		"the admin": {
+			statuses: map[string]int{"/admin/": http.StatusFound, "/": http.StatusBadGateway},
+			asked:    pagesAt("/admin/"), says: "/admin/ answered 302, want 200",
+		},
+		"the locale": {
+			statuses: map[string]int{"/api/locale": http.StatusNotFound},
+			asked:    pagesAt("/admin/", "/api/locale"), says: "/api/locale answered 404, want 200",
+		},
+		"the home": {
+			statuses: map[string]int{"/": http.StatusInternalServerError},
+			asked:    pagesAt("/admin/", "/api/locale", "/"), says: "/ answered 500, want below 500",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			site := &fetchedSite{statuses: failing.statuses}
+
+			err := updater.CheckPages(t.Context(), site.fetch, checkedAddress)
+
+			if err == nil || err.Error() != failing.says {
+				t.Errorf("CheckPages() = %v, want it refused saying %q", err, failing.says)
+			}
+			if !slices.Equal(site.asked, failing.asked) || site.closed != len(failing.asked) {
+				t.Errorf("the check asked for %v and closed %d answers, want %v each closed", site.asked, site.closed,
+					failing.asked)
+			}
+		})
+	}
+}
+
+func TestCheckPagesRefusesASiteItCannotAsk(t *testing.T) {
+	t.Parallel()
+
+	errUnreachable := errors.New("dial tcp 127.0.0.1:8081: connect: connection refused")
+	for name, unreachable := range map[string]struct {
+		address string
+		asked   []string
+	}{
+		"a site that does not answer": {address: checkedAddress, asked: pagesAt("/admin/")},
+		"an address it cannot ask at": {address: "127.0.0.1:8081 and more"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			site := &fetchedSite{err: errUnreachable}
+
+			err := updater.CheckPages(t.Context(), site.fetch, unreachable.address)
+
+			wantRefused(t, err, "it could not ask for /admin/: ")
+			if !slices.Equal(site.asked, unreachable.asked) {
+				t.Errorf("the check asked for %v, want %v", site.asked, unreachable.asked)
+			}
+		})
 	}
 }
 

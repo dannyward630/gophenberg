@@ -109,15 +109,80 @@ func TestPointRefusesALinkItCannotReplace(t *testing.T) {
 	wantMissing(t, filepath.Join(layout.Root, ".current.partial"))
 }
 
-func TestPointRefusesARootItCannotSaveToDisk(t *testing.T) {
+func TestPointRefusesARootItCannotOpen(t *testing.T) {
+	t.Parallel()
+
+	for name, root := range map[string]func(t *testing.T) string{
+		"a root that is not there": func(t *testing.T) string { return filepath.Join(t.TempDir(), "gophenberg") },
+		"a root it may not read": func(t *testing.T) string {
+			root := t.TempDir()
+			denied(t, root, 0o300)
+			return root
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			layout := updater.Layout{Root: root(t)}
+
+			err := layout.Point(updater.Current, "0.21.0")
+
+			wantRefused(t, err, "updater: point current at 0.21.0")
+			wantMissing(t, filepath.Join(layout.Root, "current"))
+		})
+	}
+}
+
+func TestPointInMakesARelativeLinkInsideTheTree(t *testing.T) {
 	t.Parallel()
 
 	layout := updater.Layout{Root: t.TempDir()}
-	denied(t, layout.Root, 0o300)
 
-	err := layout.Point(updater.Current, "0.21.0")
+	if err := updater.PointIn(openTree(t, layout.Root), updater.Current, "0.21.0"); err != nil {
+		t.Fatalf("PointIn() = %v, want nil", err)
+	}
+
+	wantLink(t, filepath.Join(layout.Root, "current"), filepath.Join("versions", "0.21.0"))
+	if name, err := layout.Named(updater.Current); err != nil || name != "0.21.0" {
+		t.Errorf("Named() = %q, %v, want the build 0.21.0", name, err)
+	}
+}
+
+func TestPointInReplacesLinksThatLedOutOfTheTreeWithoutFollowingThem(t *testing.T) {
+	t.Parallel()
+
+	root, outside := t.TempDir(), t.TempDir()
+	kept := filepath.Join(outside, "notes.txt")
+	if err := os.WriteFile(kept, []byte("a person's notes"), 0o644); err != nil {
+		t.Fatalf("writing a file outside the tree: %v", err)
+	}
+	for link, target := range map[string]string{"current": outside, ".current.partial": kept} {
+		if err := os.Symlink(target, filepath.Join(root, link)); err != nil {
+			t.Fatalf("linking %s out of the tree: %v", link, err)
+		}
+	}
+
+	if err := updater.PointIn(openTree(t, root), updater.Current, "0.21.0"); err != nil {
+		t.Fatalf("PointIn() = %v, want nil", err)
+	}
+
+	wantLink(t, filepath.Join(root, "current"), filepath.Join("versions", "0.21.0"))
+	wantMissing(t, filepath.Join(root, ".current.partial"))
+	wantEntries(t, outside, "notes.txt")
+	wantFile(t, kept, "a person's notes")
+}
+
+func TestPointInRefusesARootItCannotSaveToDisk(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	tree := openTree(t, root)
+	denied(t, root, 0o300)
+
+	err := updater.PointIn(tree, updater.Current, "0.21.0")
 
 	wantRefused(t, err, "updater: point current at 0.21.0")
+	wantMissing(t, filepath.Join(root, ".current.partial"))
 }
 
 func TestNamedRefusesALinkThatNamesNoBuild(t *testing.T) {

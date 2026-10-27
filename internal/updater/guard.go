@@ -237,22 +237,29 @@ func (g *Guard) verify(ctx context.Context, addresses <-chan string, inside func
 	}
 	select {
 	case address := <-addresses:
-		return askPages(checking, loopback(address))
+		return CheckPages(checking, pageClient().Do, loopback(address))
 	case <-checking.Done():
 		return fmt.Errorf("it did not listen within %v, the time %s allows", g.settings.VerifyTimeout,
 			g.settings.names.Key("UPDATE_VERIFY_TIMEOUT"))
 	}
 }
 
-// askPages asks the server at address for each checked page, refusing the first answer a page does not take.
-func askPages(ctx context.Context, address string) error {
-	client := &http.Client{
+// pageClient returns the client the start check asks with, on a new connection each time and following no redirect.
+func pageClient() *http.Client {
+	return &http.Client{
 		Transport:     &http.Transport{DisableKeepAlives: true},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
+}
+
+// CheckPages asks the site at address for each checked page through fetch, refusing the first answer it does not take.
+func CheckPages(ctx context.Context, fetch func(*http.Request) (*http.Response, error), address string) error {
 	for _, page := range checkedPages {
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+page.path, nil)
-		response, err := client.Do(request)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+page.path, nil)
+		var response *http.Response
+		if err == nil {
+			response, err = fetch(request)
+		}
 		if err != nil {
 			return fmt.Errorf("it could not ask for %s: %w", page.path, err)
 		}
