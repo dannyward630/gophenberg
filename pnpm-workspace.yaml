@@ -18,9 +18,7 @@ peerDependencyRules:
     typescript: '6'
 
 minimumReleaseAgeExclude:
-  - '@gopherium/godmin'
-  - '@gopherium/react-auth'
-  - '@gopherium/gottext'
+  - '@gopherium/*'
 
 allowBuilds:
   esbuild: false
