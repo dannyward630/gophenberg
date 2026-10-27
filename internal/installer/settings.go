@@ -103,6 +103,7 @@ type Checks struct {
 	DomainCheckTimeout time.Duration
 	HTTPSWait          time.Duration
 	PollInterval       time.Duration
+	StartWait          time.Duration
 }
 
 // withCaddy reports whether the run sets up Caddy in front of the site, not the person's own web server.
@@ -112,7 +113,8 @@ func (s Settings) withCaddy() bool {
 
 // settingsOn reads one run's settings from the flags, env, server.env then the defaults, refusing a bad flag first.
 func settingsOn(machine Machine, env gonsole.Env, request Request) (Settings, error) {
-	flagged := errors.Join(domainFlag(request.Domain), archiveFlag(request.Archive), webServerFlag(request.WebServer))
+	flagged := errors.Join(domainFlag(request.Domain), archiveFlag(request.Archive), webServerFlag(request.WebServer),
+		passwordFileFlag(request.AdminPasswordFile))
 	if flagged != nil {
 		return Settings{}, flagged
 	}
@@ -149,6 +151,14 @@ func archiveFlag(archive string) error {
 	}
 	return fmt.Errorf("-archive: must be a file inside %s, the folder install.sh downloads it into, got %q",
 		installerFolder, archive)
+}
+
+// passwordFileFlag refuses an -admin-password-file that is given and is not an absolute path.
+func passwordFileFlag(path string) error {
+	if path == "" || filepath.IsAbs(path) {
+		return nil
+	}
+	return fmt.Errorf("-admin-password-file: must be an absolute path, got %q", path)
 }
 
 // webServerFlag refuses a -web-server that is given and is neither caddy nor none.
@@ -290,11 +300,12 @@ func checksFrom(env gonsole.Env) (Checks, error) {
 	domain, domainErr := env.Duration("INSTALL_DOMAIN_CHECK_TIMEOUT", 10*time.Second)
 	https, httpsErr := env.Duration("INSTALL_HTTPS_WAIT", 2*time.Minute)
 	poll, pollErr := env.Duration("INSTALL_POLL_INTERVAL", time.Second)
+	start, startErr := env.Duration("UPDATE_VERIFY_TIMEOUT", time.Minute)
 	checks := Checks{
 		MemoryFloorMB: memory, DiskFloorMB: disk, AptLockWait: apt, DomainCheckTimeout: domain, HTTPSWait: https,
-		PollInterval: poll,
+		PollInterval: poll, StartWait: start,
 	}
-	return checks, errors.Join(memoryErr, diskErr, aptErr, domainErr, httpsErr, pollErr)
+	return checks, errors.Join(memoryErr, diskErr, aptErr, domainErr, httpsErr, pollErr, startErr)
 }
 
 // seconds returns the duration setting called name, refusing one that is not a whole number of seconds.
