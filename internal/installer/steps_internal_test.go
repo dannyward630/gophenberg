@@ -199,6 +199,35 @@ Step 2: write the units
 	}
 }
 
+func TestPrintStepsPrintsEachLineAStepKeepsByItsKeyAloneAndLeavesTheFileWhole(t *testing.T) {
+	t.Parallel()
+
+	var answer strings.Builder
+	dotEnv := "# Written by gophenberg server:install.\nGOPHENBERG_ADDR=127.0.0.1:8081\n" +
+		"GOPHENBERG_SMTP_PASSWORD=\"Maria's mail password\"\nGOPHENBERG_SMTP_USER=maria=perez\nGOPHENBERG_THEME=starter\n"
+	planned := step{id: "site-env", does: "write the site's settings", hides: []string{
+		"GOPHENBERG_SMTP_PASSWORD", "GOPHENBERG_SMTP_USER",
+	}, files: []file{{"/opt/gophenberg/.env", "gophenberg", 0o600, dotEnv}}}
+
+	err := printSteps(&answer, []step{planned})
+
+	want := wantedLead + `
+Step 1: write the site's settings
+  writes /opt/gophenberg/.env, owned by gophenberg with mode 0600:
+    # Written by gophenberg server:install.
+    GOPHENBERG_ADDR=127.0.0.1:8081
+    GOPHENBERG_SMTP_PASSWORD=(kept as it is)
+    GOPHENBERG_SMTP_USER=(kept as it is)
+    GOPHENBERG_THEME=starter
+`
+	if err != nil || answer.String() != want {
+		t.Errorf("printSteps() = %v, printing\n%s\nwant\n%s", err, answer.String(), want)
+	}
+	if planned.files[0].text != dotEnv {
+		t.Errorf("printSteps() left the file holding\n%s\nwant it whole\n%s", planned.files[0].text, dotEnv)
+	}
+}
+
 func TestPrintStepsPrintsTheTextAStepPrintsUnderItsFiles(t *testing.T) {
 	t.Parallel()
 

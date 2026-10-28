@@ -31,15 +31,19 @@ const stepEnded = "ended"
 // unattendedUpgrade is the program of unattended-upgrades, there while that package is installed.
 const unattendedUpgrade = "/usr/bin/unattended-upgrade"
 
+// keptValue is what a dry run prints for the value of a line the person added to the site's .env.
+const keptValue = "(kept as it is)"
+
 // dryRunLead is the first line a dry run prints, once every check passed.
 const dryRunLead = "Every check passed, and nothing was changed. Without -dry-run, server:install would take these " +
 	"steps.\n"
 
-// step is one step server:install takes once the checks pass, with the files it writes, its text and its change.
+// step is one step server:install takes, with the files it writes, the keys a dry run hides, its text and its change.
 type step struct {
 	id     string
 	does   string
 	files  []file
+	hides  []string
 	prints string
 	apply  func(*installing, context.Context, step) error
 }
@@ -146,7 +150,7 @@ func (s site) setupSteps() []step {
 		{id: "installer-copy", does: "keep a copy of this installer at " + installerCopy + ", the one root runs for " +
 			"server:install and server:uninstall", apply: (*installing).keepCopy},
 		{id: "site-env", does: "write the site's settings, then run check as gophenberg in " + root,
-			files: []file{s.siteEnvFile()}, apply: (*installing).writeSiteEnv},
+			files: []file{s.siteEnvFile()}, hides: s.keptKeys(), apply: (*installing).writeSiteEnv},
 		s.unitsStep(),
 		{id: "command", does: "write the gophenberg command on the path", files: []file{s.commandFile()},
 			apply: (*installing).writeOnly},
@@ -210,7 +214,7 @@ func (s site) caddyStep() step {
 	return step{id: stepCaddy, does: does, files: s.caddyFiles(), apply: (*installing).caddy}
 }
 
-// caddyfileWritten reports whether the record holds the sum of the Caddyfile a first run wrote, which no run clears.
+// caddyfileWritten reports whether the record holds the first run's Caddyfile sum, cleared by server:uninstall alone.
 func (s site) caddyfileWritten() bool {
 	return s.record.Caddyfile != ""
 }
@@ -229,7 +233,7 @@ func (s site) startVerb() string {
 	return "start"
 }
 
-// printSteps prints each of steps with the full text of every file it writes and of what it prints, after the lead.
+// printSteps prints each of steps, the text of every file it writes with the values it hides left out, and its text.
 func printSteps(w io.Writer, steps []step) error {
 	var answer strings.Builder
 	answer.WriteString(dryRunLead)
@@ -238,7 +242,7 @@ func printSteps(w io.Writer, steps []step) error {
 		for _, written := range planned.files {
 			fmt.Fprintf(&answer, "  writes %s, owned by %s with mode %04o:\n", written.path, written.owner,
 				written.mode)
-			writeIndented(&answer, written.text)
+			writeIndented(&answer, hidden(written.text, planned.hides))
 		}
 		if planned.prints != "" {
 			answer.WriteString("  prints:\n")
@@ -247,6 +251,18 @@ func printSteps(w io.Writer, steps []step) error {
 	}
 	_, err := io.WriteString(w, answer.String())
 	return err
+}
+
+// hidden returns text with keptValue in place of the value of each line whose key is one of keys.
+func hidden(text string, keys []string) string {
+	var shown strings.Builder
+	for line := range strings.Lines(text) {
+		if key, _, _ := strings.Cut(line, "="); slices.Contains(keys, key) {
+			line = key + "=" + keptValue + "\n"
+		}
+		shown.WriteString(line)
+	}
+	return shown.String()
 }
 
 // writeIndented writes text to answer with every line that is not empty indented by four spaces.
