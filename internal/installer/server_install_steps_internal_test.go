@@ -25,6 +25,7 @@ import (
 	"testing/synctest"
 
 	"github.com/cucumber/godog"
+	"github.com/joho/godotenv"
 
 	"github.com/gopherium/gophenberg/internal/version"
 )
@@ -51,11 +52,15 @@ type printedFile struct {
 	header, text string
 }
 
+// hiddenValue ends each line of the site's .env that a dry run prints with the person's value hidden.
+const hiddenValue = "=(kept as it is)"
+
 // installScenario is what one server:install scenario keeps between its steps.
 type installScenario struct {
 	t       *testing.T
 	server  *fakeServer
 	env     map[string]string
+	planted map[string]string
 	before  map[string]string
 	stdout  string
 	stderr  string
@@ -69,7 +74,7 @@ type installScenario struct {
 // initializeServerInstall returns the binding of the server:install steps, t holding every fake server.
 func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 	return func(sc *godog.ScenarioContext) {
-		s := &installScenario{t: t, env: map[string]string{}, checked: map[string]bool{}}
+		s := &installScenario{t: t, env: map[string]string{}, planted: map[string]string{}, checked: map[string]bool{}}
 		sc.Given(`^a fresh Ubuntu 24.04 server run by systemd 255$`, s.freshServer)
 		sc.Given(`^the operator is not root$`, s.notRoot)
 		sc.Given(`^the server runs Ubuntu 22.04$`, s.runUbuntu2204)
@@ -83,8 +88,8 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 		sc.Given(`^example.com points at 198.51.100.7, where another server answers every page with 404$`,
 			s.pointElsewhere)
 		sc.Given(`^example.com resolves to 127.0.1.1, as a line in /etc/hosts makes it$`, s.pointAtHostsLine)
-		sc.Given(`^www.example.com points at 198.51.100.7, a public address a NAT in front of the server forwards to it$`,
-			s.pointThroughNAT)
+		sc.Given(`^(?:www\.)?example.com points at 198.51.100.7, a public address a NAT in front of the server forwards`+
+			` to it$`, s.pointThroughNAT)
 		sc.Given(`^PostgreSQL is installed on the server$`, s.installPostgreSQL)
 		sc.Given(`^Caddy is installed on the server$`, s.installCaddy)
 		sc.Given(`^another user can write /opt$`, s.openOpt)
@@ -103,6 +108,7 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 		initializeServerInstallOutcomes(sc, s)
 		initializeServerInstallChanges(sc, s)
 		initializeServerInstallApplies(sc, s)
+		initializeServerUninstall(sc, s)
 	}
 }
 
@@ -157,6 +163,7 @@ func initializeServerInstallOutcomes(sc *godog.ScenarioContext, s *installScenar
 	sc.Then(`^the run notes "([^"]*)"$`, s.notes)
 	sc.Then(`^the run notes nothing$`, s.notesNothing)
 	sc.Then(`^the run prints nothing$`, s.printsNothing)
+	sc.Then(`^nothing the run printed holds "([^"]*)"$`, s.printedNothingOf)
 	sc.Then(`^nothing on the server changed$`, s.changedNothing)
 	sc.Then(`^the checks listened on no port$`, s.listenedNowhere)
 	sc.Then(`^the checks fetched no page$`, s.fetchedNothing)
@@ -272,6 +279,7 @@ func (s *installScenario) installEarlier() {
 	server.running["caddy.service"], server.running["gophenberg.service"] = true, true
 	server.write(keptCaddyfilePath, packageCaddyfile)
 	server.write("/etc/caddy/Caddyfile", wantedCaddyfile)
+	server.write(caddySitePath, wantedCaddySite)
 	server.write("/etc/systemd/system/gophenberg.service", wantedSiteUnit)
 	server.write(commandPath, wantedCommand)
 	server.write(siteEnvAt, wantedSiteEnv)
@@ -298,12 +306,17 @@ func (s *installScenario) keepOwnWebServer() error {
 	return nil
 }
 
-// addSiteEnvLine adds line to the site's .env.
+// addSiteEnvLine adds line to the site's .env, keeping the value it sets by its key.
 func (s *installScenario) addSiteEnvLine(line string) error {
 	held, err := os.ReadFile(s.server.at(siteEnvAt))
 	if err != nil {
 		return err
 	}
+	set, err := godotenv.Unmarshal(line)
+	if err != nil {
+		return err
+	}
+	maps.Copy(s.planted, set)
 	s.server.write(siteEnvAt, string(held)+line+"\n")
 	return nil
 }
@@ -385,8 +398,11 @@ func (s *installScenario) deleteCurrentBuild() {
 	s.server.remove("/opt/gophenberg/versions/0.19.0")
 }
 
-// runLine runs the server:install line on the scenario's server in a bubble of fake time, so no wait takes real time.
+// runLine runs a server:uninstall line, or a server:install line in fake time, so that no wait takes real time.
 func (s *installScenario) runLine(line string) error {
+	if strings.HasPrefix(line, uninstallCommand) {
+		return s.runUninstall(line)
+	}
 	request, err := requestOf(line)
 	if err != nil {
 		return err
@@ -535,6 +551,14 @@ func (s *installScenario) notesNothing() error {
 func (s *installScenario) printsNothing() error {
 	if s.stdout != "" {
 		return fmt.Errorf("the run printed %q, want nothing", s.stdout)
+	}
+	return nil
+}
+
+// printedNothingOf fails when the run printed text on its answer stream, its error stream or in its error.
+func (s *installScenario) printedNothingOf(text string) error {
+	if printed := s.stdout + s.stderr + fmt.Sprint(s.err); strings.Contains(printed, text) {
+		return fmt.Errorf("the run printed\n%s\nwant nothing that holds %q", printed, text)
 	}
 	return nil
 }
@@ -802,11 +826,38 @@ func (s *installScenario) holdsPrintedFiles() error {
 	for path, printed := range (&installScenario{stdout: s.planned}).printedFiles() {
 		owned, _ := strings.CutPrefix(printed.header, "  writes "+path+", owned by ")
 		owner, mode, _ := strings.Cut(strings.TrimSuffix(owned, ":"), " with mode ")
-		if err := s.holdsFile(path, owner, mode, printed.text); err != nil {
+		err := s.holdsPrinted(path, printed.text)
+		if err == nil {
+			err = s.ownedAs(path, owner, mode, 0)
+		}
+		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// holdsPrinted fails unless the file at path holds printed line for line, each hidden value as the scenario set it.
+func (s *installScenario) holdsPrinted(path, printed string) error {
+	held, err := os.ReadFile(s.server.at(path))
+	if err != nil {
+		return fmt.Errorf("the server holds no file %s: %w", path, err)
+	}
+	if !slices.EqualFunc(strings.Split(string(held), "\n"), strings.Split(printed, "\n"), s.heldAsPrinted) {
+		return fmt.Errorf("the server holds %s as\n%s\nwant it as the dry run printed it\n%s", path, held, printed)
+	}
+	return nil
+}
+
+// heldAsPrinted reports whether held is the line printed, or sets the value the scenario set for the key it hides.
+func (s *installScenario) heldAsPrinted(held, printed string) bool {
+	key, hidden := strings.CutSuffix(printed, hiddenValue)
+	if !hidden {
+		return held == printed
+	}
+	set, _ := godotenv.Unmarshal(held)
+	planted, found := s.planted[key]
+	return found && maps.Equal(set, map[string]string{key: planted})
 }
 
 // holdsFile fails unless the server holds a regular file at path that holds text, owned by owner with mode.
@@ -987,9 +1038,9 @@ func (s *installScenario) recordMarks(id, mark string) error {
 	return nil
 }
 
-func TestServerInstall(t *testing.T) {
-	t.Parallel()
-
+// runFeature runs the feature at path on fake servers through the one initializer, @wip left out unless set.
+func runFeature(t *testing.T, path string) {
+	t.Helper()
 	tags := "~@wip"
 	if os.Getenv("GOPHENBERG_BDD_WIP") != "" {
 		tags = ""
@@ -997,10 +1048,16 @@ func TestServerInstall(t *testing.T) {
 	suite := godog.TestSuite{
 		ScenarioInitializer: initializeServerInstall(t),
 		Options: &godog.Options{
-			Format: "pretty", Paths: []string{serverInstallFeature}, Tags: tags, Strict: true, TestingT: t,
+			Format: "pretty", Paths: []string{path}, Tags: tags, Strict: true, TestingT: t,
 		},
 	}
 	if suite.Run() != 0 {
 		t.Error("the feature did not pass")
 	}
+}
+
+func TestServerInstall(t *testing.T) {
+	t.Parallel()
+
+	runFeature(t, serverInstallFeature)
 }

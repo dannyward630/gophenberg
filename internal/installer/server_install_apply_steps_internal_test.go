@@ -53,6 +53,7 @@ func initializeServerInstallApplies(sc *godog.ScenarioContext, s *installScenari
 	sc.Then(`^the run checked (https://\S+) trusting Caddy's own root certificate$`, s.checkedWithCaddyRoot)
 	sc.Then(`^the run checked no page over HTTPS$`, s.checkedNoHTTPS)
 	sc.Then(`^the run ends with:$`, s.endsWith)
+	sc.Then(`^the run prints:$`, s.printsLines)
 	sc.Then(`^the run ends with the lines for the person's web server that the dry run printed$`, s.endsWithWebServer)
 	initializeServerInstallHeld(sc, s)
 }
@@ -277,6 +278,14 @@ func (s *installScenario) checkedNoHTTPS() error {
 func (s *installScenario) endsWith(want *godog.DocString) error {
 	if !strings.HasSuffix(s.stdout, "\n"+want.Content+"\n") {
 		return fmt.Errorf("the run printed\n%s\nwant it to end with\n%s", s.stdout, want.Content)
+	}
+	return nil
+}
+
+// printsLines fails unless what the run printed holds the lines of want, whole and in order.
+func (s *installScenario) printsLines(want *godog.DocString) error {
+	if !strings.Contains("\n"+s.stdout, "\n"+want.Content+"\n") {
+		return fmt.Errorf("the run printed\n%s\nwant it to hold\n%s", s.stdout, want.Content)
 	}
 	return nil
 }

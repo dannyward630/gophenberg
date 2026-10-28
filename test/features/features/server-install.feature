@@ -9,7 +9,9 @@ Feature: Install Gophenberg on a Linux server
   nothing was changed. A later run skips the ports and the pieces the
   install record says an earlier run installed. With -dry-run the run then
   prints each step it would take and the full text of every file it would
-  write, and still changes nothing. Without -dry-run it then opens the
+  write, and still changes nothing. A line the person added to the site's
+  .env prints by its key alone, its value hidden, and the file keeps that
+  value. Without -dry-run it then opens the
   release archive -archive names and checks that its release.json names
   this installer's version and this server's platform. While the first
   administrator is still to be made, it asks on the terminal for what the
@@ -227,12 +229,37 @@ Feature: Install Gophenberg on a Linux server
       GOPHENBERG_THEMES_DIR=/opt/gophenberg/themes
       GOPHENBERG_MEDIA_DIR=/opt/gophenberg/media
       GOPHENBERG_DATABASE_WAIT=60s
-      GOPHENBERG_SHUTDOWN_GRACE=4m
-      GOPHENBERG_SITE_TITLE="Maria Perez's site"
+      GOPHENBERG_SHUTDOWN_GRACE=(kept as it is)
+      GOPHENBERG_SITE_TITLE=(kept as it is)
       """
     And the site's unit holds the line "WorkingDirectory=/opt/gophenberg"
     And the site's unit holds the line "ReadWritePaths=/opt/gophenberg"
     And the site's unit holds the line "TimeoutStopSec=260s"
+
+  Scenario: A dry run hides the value of a password line the person added to the site's .env, and the run keeps it
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the site's .env holds the line "GOPHENBERG_SMTP_PASSWORD=Maria's mail password"
+    When the operator runs "server:install -dry-run"
+    Then the run succeeds
+    And nothing the run printed holds "Maria's mail password"
+    And the dry run writes "/opt/gophenberg/.env", owned by gophenberg with mode 0600:
+      """
+      # Written by gophenberg server:install.
+      GOPHENBERG_DATABASE_URL=postgres:///gophenberg?host=/var/run/postgresql&user=gophenberg
+      GOPHENBERG_SUPERUSER_POLICY=refuse
+      GOPHENBERG_INSTALL_ROOT=/opt/gophenberg
+      GOPHENBERG_ADDR=127.0.0.1:8081
+      GOPHENBERG_PUBLIC_URL=https://example.com
+      GOPHENBERG_TRUSTED_PROXIES=127.0.0.1/32,::1/128
+      GOPHENBERG_THEMES_DIR=/opt/gophenberg/themes
+      GOPHENBERG_MEDIA_DIR=/opt/gophenberg/media
+      GOPHENBERG_DATABASE_WAIT=60s
+      GOPHENBERG_SMTP_PASSWORD=(kept as it is)
+      """
+    When the operator runs "server:install"
+    Then the run succeeds
+    And nothing the run printed holds "Maria's mail password"
+    And the server holds every file the dry run printed, with its owner and mode
 
   Scenario: A line of the site's .env that holds a terminal control sequence is refused
     Given an earlier run installed Gophenberg for example.com on the server
@@ -829,6 +856,19 @@ Feature: Install Gophenberg on a Linux server
       """
     And the server holds nothing at /etc/caddy
     And the run checked no page over HTTPS
+    And the run prints:
+      """
+      Step 13: print the summary and end the install record
+
+      Gophenberg 0.19.0 answers on 127.0.0.1:8081, the GOPHENBERG_ADDR the site listens on.
+      Once your own web server sends example.com there, sign in at https://example.com/admin/ as admin@example.com.
+      Commands to know:
+        sudo gophenberg update:status     shows the build that runs and the update on offer
+        sudo gophenberg update:apply      installs the update on offer
+        sudo journalctl -u gophenberg     shows what the site logged
+        sudo gophenberg server:uninstall  removes Gophenberg and keeps its data
+      Step 14: print the lines for nginx, Caddy, Traefik and Apache that send example.com to the site at 127.0.0.1:8081
+      """
     And the run ends with the lines for the person's web server that the dry run printed
 
   Scenario: Two typed passwords that differ are asked again
