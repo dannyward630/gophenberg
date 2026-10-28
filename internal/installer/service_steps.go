@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -100,7 +101,7 @@ func (r *installing) units(ctx context.Context, planned step) error {
 	return err
 }
 
-// caddy writes Caddy's files and checks them, restarting Caddy on a first run and reloading it on a later one.
+// caddy writes Caddy's files and checks them, writing the Caddyfile only while the record holds no sum of it.
 func (r *installing) caddy(ctx context.Context, planned step) error {
 	if r.site.caddyfileWritten() {
 		return r.laterCaddy(ctx, planned)
@@ -108,26 +109,27 @@ func (r *installing) caddy(ctx context.Context, planned step) error {
 	return r.firstCaddy(ctx, planned)
 }
 
-// firstCaddy keeps the package's Caddyfile, writes and checks Caddy's files, restarts Caddy and keeps the sum.
+// firstCaddy keeps the package's Caddyfile, writes and checks Caddy's files, saves the sum, then restarts Caddy.
 func (r *installing) firstCaddy(ctx context.Context, planned step) error {
 	err := r.keepPackageCaddyfile()
 	if err == nil {
 		err = r.checkedCaddy(ctx, planned.files)
 	}
 	if err == nil {
-		err = r.runStep(ctx, unitProgram("restart", caddyUnit))
+		r.record.Caddyfile = caddyfileSum(render("Caddyfile", r.site.data()))
+		err = r.save()
 	}
 	if err == nil {
-		r.record.Caddyfile = caddyfileSum(render("Caddyfile", r.site.data()))
+		err = r.runStep(ctx, unitProgram("restart", caddyUnit))
 	}
 	return err
 }
 
-// laterCaddy writes and checks Caddy's files, the person's Caddyfile left alone, then reloads Caddy.
+// laterCaddy writes and checks Caddy's files, the person's Caddyfile left alone, then restarts or reloads Caddy.
 func (r *installing) laterCaddy(ctx context.Context, planned step) error {
 	err := r.checkedCaddy(ctx, planned.files)
 	if err == nil {
-		err = r.runStep(ctx, unitProgram("reload", caddyUnit))
+		err = r.runStep(ctx, unitProgram(r.site.caddyVerb(), caddyUnit))
 	}
 	return err
 }
@@ -137,12 +139,21 @@ func (r *installing) keepPackageCaddyfile() error {
 	kept := inSystemTree(keptCaddyfilePath)
 	_, err := r.system.Lstat(kept)
 	if errors.Is(err, fs.ErrNotExist) {
-		err = r.system.Rename(inSystemTree(caddyfilePath), kept)
+		err = r.renamePackageCaddyfile(kept)
 	}
 	if err == nil || errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	return fmt.Errorf("installer: keep the caddy package's Caddyfile as %s: %w", keptCaddyfilePath, err)
+}
+
+// renamePackageCaddyfile renames the Caddyfile to kept in the system tree, unless it imports Gophenberg's site.
+func (r *installing) renamePackageCaddyfile(kept string) error {
+	held, err := r.system.ReadFile(inSystemTree(caddyfilePath))
+	if err != nil || slices.Contains(trimmedLines(string(held)), caddyImport) {
+		return err
+	}
+	return r.system.Rename(inSystemTree(caddyfilePath), kept)
 }
 
 // checkedCaddy writes files, then has caddy validate check them as the caddy user, at home where Caddy keeps its data.
@@ -221,10 +232,20 @@ func (r *installing) createAdmin(ctx context.Context, _ step) error {
 	program.Stdin = r.admin.password + "\n"
 	printed, err := r.machine.Run(ctx, program)
 	if strings.Contains(printed, emailTaken) {
-		return nil
+		return r.takenByAdmin(ctx)
 	}
 	r.created = err == nil
 	return withPrinted(err, printed)
+}
+
+// takenByAdmin accepts the email account:create-admin found taken once account:list lists an account under admin.
+func (r *installing) takenByAdmin(ctx context.Context) error {
+	listed, err := adminListed(ctx, r.machine, r.site.settings.Root)
+	if err != nil || listed {
+		return err
+	}
+	return fmt.Errorf("%s already belongs to an account that is not an administrator, so run sudo gophenberg "+
+		"server:install again and give the first administrator another email", r.admin.email)
 }
 
 // https asks for the admin page over HTTPS within its wait, warning and leaving the step open when it never answers.

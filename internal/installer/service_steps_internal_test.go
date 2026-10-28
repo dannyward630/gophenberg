@@ -226,23 +226,50 @@ func TestTheCaddyStepOfAFirstRunKeepsThePackagesCaddyfileThenRestartsCaddy(t *te
 	}
 }
 
-func TestTheCaddyStepOfAFirstRunKeepsNoSumInTheRecordUntilCaddyRestarted(t *testing.T) {
+func TestTheCaddyStepOfAFirstRunSavesTheSumBeforeCaddyRestarts(t *testing.T) {
 	t.Parallel()
 
 	server := newFakeServer(t)
 	server.installPackage(pieceCaddy)
-	server.effects["systemctl"] = func(Program) answer { return failed("systemctl", "Job for caddy.service failed.\n") }
+	var saved string
+	server.effects["systemctl"] = func(Program) answer {
+		record, _ := readRecord(server.machine())
+		saved = record.Caddyfile
+		return failed("systemctl", "Job for caddy.service failed.\n")
+	}
 	running, _ := servedOn(t, server, firstSite(t, "example.com", 255))
 
 	err := running.take(t.Context(), plannedStep(t, running, stepCaddy))
 
 	wantRefused(t, err, "installer: run systemctl: exit status 1, after it printed:\nJob for caddy.service failed.")
 	wantText(t, server.at(caddyfilePath), wantedCaddyfile)
-	if record, _ := readRecord(server.machine()); record.Caddyfile != "" {
-		t.Errorf("the record holds the Caddyfile sum %q once the restart failed, want none, so the next run "+
-			"writes the Caddyfile and restarts Caddy again", record.Caddyfile)
+	if saved != caddyfileSum(wantedCaddyfile) {
+		t.Errorf("the restart found the Caddyfile sum %q in the record, want that of the Caddyfile written, so the "+
+			"next run keeps the Caddyfile", saved)
 	}
 	wantMark(t, server, stepCaddy, stepStarted)
+}
+
+func TestTheCaddyStepOfARunAfterAFailedRestartKeepsThePersonsCaddyfileAndRestartsCaddy(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.installPackage(pieceCaddy)
+	server.write(keptCaddyfilePath, packageCaddyfile)
+	server.write(caddyfilePath, wantedCaddyfile+personSite)
+	planned := laterSite(t)
+	planned.record.Steps[stepCaddy] = stepStarted
+	running, _ := servedOn(t, server, planned)
+
+	err := running.take(t.Context(), plannedStep(t, running, stepCaddy))
+
+	if err != nil {
+		t.Fatalf("take(caddy) = %v, want Caddy restarted", err)
+	}
+	wantText(t, server.at(caddyfilePath), wantedCaddyfile+personSite)
+	wantText(t, server.at(keptCaddyfilePath), packageCaddyfile)
+	wantRan(t, server, caddyValidateLine, "systemctl restart caddy.service")
+	wantMark(t, server, stepCaddy, stepEnded)
 }
 
 func TestTheCaddyStepKeepsTheCaddyfileACutOffRunAlreadyKept(t *testing.T) {
@@ -261,6 +288,26 @@ func TestTheCaddyStepKeepsTheCaddyfileACutOffRunAlreadyKept(t *testing.T) {
 	}
 	wantText(t, server.at(keptCaddyfilePath), packageCaddyfile)
 	wantText(t, server.at(caddyfilePath), wantedCaddyfile)
+}
+
+func TestTheCaddyStepNeverKeepsACaddyfileThatImportsGophenbergsSiteAsThePackages(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.installPackage(pieceCaddy)
+	server.write(caddyfilePath, wantedLocalCaddyfile+personSite)
+	running, _ := servedOn(t, server, firstSite(t, "example.com", 255))
+
+	err := running.take(t.Context(), plannedStep(t, running, stepCaddy))
+
+	if err != nil {
+		t.Fatalf("take(caddy) = %v, want Caddy set up", err)
+	}
+	wantText(t, server.at(caddyfilePath), wantedCaddyfile)
+	if server.machine().there(keptCaddyfilePath) {
+		t.Errorf("the run kept a Caddyfile that imports %s as %s, want it never kept as the package's",
+			caddySitePath, keptCaddyfilePath)
+	}
 }
 
 func TestTheCaddyStepWritesTheCaddyfileWhereThePackageLeftNone(t *testing.T) {
@@ -517,6 +564,42 @@ func TestTheAdminStepTakesAnEmailAlreadyTakenAsMade(t *testing.T) {
 		t.Errorf("take(admin) = %v, created %t, want the account taken as made by an earlier run", err, running.created)
 	}
 	wantMark(t, server, stepAdmin, stepEnded)
+}
+
+func TestTheAdminStepStopsWhenTheEmailBelongsToAnAccountUnderAnotherRole(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.accounts = []listedAccount{{Email: "admin@example.com", Role: "editor"}}
+	running, _ := servedOn(t, server, firstSite(t, "example.com", 255))
+	running.admin = mariaPerez
+
+	err := running.take(t.Context(), plannedStep(t, running, stepAdmin))
+
+	wantRefused(t, err, "admin@example.com already belongs to an account that is not an administrator, so run sudo "+
+		"gophenberg server:install again and give the first administrator another email")
+	if running.created {
+		t.Error("the run says it created the administrator, want none created")
+	}
+	wantMark(t, server, stepAdmin, stepStarted)
+}
+
+func TestTheAdminStepStopsWhenAccountListFailsOnAnEmailAlreadyTaken(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.accounts = []listedAccount{{Email: "admin@example.com", Role: "admin"}}
+	server.effects["gophenberg account:list"] = func(program Program) answer {
+		return failed(program.Name, "database: connection refused\n")
+	}
+	running, _ := servedOn(t, server, firstSite(t, "example.com", 255))
+	running.admin = mariaPerez
+
+	err := running.take(t.Context(), plannedStep(t, running, stepAdmin))
+
+	wantRefused(t, err, "installer: run /opt/gophenberg/current/gophenberg: exit status 1, after it printed:\n"+
+		"database: connection refused")
+	wantMark(t, server, stepAdmin, stepStarted)
 }
 
 func TestTheAdminStepStopsWithWhatCreateAdminPrinted(t *testing.T) {

@@ -30,6 +30,13 @@ type Request struct {
 
 // Install checks machine for server:install as request asks, then prints the steps of a dry run or takes them.
 func Install(ctx context.Context, machine Machine, call gonsole.Call, request Request) error {
+	if !request.DryRun {
+		unlock, err := lockInstallerFolder(machine)
+		if err != nil {
+			return rootOr(machine, installCommand, err)
+		}
+		defer unlock()
+	}
 	check, err := checkFor(ctx, machine, call, request)
 	if err != nil {
 		return err
@@ -112,7 +119,7 @@ func (c *machineCheck) settleAdmin(ctx context.Context) error {
 	if !c.record.started(stepAdmin) {
 		return nil
 	}
-	made, err := c.adminMade(ctx)
+	made, err := adminListed(ctx, c.machine, c.settings.Root)
 	if err != nil {
 		return stop("cannot tell whether the run cut off in the admin step made the first administrator: %v", err)
 	}
@@ -128,9 +135,9 @@ type account struct {
 	Role  string `json:"role"`
 }
 
-// adminMade reports whether account:list, run as gophenberg in the install root, lists an account under admin.
-func (c *machineCheck) adminMade(ctx context.Context) (bool, error) {
-	printed, err := c.machine.Run(ctx, siteCommand(c.settings.Root, "account:list", "-json"))
+// adminListed reports whether account:list, run on machine as gophenberg in root, lists an account under admin.
+func adminListed(ctx context.Context, machine Machine, root string) (bool, error) {
+	printed, err := machine.Run(ctx, siteCommand(root, "account:list", "-json"))
 	if err != nil {
 		return false, withPrinted(err, printed)
 	}

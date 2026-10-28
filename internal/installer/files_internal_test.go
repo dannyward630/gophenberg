@@ -419,16 +419,17 @@ func TestTheCaddyFilesLeaveTheCaddyfileAloneOnceTheRecordHoldsItsSumWhateverTheC
 	wantFiles(t, got, caddyFilesOf(wantedCaddySite, wantedCaddyfile)[:2])
 }
 
-func TestTheCaddyStepRestartsCaddyUntilTheRecordHoldsTheCaddyfileItWrote(t *testing.T) {
+func TestTheCaddyStepRestartsCaddyUntilTheRecordEndsItAndKeepsTheCaddyfileOnceTheRecordHoldsItsSum(t *testing.T) {
 	t.Parallel()
 
 	restart := "write Caddy's files, keep the package's Caddyfile as /etc/caddy/Caddyfile.before-gophenberg, check " +
 		"them with caddy validate and restart Caddy"
+	keptRestart := "write Caddy's files, check them with caddy validate and restart Caddy"
 	reload := "write Caddy's files, check them with caddy validate and reload Caddy"
 	for _, earlier := range []struct {
 		mark, sum, want string
 	}{
-		{"", "", restart}, {stepStarted, "", restart}, {stepStarted, abcSum, reload}, {stepEnded, abcSum, reload},
+		{"", "", restart}, {stepStarted, "", restart}, {stepStarted, abcSum, keptRestart}, {stepEnded, abcSum, reload},
 	} {
 		running := firstSite(t, "example.com", 255)
 		running.record.Steps = map[string]string{stepCaddy: earlier.mark}

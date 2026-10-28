@@ -98,7 +98,7 @@ func TestTheStepsOfALaterRunKeepTheBuildReloadCaddyRestartTheSiteAndCreateNoAdmi
 
 	running := firstSite(t, "example.com", 255)
 	running.current = true
-	running.record.Steps = map[string]string{stepAdmin: stepEnded}
+	running.record.Steps = map[string]string{stepAdmin: stepEnded, stepCaddy: stepEnded}
 	running.record.Caddyfile, running.record.Installed = caddyfileSum(wantedCaddyfile), []string{pieceService}
 
 	does, ids := doneOf(running.steps())

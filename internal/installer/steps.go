@@ -204,12 +204,12 @@ func (s site) buildStep() step {
 		current + " at it", apply: (*installing).build}
 }
 
-// caddyStep returns the step that writes Caddy's files and restarts Caddy, or reloads it once the record holds the sum.
+// caddyStep returns the step that writes Caddy's files and restarts Caddy, or reloads it once the record ended it.
 func (s site) caddyStep() step {
 	does := "write Caddy's files, keep the package's Caddyfile as " + keptCaddyfilePath + ", check them with caddy " +
 		"validate and restart Caddy"
 	if s.caddyfileWritten() {
-		does = "write Caddy's files, check them with caddy validate and reload Caddy"
+		does = "write Caddy's files, check them with caddy validate and " + s.caddyVerb() + " Caddy"
 	}
 	return step{id: stepCaddy, does: does, files: s.caddyFiles(), apply: (*installing).caddy}
 }
@@ -217,6 +217,14 @@ func (s site) caddyStep() step {
 // caddyfileWritten reports whether the record holds the first run's Caddyfile sum, cleared by server:uninstall alone.
 func (s site) caddyfileWritten() bool {
 	return s.record.Caddyfile != ""
+}
+
+// caddyVerb returns how a run that keeps the Caddyfile gets Caddy to take its files: restart until the step ended.
+func (s site) caddyVerb() string {
+	if s.record.ended(stepCaddy) {
+		return "reload"
+	}
+	return "restart"
 }
 
 // startStep returns the step that starts the site and waits for its pages, or restarts it once the record owns it.
