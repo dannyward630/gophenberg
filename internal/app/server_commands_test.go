@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -111,6 +113,25 @@ func TestServerUninstallOffersDeleteDataAndYes(t *testing.T) {
 	}
 }
 
+// rootOwned describes a file as root's, whatever user the test runs as.
+type rootOwned struct{ fs.FileInfo }
+
+// Sys returns the system description of the file with root as its owner.
+func (i rootOwned) Sys() any {
+	stat := *i.FileInfo.Sys().(*syscall.Stat_t)
+	stat.Uid = 0
+	return &stat
+}
+
+// lstatAsRoot describes the file at path as os.Lstat does, with root as its owner.
+func lstatAsRoot(path string) (fs.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	return rootOwned{info}, nil
+}
+
 // recordedMachine returns a server root runs on whose install record names the PostgreSQL it installed and the user.
 func recordedMachine(t *testing.T) installer.Machine {
 	t.Helper()
@@ -124,7 +145,7 @@ func recordedMachine(t *testing.T) installer.Machine {
 		t.Fatalf("writing the install record: %v", err)
 	}
 	return installer.Machine{
-		Root: root, Lstat: os.Lstat, Euid: func() int { return 0 },
+		Root: root, Lstat: lstatAsRoot, Euid: func() int { return 0 },
 		LookupUser: func(name string) (*user.User, error) { return &user.User{Username: name}, nil },
 	}
 }
