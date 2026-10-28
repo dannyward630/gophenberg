@@ -27,7 +27,26 @@ func serverCommands(machine installer.Machine) []gonsole.Command {
 		Summary: "install Gophenberg on this Linux server with PostgreSQL, Caddy and a systemd service",
 		Flags:   installFlags,
 		Run:     runInstall(machine),
+	}, {
+		Name:    serverNamespace + "uninstall",
+		Summary: "remove what server:install set up on this server, keeping the site's data unless -delete-data",
+		Flags:   uninstallFlags,
+		Writes:  true,
+		Run:     runUninstall(machine),
 	}}
+}
+
+// uninstallFlags declares the flags of server:uninstall.
+func uninstallFlags(fs *flag.FlagSet) {
+	fs.Bool("delete-data", false, "also drop the database and its role, and remove the install root, "+
+		"/etc/gophenberg/server.env and the system user gophenberg")
+}
+
+// runUninstall returns the run of server:uninstall on machine.
+func runUninstall(machine installer.Machine) func(context.Context, gonsole.Call) error {
+	return func(ctx context.Context, call gonsole.Call) error {
+		return installer.Uninstall(ctx, machine, call, call.Flags["delete-data"] == "true")
+	}
 }
 
 // installFlags declares the flags of server:install.

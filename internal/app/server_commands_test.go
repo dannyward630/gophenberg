@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -81,6 +82,91 @@ func TestServerInstallOffersEveryFlagOfTheInstallLine(t *testing.T) {
 		t.Errorf("help server:install = %d, stdout %q, stderr %q, want 0 and\n%s", got.Code, got.Stdout, got.Stderr,
 			want)
 	}
+}
+
+func TestServerUninstallOffersDeleteDataAndYes(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, Program(testkit.Getenv(nil), noPlugins), "", "help", "server:uninstall")
+
+	want := strings.Join([]string{
+		"remove what server:install set up on this server, keeping the site's data unless -delete-data",
+		"",
+		"Usage:",
+		"  gophenberg server:uninstall [flags]",
+		"",
+		"Flags:",
+		"  -delete-data",
+		"    \talso drop the database and its role, and remove the install root, /etc/gophenberg/server.env and the " +
+			"system user gophenberg",
+		"  -yes",
+		"    \tapply the change, a dry run without it",
+		"",
+	}, "\n")
+	if got.Code != gonsole.ExitDone || got.Stdout != want {
+		t.Errorf("help server:uninstall = %d, stdout %q, want 0 and\n%s", got.Code, got.Stdout, want)
+	}
+	if got.Stderr != "" {
+		t.Errorf("help server:uninstall noted %q, want nothing", got.Stderr)
+	}
+}
+
+// recordedMachine returns a server root runs on whose install record names the PostgreSQL it installed and the user.
+func recordedMachine(t *testing.T) installer.Machine {
+	t.Helper()
+	root := t.TempDir()
+	folder := filepath.Join(root, "var/lib/gophenberg-installer")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatalf("making the installer's folder: %v", err)
+	}
+	record := []byte(`{"installer": "0.19.0", "installed": ["postgresql"]}` + "\n")
+	if err := os.WriteFile(filepath.Join(folder, "install.json"), record, 0o600); err != nil {
+		t.Fatalf("writing the install record: %v", err)
+	}
+	return installer.Machine{
+		Root: root, Lstat: os.Lstat, Euid: func() int { return 0 },
+		LookupUser: func(name string) (*user.User, error) { return &user.User{Username: name}, nil },
+	}
+}
+
+func TestServerUninstallListsWhatItKeepsAndEndsWithTheDryRunLineWithoutYes(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, onMachine(nil, recordedMachine(t)), "", "server:uninstall")
+
+	want := "server:uninstall finds nothing left to remove.\nserver:uninstall keeps:\n  the system user gophenberg\n" +
+		"  /var/lib/gophenberg-installer/install.json, so a later install picks up what is kept\n" +
+		"  the packages server:install installed, which sudo apt-get purge postgresql removes\n"
+	if got.Code != gonsole.ExitDone || got.Stdout != want {
+		t.Errorf("server:uninstall = %d, stdout %q, stderr %q, want 0 and\n%s", got.Code, got.Stdout, got.Stderr, want)
+	}
+	if line := "gophenberg: dry run, nothing changed, pass -yes to apply\n"; got.Stderr != line {
+		t.Errorf("server:uninstall noted %q, want gonsole's dry run line %q", got.Stderr, line)
+	}
+}
+
+func TestServerUninstallHandsDeleteDataToTheUninstall(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, onMachine(nil, recordedMachine(t)), "", "server:uninstall", "-delete-data")
+
+	want := "server:uninstall removes:\n  the system user gophenberg\nserver:uninstall keeps:\n"
+	if got.Code != gonsole.ExitDone || !strings.HasPrefix(got.Stdout, want) {
+		t.Errorf("server:uninstall -delete-data = %d, stdout %q, stderr %q, want 0 and the user removed", got.Code,
+			got.Stdout, got.Stderr)
+	}
+}
+
+func TestServerUninstallRefusesAPlainUser(t *testing.T) {
+	t.Parallel()
+
+	machine := recordedMachine(t)
+	machine.Euid = func() int { return 1000 }
+
+	got := testkit.Run(t, onMachine(nil, machine), "", "server:uninstall", "-yes")
+
+	wantAnswer(t, got, gonsole.ExitFailed,
+		"gophenberg: server:uninstall must run as root, such as with sudo, so nothing was changed")
 }
 
 func TestServerInstallHandsTheInstallerEveryFlagTheLineSets(t *testing.T) {
