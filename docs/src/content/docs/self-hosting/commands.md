@@ -606,7 +606,9 @@ A run goes in this order:
    what the flags leave out.
 7. It takes the steps, see [taking the steps](#taking-the-steps).
 
-Nothing on the server changes before the steps.
+Nothing on the server changes before the steps. A run without
+`-dry-run` stops at once while another `server:install` or
+`server:uninstall -yes` is running on the server.
 
 It never reads the `.env` file of the folder it runs in, since the
 site's own user can write such a file. Every program it starts, such
@@ -623,6 +625,9 @@ A check that fails stops the run with exit code 1 and a line that
 says why and ends with `so nothing was changed`. In order:
 
 - **Root.** It runs as root, such as with `sudo`.
+- **The installer folder.** `/var/lib/gophenberg-installer`, when it
+  exists, is a real folder, not a link, owned by root and writable by
+  root alone.
 - **The system.** `/etc/os-release` names Ubuntu 24.04, Debian 12 or
   Debian 13. On Debian it also prints that Gophenberg's CI tests
   Ubuntu 24.04 only, such as
@@ -648,8 +653,8 @@ says why and ends with `so nothing was changed`. In order:
   programs in, such as `/usr/bin`. So
   `GOPHENBERG_INSTALL_ROOT=/usr/local` stops here too.
 - **The current link.** A `current` link in the install root names a
-  build in `versions` that holds its `gophenberg`. Otherwise the run
-  cannot tell which build runs.
+  build in `versions` that holds its `gophenberg` as a file that may
+  run. Otherwise the run cannot tell which build runs.
 - **Disk.** At least `GOPHENBERG_INSTALL_DISK_FLOOR_MB`, 1024 MB unless
   set, is free under the install root and under `/var/lib`, each
   measured at its nearest folder that exists.
@@ -889,6 +894,8 @@ done:
   first.
 - A database role or database that already exists counts as made.
 - A build folder left half unpacked is removed and unpacked again.
+- After a Caddy restart that failed, it keeps `/etc/caddy/Caddyfile`
+  as it is, checks its two lines and restarts Caddy.
 - An administrator the cut-off run made is found with
   `account:list`, so nothing is asked.
 
@@ -1069,7 +1076,10 @@ for a missing line. It never takes them from its environment or a
 
 ```text
 gophenberg: server:uninstall must run as root, such as with sudo, so nothing was changed
+gophenberg: /var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed
+gophenberg: another server:install or server:uninstall is running on this server, so nothing was changed
 gophenberg: this server has no install record at /var/lib/gophenberg-installer/install.json, so server:uninstall has nothing to remove
+gophenberg: server:uninstall needs /etc/caddy/Caddyfile to take Gophenberg's site out of Caddy, and it is not there, so nothing was changed
 ```
 
 `-delete-data` also drops the database and its role. It removes the
@@ -1077,9 +1087,11 @@ install root with everything in it, `backups` included, then
 `server.env` and the system user `gophenberg`. Nothing brings that
 data back, so copy a backup off the server first. It removes an
 install root only when the install record shows that `server:install`
-made it, and otherwise lists the folder as kept and says why. The
-install record then holds only the packages the install put there and
-the domain. The kept Caddy still holds TCP port 80, so a later install
+made it, and otherwise lists the folder as kept and says why. An
+install root the install made that `server.env` no longer names stays
+too, listed as kept. The install record then holds only the packages
+the install put there and the domain. The
+kept Caddy still holds TCP port 80, so a later install
 for that domain skips the domain check. When a Caddyfile you changed
 stays, the record also keeps the SHA-256 of the Caddyfile the install
 wrote, so a later install stops until the import line is back, as in

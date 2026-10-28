@@ -638,7 +638,8 @@ the file keeps what you wrote:
   to `none` stops the run while Gophenberg's Caddy site is still there.
 - A flag or an environment value given on that run replaces its line,
   except `GOPHENBERG_INSTALL_WEB_SERVER`, where asking for the other
-  web server stops the run.
+  web server stops the run. So does asking for another
+  `GOPHENBERG_INSTALL_ROOT`.
 - A line you added, such as `GOPHENBERG_INSTALL_DISK_FLOOR_MB=2048`,
   is read and kept, after the eleven lines above in the order of the
   names. A comment is not kept.
