@@ -86,9 +86,9 @@ func (r Record) owns(piece string) bool {
 	return slices.Contains(r.Installed, piece)
 }
 
-// allowsWebServer refuses a run without Caddy on a server where the record says server:install installed Caddy.
-func (r Record) allowsWebServer(settings Settings, env gonsole.Env) error {
-	if settings.withCaddy() || !r.owns(pieceCaddy) {
+// allowsWebServer refuses a run without Caddy while Gophenberg's Caddy site is on machine, whatever packages it owns.
+func allowsWebServer(machine Machine, settings Settings, env gonsole.Env) error {
+	if settings.withCaddy() || !machine.there(caddySitePath) {
 		return nil
 	}
 	return webServerMoved(env, webServerCaddy, settings.WebServer)

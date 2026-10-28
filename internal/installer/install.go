@@ -57,7 +57,7 @@ func checkFor(ctx context.Context, machine Machine, call gonsole.Call, request R
 	if err := record.allows(version.Version()); err != nil {
 		return nil, err
 	}
-	if err := record.allowsWebServer(settings, call.Env); err != nil {
+	if err := allowsWebServer(machine, settings, call.Env); err != nil {
 		return nil, err
 	}
 	check := &machineCheck{

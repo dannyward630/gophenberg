@@ -128,26 +128,29 @@ func TestAllowsTakesAnInstallerAsNewAsTheOneTheRecordNamesOrNewer(t *testing.T) 
 	}
 }
 
-func TestAllowsWebServerRefusesARunWithoutCaddyOnAServerWhoseRecordSaysCaddyWasInstalled(t *testing.T) {
+func TestAllowsWebServerRefusesARunWithoutCaddyWhileGophenbergsCaddySiteIsThere(t *testing.T) {
 	t.Parallel()
 
-	err := Record{Installed: []string{"postgresql", "caddy"}}.allowsWebServer(Settings{WebServer: "none"}, envOf(nil))
+	machine := serverWith(t, map[string]string{caddySitePath: wantedCaddySite})
+	machine.Lstat = os.Lstat
+
+	err := allowsWebServer(machine, Settings{WebServer: "none"}, envOf(nil))
 
 	wantRefused(t, err, fmt.Sprintf(webServerMove, "caddy", "none"))
 }
 
-func TestAllowsWebServerTakesARunThatKeepsTheWebServerTheRecordShows(t *testing.T) {
+func TestAllowsWebServerTakesARunWithCaddyOrOneWithoutGophenbergsCaddySiteWhateverTheRecordOwns(t *testing.T) {
 	t.Parallel()
 
-	for _, run := range []struct {
-		installed []string
-		webServer string
-	}{{[]string{"caddy"}, "caddy"}, {[]string{"postgresql"}, "none"}, {nil, "caddy"}, {nil, "none"}} {
-		err := Record{Installed: run.installed}.allowsWebServer(Settings{WebServer: run.webServer}, envOf(nil))
+	sited := serverWith(t, map[string]string{caddySitePath: wantedCaddySite})
+	bare := serverWith(t, map[string]string{caddyfilePath: packageCaddyfile})
+	for machine, webServer := range map[*Machine]string{&sited: "caddy", &bare: "none"} {
+		machine.Lstat = os.Lstat
+
+		err := allowsWebServer(*machine, Settings{WebServer: webServer}, envOf(nil))
 
 		if err != nil {
-			t.Errorf("allowsWebServer(%s) over a record that installed %q = %v, want nil", run.webServer,
-				run.installed, err)
+			t.Errorf("allowsWebServer(%s) = %v, want nil", webServer, err)
 		}
 	}
 }
