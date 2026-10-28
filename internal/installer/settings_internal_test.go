@@ -296,6 +296,43 @@ func TestSettingsOnRefuseALaterRunThatAsksForTheOtherWebServer(t *testing.T) {
 	}
 }
 
+func TestSettingsOnRefuseALaterRunThatAsksForAnotherInstallRoot(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "/srv/gophenberg/"})
+
+	_, err := settingsOn(machine, env, Request{})
+
+	wantRefused(t, err, "GOPHENBERG_INSTALL_ROOT: this server was set up with /opt/gophenberg, and a later run cannot "+
+		"move it to /srv/gophenberg, so run sudo gophenberg server:uninstall first, then change the line in "+
+		"/etc/gophenberg/server.env")
+}
+
+func TestSettingsOnALaterRunTakeTheInstallRootServerEnvKeepsWrittenWithATrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "/opt/gophenberg/"})
+
+	settings, err := settingsOn(machine, env, Request{})
+
+	if err != nil || settings.Root != "/opt/gophenberg" {
+		t.Errorf("settingsOn() = %q, %v, want the install root /opt/gophenberg of server.env", settings.Root, err)
+	}
+}
+
+func TestSettingsOnALaterRunRefuseAnInstallRootTheEnvironmentNamesByItsRuleBeforeAnyMove(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "srv/gophenberg"})
+
+	_, err := settingsOn(machine, env, Request{})
+
+	wantRefused(t, err, `GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "srv/gophenberg"`)
+}
+
 func TestSettingsOnALaterRunRefuseAWebServerTheEnvironmentNamesThatIsNeitherCaddyNorNone(t *testing.T) {
 	t.Parallel()
 

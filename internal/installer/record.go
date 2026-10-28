@@ -91,7 +91,7 @@ func allowsWebServer(machine Machine, settings Settings, env gonsole.Env) error 
 	if settings.withCaddy() || !machine.there(caddySitePath) {
 		return nil
 	}
-	return webServerMoved(env, webServerCaddy, settings.WebServer)
+	return settingMoved(env, "INSTALL_WEB_SERVER", webServerCaddy, settings.WebServer)
 }
 
 // allows refuses an installer older than the one the record names, which would write its older files over newer ones.

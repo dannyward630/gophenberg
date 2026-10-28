@@ -123,7 +123,7 @@ func settingsOn(machine Machine, env gonsole.Env, request Request) (Settings, er
 		return Settings{}, err
 	}
 	asked := layered(lookup(flagLines(env, request)), env.Getenv)
-	if err := keptWebServer(env, asked, file); err != nil {
+	if err := errors.Join(keptWebServer(env, asked, file), keptInstallRoot(env, asked, file)); err != nil {
 		return Settings{}, err
 	}
 	given := layered(asked, lookup(file))
@@ -190,14 +190,27 @@ func keptWebServer(env gonsole.Env, asked func(string) string, file map[string]s
 	if wanted == kept {
 		return nil
 	}
-	return webServerMoved(env, kept, wanted)
+	return settingMoved(env, "INSTALL_WEB_SERVER", kept, wanted)
 }
 
-// webServerMoved refuses a later run that asks for the web server wanted on a server set up with kept.
-func webServerMoved(env gonsole.Env, kept, wanted string) error {
+// keptInstallRoot refuses a later run that asks for another install root than the one server.env file keeps.
+func keptInstallRoot(env gonsole.Env, asked func(string) string, file map[string]string) error {
+	key := env.Key("INSTALL_ROOT")
+	kept, keptErr := installRoot(layered(lookup(file))(key))
+	wanted, wantedErr := installRoot(asked(key))
+	if keptErr != nil || wantedErr != nil {
+		return nil
+	}
+	if wanted == kept {
+		return nil
+	}
+	return settingMoved(env, "INSTALL_ROOT", kept, wanted)
+}
+
+// settingMoved refuses a later run that asks for wanted as the setting called name on a server set up with kept.
+func settingMoved(env gonsole.Env, name, kept, wanted string) error {
 	return fmt.Errorf("%s: this server was set up with %s, and a later run cannot move it to %s, so run sudo "+
-		"gophenberg server:uninstall first, then change the line in %s", env.Key("INSTALL_WEB_SERVER"), kept, wanted,
-		serverEnvPath)
+		"gophenberg server:uninstall first, then change the line in %s", env.Key(name), kept, wanted, serverEnvPath)
 }
 
 // readServerEnv returns the settings server.env on machine holds, none before a first run wrote it.
