@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -778,6 +779,26 @@ func TestTheSummaryNamesTheBuildTheAddressAndTheEmailOfTheAdministratorTheRunCre
 	}
 }
 
+func TestTheSummaryWithoutCaddyNamesTheSiteAddressAndSignsInOnceTheirOwnWebServerSendsTheDomainThere(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	moved := ownSite(t, "blog.example.com")
+	moved.settings.Addr = netip.MustParseAddrPort("[::1]:8090")
+	running, answer := servedOn(t, server, moved)
+	server.pointCurrent()
+	running.admin, running.created = mariaPerez, true
+
+	err := running.summary(t.Context(), plannedStep(t, running, "summary"))
+
+	want := "\nGophenberg 0.19.0 answers on [::1]:8090, the GOPHENBERG_ADDR the site listens on.\nOnce your own web " +
+		"server sends blog.example.com there, sign in at https://blog.example.com/admin/ as admin@example.com.\n" +
+		wantedCommandsToKnow
+	if err != nil || answer.String() != want {
+		t.Errorf("summary() = %v, printing\n%s\nwant\n%s", err, answer.String(), want)
+	}
+}
+
 func TestTheSummaryOfARunThatCreatedNoAdministratorWithoutCaddyNamesNoEmailAndNoFirewall(t *testing.T) {
 	t.Parallel()
 
@@ -787,8 +808,8 @@ func TestTheSummaryOfARunThatCreatedNoAdministratorWithoutCaddyNamesNoEmailAndNo
 
 	err := running.summary(t.Context(), plannedStep(t, running, "summary"))
 
-	want := "\nGophenberg 0.19.0 runs at https://example.com. Sign in at https://example.com/admin/.\n" +
-		wantedCommandsToKnow
+	want := "\nGophenberg 0.19.0 answers on 127.0.0.1:8081, the GOPHENBERG_ADDR the site listens on.\nOnce your own web " +
+		"server sends example.com there, sign in at https://example.com/admin/.\n" + wantedCommandsToKnow
 	if err != nil || answer.String() != want {
 		t.Errorf("summary() = %v, printing\n%s\nwant\n%s", err, answer.String(), want)
 	}

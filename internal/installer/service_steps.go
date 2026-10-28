@@ -315,16 +315,23 @@ func (r *installing) summary(_ context.Context, _ step) error {
 	if err != nil {
 		return err
 	}
-	signIn := "https://" + settings.Domain + "/admin/"
-	if r.created {
-		signIn += " as " + r.admin.email
-	}
-	text := fmt.Sprintf("\nGophenberg %s runs at https://%s. Sign in at %s.\n", current, settings.Domain, signIn)
-	if settings.withCaddy() {
-		text += firewallLine
-	}
-	_, err = io.WriteString(r.call.Stdout, text+commandsToKnow)
+	_, err = io.WriteString(r.call.Stdout, "\n"+r.signIn(current)+commandsToKnow)
 	return err
+}
+
+// signIn returns the lines of the summary that say where the build current answers and where to sign in to it.
+func (r *installing) signIn(current string) string {
+	settings := r.site.settings
+	admin := "https://" + settings.Domain + "/admin/"
+	if r.created {
+		admin += " as " + r.admin.email
+	}
+	if !settings.withCaddy() {
+		return fmt.Sprintf("Gophenberg %s answers on %s, the %s the site listens on.\nOnce your own web server sends %s "+
+			"there, sign in at %s.\n", current, settings.Addr, r.site.env.Key("ADDR"), settings.Domain, admin)
+	}
+	return fmt.Sprintf("Gophenberg %s runs at https://%s. Sign in at %s.\n", current, settings.Domain, admin) +
+		firewallLine
 }
 
 // printWebServer prints the lines the person's web server needs, the same text the dry run prints.
