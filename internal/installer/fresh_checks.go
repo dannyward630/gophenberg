@@ -210,6 +210,24 @@ func (c *machineCheck) checkParent(parent string) error {
 	return nil
 }
 
+// checkInstallerFolder stops when the folder of the install record is a link, a file or others may write it.
+func checkInstallerFolder(machine Machine) error {
+	info, err := machine.lstat(installerFolder)
+	if err != nil || info == nil {
+		return err
+	}
+	if info.IsDir() && rootAloneWrites(info) {
+		return nil
+	}
+	return stop("%s, which holds the install record, must be a real folder owned by root and writable by root alone",
+		installerFolder)
+}
+
+// rootAloneWrites reports whether root owns the file info describes and no other user may write it.
+func rootAloneWrites(info fs.FileInfo) bool {
+	return ownedByRoot(info) && info.Mode().Perm()&0o022 == 0
+}
+
 // ownedByRoot reports whether root owns the file info describes.
 func ownedByRoot(info fs.FileInfo) bool {
 	stat, described := info.Sys().(*syscall.Stat_t)
@@ -233,7 +251,7 @@ func checkCurrent(_ context.Context, c *machineCheck) error {
 	return nil
 }
 
-// checkProgram stops when the build called current has no program file, as after its folder was deleted by hand.
+// checkProgram stops when the build called current has no program anyone may run, as after a delete by hand.
 func (c *machineCheck) checkProgram(current string) error {
 	program := updater.Layout{Root: c.settings.Root}.Binary(current)
 	info, err := c.machine.lstat(program)
@@ -244,6 +262,8 @@ func (c *machineCheck) checkProgram(current string) error {
 		return stop("cannot tell which build %s/current names: %s is not there", c.settings.Root, program)
 	case !info.Mode().IsRegular():
 		return stop("cannot tell which build %s/current names: %s is not a file", c.settings.Root, program)
+	case info.Mode().Perm()&0o111 == 0:
+		return stop("cannot tell which build %s/current names: %s is not executable", c.settings.Root, program)
 	}
 	return nil
 }

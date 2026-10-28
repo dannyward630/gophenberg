@@ -301,6 +301,49 @@ func TestTheMachineChecksStopOnAParentOfTheInstallRootThatIsNotARealFolder(t *te
 	}
 }
 
+// installerFolderOpen is the stop of a run whose installer folder another user could change.
+const installerFolderOpen = "/var/lib/gophenberg-installer, which holds the install record, must be a real folder " +
+	"owned by root and writable by root alone, so nothing was changed"
+
+func TestTheMachineChecksStopAtAnInstallerFolderThatIsALinkAFileOrThatAnotherUserOwnsOrMayWrite(t *testing.T) {
+	t.Parallel()
+
+	link := newFakeServer(t)
+	link.folder("/var/lib/other")
+	link.link(installerFolder, "/var/lib/other")
+	file := newFakeServer(t)
+	file.write(installerFolder, "")
+	owned := newFakeServer(t)
+	owned.folder(installerFolder)
+	owned.owners[installerFolder] = 1000
+	group := newFakeServer(t)
+	group.folder(installerFolder)
+	group.chmod(installerFolder, 0o720)
+	others := newFakeServer(t)
+	others.folder(installerFolder)
+	others.chmod(installerFolder, 0o702)
+
+	for _, server := range []*fakeServer{link, file, owned, group, others} {
+		err := server.check().run(t.Context())
+
+		wantRefused(t, err, installerFolderOpen)
+		if len(server.ran) != 0 {
+			t.Errorf("the checks ran %q, want the installer folder checked right after root", server.ran)
+		}
+	}
+}
+
+func TestTheMachineChecksRefuseAnInstallerFolderTheyCannotDescribe(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.broken[installerFolder] = syscall.EIO
+
+	err := server.check().run(t.Context())
+
+	wantRefused(t, err, "installer: input/output error")
+}
+
 func TestTheMachineChecksTakeAnInstallRootWhoseParentsAreStillMissing(t *testing.T) {
 	t.Parallel()
 
@@ -434,6 +477,7 @@ func TestTheMachineChecksStopAtACurrentLinkWhoseBuildHasNoProgram(t *testing.T) 
 			s.remove(currentProgram)
 			s.folder(currentProgram)
 		}, "is not a file"},
+		"the program's execute bits taken": {func(s *fakeServer) { s.chmod(currentProgram, 0o644) }, "is not executable"},
 	} {
 		server := newFakeServer(t)
 		server.pointCurrent()
