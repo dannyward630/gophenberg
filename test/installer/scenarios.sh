@@ -364,6 +364,7 @@ host_facts() {
 	free -m
 	df -h
 	sudo ss -ltnup
+	stat -c '%U:%G %a %n' / /opt /usr/local/bin
 }
 
 # purge_postgresql purges the image's PostgreSQL packages, their folders and the PostgreSQL project's apt source.
@@ -381,6 +382,12 @@ purge_postgresql() {
 			sudo rm -f "$source"
 		fi
 	done
+}
+
+# close_opt gives /opt back to root alone at mode 0755, as a fresh Ubuntu 24.04 server has it.
+close_opt() {
+	sudo chown root:root /opt
+	sudo chmod 0755 /opt
 }
 
 # read_versions sets the versions of the archives A, B and D and of the stub C1, the four patches after the checkout's.
@@ -715,6 +722,7 @@ run() {
 	trap stop_background EXIT
 	host_facts
 	purge_postgresql
+	close_opt
 	read_versions
 	build_releasetool
 	build_archives
