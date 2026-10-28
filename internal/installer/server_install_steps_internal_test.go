@@ -92,9 +92,10 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 			` to it$`, s.pointThroughNAT)
 		sc.Given(`^PostgreSQL is installed on the server$`, s.installPostgreSQL)
 		sc.Given(`^Caddy is installed on the server$`, s.installCaddy)
-		sc.Given(`^another user can write /opt$`, s.openOpt)
+		sc.Given(`^another user can write (/opt|/var/lib/gophenberg-installer)$`, s.openFolder)
 		sc.Given(`^the install record names the installer "([^"]*)"$`, s.recordInstaller)
 		sc.Given(`^an earlier run installed Gophenberg for example.com on the server$`, s.installEarlier)
+		sc.Given(`^another server:install is running on the server$`, s.runAnother)
 		sc.Given(`^only root may read the server settings and the install record$`, s.lockRootFiles)
 		sc.Given(`^the web server line of the server settings was changed by hand to none$`, s.keepOwnWebServer)
 		sc.Given(`^the site's .env holds the line "([^"]*)"$`, s.addSiteEnvLine)
@@ -149,6 +150,8 @@ func initializeServerInstallAnswers(sc *godog.ScenarioContext, s *installScenari
 		s.pointCurrentByFullPath)
 	sc.Given(`^the current link of the install root names versions/0.19.0, a build folder deleted by hand$`,
 		s.deleteCurrentBuild)
+	sc.Given(`^the current link of the install root names versions/0.19.0, whose program nobody may run$`,
+		s.stopCurrentProgram)
 }
 
 // initializeServerInstallOutcomes binds the steps that check what a server:install run did to s.
@@ -258,9 +261,10 @@ func (s *installScenario) installCaddy() {
 	s.server.program("/usr/bin/caddy")
 }
 
-// openOpt lets every user write /opt.
-func (s *installScenario) openOpt() {
-	s.server.chmod("/opt", 0o777)
+// openFolder makes the folder at path where it is missing and lets every user write it.
+func (s *installScenario) openFolder(path string) {
+	s.server.folder(path)
+	s.server.chmod(path, 0o777)
 }
 
 // recordInstaller has the install record name installer as the newest installer that ran on the server.
@@ -288,6 +292,16 @@ func (s *installScenario) installEarlier() {
 		network, address, _ := strings.Cut(held, " ")
 		server.taken[held] = inUse(network, address)
 	}
+}
+
+// runAnother holds the lock of the installer folder as another run does, until the test ends.
+func (s *installScenario) runAnother() error {
+	folder, err := os.Open(s.server.at(installerFolder))
+	if err != nil {
+		return err
+	}
+	s.t.Cleanup(func() { _ = folder.Close() })
+	return syscall.Flock(int(folder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 }
 
 // lockRootFiles takes away every right on server.env and the install record, as a plain user meets them.
@@ -396,6 +410,11 @@ func (s *installScenario) pointCurrentByFullPath() error {
 // deleteCurrentBuild deletes the build folder the current link names and leaves the link, as a hand deletion does.
 func (s *installScenario) deleteCurrentBuild() {
 	s.server.remove("/opt/gophenberg/versions/0.19.0")
+}
+
+// stopCurrentProgram takes every execute bit off the program of the build the current link names, as a chmod does.
+func (s *installScenario) stopCurrentProgram() {
+	s.server.chmod(currentProgram, 0o644)
 }
 
 // runLine runs a server:uninstall line, or a server:install line in fake time, so that no wait takes real time.

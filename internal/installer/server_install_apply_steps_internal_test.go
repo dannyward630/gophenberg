@@ -41,6 +41,10 @@ func initializeServerInstallApplies(sc *godog.ScenarioContext, s *installScenari
 	sc.Given(`^the person added a site to /etc/caddy/Caddyfile whose directive respnd caddy validate does not know$`,
 		s.addMistypedSite)
 	sc.When(`^the person fixes the typo in /etc/caddy/Caddyfile$`, s.fixTypo)
+	sc.Given(`^Caddy fails to restart on the server$`, s.failCaddyRestart)
+	sc.When(`^Caddy restarts again on the server$`, s.letCaddyRestart)
+	sc.When(`^the person adds the site example.org to /etc/caddy/Caddyfile$`, s.addPersonSite)
+	sc.Given(`^an account a person made by hand holds (\S+) under the role (\S+)$`, s.addHandMadeAccount)
 	sc.Then(`^the run stops with "(.*)", followed by what the program printed$`, s.stopsWithPrinted)
 	sc.Then(`^the run ran these programs, the checks' own left out:$`, s.ranPrograms)
 	sc.Then(`^the run ran "([^"]*)"$`, s.ranLine)
@@ -153,6 +157,26 @@ func (s *installScenario) fixTypo() error {
 	}
 	s.server.write(caddyfilePath, strings.Replace(string(held), "respnd", "respond", 1))
 	return nil
+}
+
+// failCaddyRestart has every restart of caddy.service fail, as a Caddy that cannot start does.
+func (s *installScenario) failCaddyRestart() {
+	s.server.effects["systemctl"] = func(program Program) answer {
+		if lineOf(program) == "systemctl restart caddy.service" {
+			return failed("systemctl", "Job for caddy.service failed.\n")
+		}
+		return s.server.systemctl(program)
+	}
+}
+
+// addHandMadeAccount gives the site's database an account that holds email under role, as one made by hand does.
+func (s *installScenario) addHandMadeAccount(email, role string) {
+	s.server.accounts = append(s.server.accounts, listedAccount{Email: email, Name: "Maria Perez", Role: role})
+}
+
+// letCaddyRestart has caddy.service restart again.
+func (s *installScenario) letCaddyRestart() {
+	s.server.effects["systemctl"] = s.server.systemctl
 }
 
 // stopsWithPrinted fails unless the run stopped with want followed by what the program that failed printed.

@@ -115,6 +115,13 @@ Feature: Install Gophenberg on a Linux server
     Then the run stops with "GOPHENBERG_INSTALL_WEB_SERVER: this server was set up with caddy, and a later run cannot move it to none, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env"
     And nothing on the server changed
 
+  Scenario: A later run that asks for another install root is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the environment sets GOPHENBERG_INSTALL_ROOT to /srv/gophenberg
+    When the operator runs "server:install"
+    Then the run stops with "GOPHENBERG_INSTALL_ROOT: this server was set up with /opt/gophenberg, and a later run cannot move it to /srv/gophenberg, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env"
+    And nothing on the server changed
+
   Scenario: A domain with no address is refused
     Given example.com has no A or AAAA record
     When the operator runs "server:install -dry-run -domain example.com"
@@ -173,6 +180,12 @@ Feature: Install Gophenberg on a Linux server
     Then the run stops with "/opt, a parent of the install root /opt/gophenberg, must be owned by root and writable by root alone, so nothing was changed"
     And nothing on the server changed
 
+  Scenario: An installer folder another user can write is refused
+    Given another user can write /var/lib/gophenberg-installer
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+
   Scenario: An install root that would hand the site's user a folder root trusts is refused
     Given the environment sets GOPHENBERG_INSTALL_ROOT to /usr/local
     When the operator runs "server:install -dry-run -domain example.com"
@@ -184,6 +197,15 @@ Feature: Install Gophenberg on a Linux server
     When the operator runs "server:install -dry-run -domain example.com"
     Then the run stops because this installer is older than the 1000.0.0 installer
     And nothing on the server changed
+
+  Scenario: A run while another run is going is refused, and a dry run still goes through
+    Given an earlier run installed Gophenberg for example.com on the server
+    And another server:install is running on the server
+    When the operator runs "server:install"
+    Then the run stops with "another server:install or server:uninstall is running on this server, so nothing was changed"
+    And nothing on the server changed
+    When the operator runs "server:install -dry-run"
+    Then the run succeeds
 
   Scenario: A later run skips the ports and the pieces an earlier run installed
     Given an earlier run installed Gophenberg for example.com on the server
@@ -1025,6 +1047,7 @@ Feature: Install Gophenberg on a Linux server
       | names                                                  | why                                                                                      |
       | names /opt/gophenberg/versions/0.19.0 by its full path | updater: the current link names /opt/gophenberg/versions/0.19.0, not a build in versions |
       | names versions/0.19.0, a build folder deleted by hand  | /opt/gophenberg/versions/0.19.0/gophenberg is not there                                  |
+      | names versions/0.19.0, whose program nobody may run    | /opt/gophenberg/versions/0.19.0/gophenberg is not executable                             |
 
   Scenario: A first run installs Gophenberg and writes every file its dry run prints, with its owner and mode
     Given unattended-upgrades is installed on the server
@@ -1094,6 +1117,32 @@ Feature: Install Gophenberg on a Linux server
     And the install record marks the step admin ended
     And the install record marks the step summary ended
 
+  Scenario: An administrator email an account under another role holds stops the run, and the next run asks again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And an account a person made by hand holds admin@example.com under the role editor
+    And the operator's terminal answers:
+      """
+      maria.perez@example.com
+      Maria Perez
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "admin@example.com already belongs to an account that is not an administrator, so run sudo gophenberg server:install again and give the first administrator another email"
+    And the install record marks the step admin started
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      Name of the first administrator [maria.perez]:
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email maria.perez@example.com -name Maria Perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+    And the install record marks the step admin ended
+
   Scenario: A later run keeps the person's .env lines and writes a changed restart delay from server.env
     Given an earlier run installed Gophenberg for example.com on the server
     And the site's .env holds the line "GOPHENBERG_SITE_TITLE=Maria Perez's site"
@@ -1162,3 +1211,23 @@ Feature: Install Gophenberg on a Linux server
     And /etc/caddy/Caddyfile still holds the person's site
     And the run ran "systemctl reload caddy.service"
     And the run never ran "systemctl restart caddy.service"
+
+  Scenario: A first run whose Caddy restart fails keeps the site the person adds to the Caddyfile on the next run
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And Caddy fails to restart on the server
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "installer: run systemctl: exit status 1", followed by what the program printed
+    And the install record marks the step caddy started
+    When Caddy restarts again on the server
+    And the person adds the site example.org to /etc/caddy/Caddyfile
+    And the operator runs "server:install -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run prints:
+      """
+      Step 11: write Caddy's files, check them with caddy validate and restart Caddy
+      """
+    And /etc/caddy/Caddyfile still holds the person's site
+    And the run ran "systemctl restart caddy.service"
+    And the run never ran "systemctl reload caddy.service"
+    And the install record marks the step caddy ended

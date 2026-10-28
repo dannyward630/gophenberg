@@ -38,6 +38,30 @@ Feature: Remove Gophenberg from a Linux server
     Then the run stops with "this server has no install record at /var/lib/gophenberg-installer/install.json, so server:uninstall has nothing to remove"
     And nothing on the server changed
 
+  Scenario: An installer folder another user can write is refused
+    Given server:install installed Gophenberg for example.com on the server
+    And another user can write /var/lib/gophenberg-installer
+    When the operator runs "server:uninstall -yes"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A run with -yes while another run is going is refused, and a run without -yes still lists
+    Given server:install installed Gophenberg for example.com on the server
+    And another server:install is running on the server
+    When the operator runs "server:uninstall -yes"
+    Then the run stops with "another server:install or server:uninstall is running on this server, so nothing was changed"
+    And nothing on the server changed
+    When the operator runs "server:uninstall"
+    Then the run succeeds
+
+  Scenario: A server whose Caddyfile and the caddy package's one are both gone is refused
+    Given server:install installed Gophenberg for example.com on the server
+    And the person deleted /etc/caddy/Caddyfile
+    And the person deleted /etc/caddy/Caddyfile.before-gophenberg
+    When the operator runs "server:uninstall -yes"
+    Then the run stops with "server:uninstall needs /etc/caddy/Caddyfile to take Gophenberg's site out of Caddy, and it is not there, so nothing was changed"
+    And nothing on the server changed
+
   Scenario: Without -yes it lists what it removes and keeps and changes nothing
     Given server:install installed Gophenberg for example.com on the server
     When the operator runs "server:uninstall"
@@ -150,6 +174,15 @@ Feature: Remove Gophenberg from a Linux server
     And the run never ran "systemctl restart caddy.service"
     And the install record still holds the SHA-256 of the Caddyfile server:install wrote
     And the install record marks the step caddy ended
+
+  Scenario: A Caddyfile the person changed keeps its mode, owner and group once the import line comes out
+    Given server:install installed Gophenberg for example.com on the server
+    And the person added the site example.org to /etc/caddy/Caddyfile
+    And the person gave /etc/caddy/Caddyfile the group caddy and mode 0640
+    When the operator runs "server:uninstall -yes"
+    Then the run succeeds
+    And /etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy"
+    And /etc/caddy/Caddyfile still belongs to root and the group caddy with mode 0640
 
   Scenario: A reinstall over a Caddyfile the person changed stops at the import line and never writes over it
     Given server:install installed Gophenberg for example.com on the server
@@ -311,6 +344,22 @@ Feature: Remove Gophenberg from a Linux server
       """
       /opt/gophenberg/notes.txt
       """
+
+  Scenario: An install root the record owns that server.env no longer names is listed as kept and leaves the record
+    Given server:install installed Gophenberg for example.com on the server
+    And the server settings set GOPHENBERG_INSTALL_ROOT to /srv/gophenberg
+    When the operator runs "server:uninstall -delete-data -yes"
+    Then the run succeeds
+    And the run prints:
+      """
+      server:uninstall keeps:
+        /opt/gophenberg, an install root server:install made, kept since /etc/gophenberg/server.env does not name it
+      """
+    And the server still holds these paths:
+      """
+      /opt/gophenberg/.env
+      """
+    And the install record owns only these pieces: postgresql, caddy
 
   Scenario: A reinstall after -delete-data behind NAT skips the domain check while the kept Caddy holds port 80
     Given server:install installed Gophenberg for example.com on the server

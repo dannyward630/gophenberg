@@ -32,6 +32,9 @@ func initializeServerUninstall(sc *godog.ScenarioContext, s *installScenario) {
 	sc.Given(`^server:uninstall -yes was cut off at its (first|second) "(systemctl [^"]*)"$`, s.cutOffUninstall)
 	sc.Given(`^the operator ran "([^"]*)"$`, s.ranEarlier)
 	sc.Given(`^the person added the site example.org to /etc/caddy/Caddyfile$`, s.addPersonSite)
+	sc.Given(`^the person deleted (/\S+)$`, s.deleteByHand)
+	sc.Given(`^the person gave /etc/caddy/Caddyfile the group caddy and mode 0640$`, s.narrowCaddyfile)
+	sc.Then(`^/etc/caddy/Caddyfile still belongs to root and the group caddy with mode 0640$`, s.keepsNarrowCaddyfile)
 	sc.When(`^the person puts the line "([^"]*)" back in /etc/caddy/Caddyfile$`, s.putCaddyfileLineBack)
 	sc.Given(`^the person's own Caddy serves example.com from /etc/caddy/Caddyfile$`, s.serveOwnCaddy)
 	sc.Then(`^the server holds nothing at these paths:$`, s.holdsNothingAtPaths)
@@ -71,16 +74,13 @@ func (s *installScenario) ranEarlier(line string) error {
 	return nil
 }
 
-// cutOffInCaddy runs a first install whose restart of Caddy fails, so it stops in the caddy step after the Caddyfile.
+// cutOffInCaddy runs a first install whose caddy validate fails, so it stops in the caddy step after the Caddyfile.
 func (s *installScenario) cutOffInCaddy() error {
-	s.server.effects["systemctl"] = func(program Program) answer {
-		if lineOf(program) == "systemctl restart caddy.service" {
-			return failed("systemctl", "Job for caddy.service failed.\n")
-		}
-		return s.server.systemctl(program)
+	s.server.effects["caddy"] = func(Program) answer {
+		return failed("caddy", "Error: adapting config using caddyfile: unrecognized directive: lb_try_duration\n")
 	}
 	err := s.installFirst("")
-	s.server.effects["systemctl"] = s.server.systemctl
+	s.server.effects["caddy"] = s.server.caddyValidate
 	if err == nil {
 		return errors.New("the first server:install went through, want it cut off in the caddy step")
 	}
@@ -159,6 +159,26 @@ func (s *installScenario) addPersonSite() error {
 	}
 	s.server.write(caddyfilePath, string(held)+personSite)
 	return nil
+}
+
+// deleteByHand takes away the file at path, as a person does by hand.
+func (s *installScenario) deleteByHand(path string) {
+	s.server.remove(path)
+}
+
+// narrowCaddyfile gives the Caddyfile the group of the OS user caddy and mode 0640, as a person does by hand.
+func (s *installScenario) narrowCaddyfile() error {
+	_, gid, err := s.idsOf("caddy")
+	if err != nil {
+		return err
+	}
+	s.server.chmod(caddyfilePath, 0o640)
+	return os.Chown(s.server.at(caddyfilePath), -1, gid)
+}
+
+// keepsNarrowCaddyfile fails unless the Caddyfile has mode 0640 and the ids of caddy, root's uid and caddy's group.
+func (s *installScenario) keepsNarrowCaddyfile() error {
+	return s.ownedAs(caddyfilePath, "caddy", "0640", 0)
 }
 
 // putCaddyfileLineBack adds line to the end of the Caddyfile, as a person does by hand.
