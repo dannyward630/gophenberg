@@ -8,9 +8,9 @@ Gophenberg is configured entirely through environment variables. A
 environment variables win over it. Every command reads the same
 settings, the `.env` file included, so `migrate` or an account
 command run beside the server finds the database the server uses.
-The one exception is `server:install`, which reads
-[the server settings](#the-server-settings) and takes none of its
-settings from a `.env` file.
+The two exceptions are `server:install` and `server:uninstall`, which
+read [the server settings](#the-server-settings) and take none of
+their settings from a `.env` file.
 
 Every value is trimmed of the spaces around it. A padded value works
 as if it had none, and a value made only of spaces counts as unset,
@@ -95,7 +95,7 @@ so it takes the default.
 | `GOPHENBERG_UPDATE_BACKUPS_KEEP` | No | `3` | How many database backups the `backups` folder of the install root keeps |
 | `GOPHENBERG_PG_DUMP_BIN` | No | `pg_dump` | The `pg_dump` an update backs up the database with, a name found on the path or a full path. Its major version must be at least the server's |
 | `GOPHENBERG_UPDATE_ATTEMPTS` | No | `3` | How many times the build an update switched to may try to start. The next start goes back to the build before it, or stays down when the update raised the minimum version and its new build reached the database |
-| `GOPHENBERG_UPDATE_VERIFY_TIMEOUT` | No | `1m` | How long the first start of a new build has to check itself: the server listens, then `/admin/` and `/api/locale` answer 200 and `/` answers below 500 over loopback |
+| `GOPHENBERG_UPDATE_VERIFY_TIMEOUT` | No | `1m` | How long the first start of a new build has to check itself: the server listens, then `/admin/` and `/api/locale` answer 200 and `/` answers below 500 over loopback. `server:install` reads its own from [the server settings](#the-server-settings) |
 | `GOPHENBERG_UPDATE_VERSIONS_KEEP` | No | `2` | How many of the newest builds the `versions` folder keeps once a new build passes its check. The builds the `current` and `previous` links name always stay |
 | `GOPHENBERG_FEED_TITLE` | No | `Gophenberg` | The RSS channel title |
 | `GOPHENBERG_FEED_ITEMS` | No | `20` | How many posts the RSS feed carries |
@@ -569,7 +569,7 @@ first of these that gives it a value:
 | `GOPHENBERG_INSTALL_ROOT` | `/opt/gophenberg` | The install root, an absolute path of letters, digits, dots, hyphens, underscores and slashes alone |
 | `GOPHENBERG_PUBLIC_URL` | | `https://` and the domain the site answers at, with nothing after it. Every run needs it, from `-domain`, the environment or `server.env` |
 | `GOPHENBERG_ADDR` | `127.0.0.1:8081` | The address the site listens on. It must be a loopback address with a port, since Caddy, or your own web server, runs on the same server and forwards to it. Its port must not be 5432, PostgreSQL's, or with Caddy 80 or 443 |
-| `GOPHENBERG_INSTALL_WEB_SERVER` | `caddy` | The web server in front of the site, from the `-web-server` flag. `caddy` has the install set Caddy up, and `none` keeps a web server of your own, see [with your own web server](/self-hosting/commands/#with-your-own-web-server). A later run keeps it. It stops when a flag or the environment asks for the other one, and when the line says `none` on a server the install set Caddy up on |
+| `GOPHENBERG_INSTALL_WEB_SERVER` | `caddy` | The web server in front of the site, from the `-web-server` flag. `caddy` has the install set Caddy up, and `none` keeps a web server of your own, see [with your own web server](/self-hosting/commands/#with-your-own-web-server). A later run keeps it. It stops when a flag or the environment asks for the other one, and when the line says `none` while Gophenberg's Caddy site is still there, see [moving to your own web server](/self-hosting/commands/#moving-to-your-own-web-server) |
 | `GOPHENBERG_INSTALL_CERTIFICATE_EMAIL` | The `-admin-email` flag | The email Caddy gives Let's Encrypt for the HTTPS certificate, one plain address with no braces. Empty leaves it out, and `localhost` never uses it |
 | `GOPHENBERG_SERVICE_RESTART_DELAY` | `5s` | How long systemd waits before it starts the site again, `RestartSec` of the site's unit, in whole seconds |
 | `GOPHENBERG_SERVICE_START_LIMIT_INTERVAL` | `300s` | The window systemd counts the site's starts in, `StartLimitIntervalSec` of the site's unit, in whole seconds |
@@ -583,6 +583,7 @@ first of these that gives it a value:
 | `GOPHENBERG_INSTALL_DOMAIN_CHECK_TIMEOUT` | `10s` | How long the domain check waits for each fetch of its token |
 | `GOPHENBERG_INSTALL_HTTPS_WAIT` | `2m` | How long the HTTPS step waits for `https://<domain>/admin/` to answer |
 | `GOPHENBERG_INSTALL_POLL_INTERVAL` | `1s` | The pause between two tries in each wait of the steps |
+| `GOPHENBERG_UPDATE_VERIFY_TIMEOUT` | `1m` | How long the step that starts the site waits for its first start to pass the same check an update's first start does. Updates take theirs from the site's `.env` |
 
 With `GOPHENBERG_INSTALL_WEB_SERVER=none`, the run uses neither the
 certificate email, `GOPHENBERG_MAINTENANCE_RETRY_AFTER`,
@@ -601,6 +602,10 @@ gophenberg: GOPHENBERG_ADDR: must be a loopback address with a port, such as 127
 `server:install` takes no `GOPHENBERG_DATABASE_URL`. When one is set
 in its environment, the run stops, since the install sets up a
 PostgreSQL of its own.
+
+[`server:uninstall`](/self-hosting/commands/#serveruninstall) reads
+only `server.env` and the defaults, so nothing in its environment
+changes what it removes.
 
 ### The server.env file
 
@@ -630,17 +635,16 @@ the file keeps what you wrote:
 
 - A line you changed keeps your value, and a line missing from the
   file gets its default. A `GOPHENBERG_INSTALL_WEB_SERVER` line changed
-  to `none` on a server the install set Caddy up on stops the run, as
-  the install record shows.
+  to `none` stops the run while Gophenberg's Caddy site is still there.
 - A flag or an environment value given on that run replaces its line,
   except `GOPHENBERG_INSTALL_WEB_SERVER`, where asking for the other
   web server stops the run.
 - A line you added, such as `GOPHENBERG_INSTALL_DISK_FLOOR_MB=2048`,
   is read and kept, after the eleven lines above in the order of the
   names. A comment is not kept.
-- The last six settings of the table, from
+- The last seven settings of the table, from
   `GOPHENBERG_INSTALL_MEMORY_FLOOR_MB` to
-  `GOPHENBERG_INSTALL_POLL_INTERVAL`, are not among the eleven lines.
+  `GOPHENBERG_UPDATE_VERIFY_TIMEOUT`, are not among the eleven lines.
   Given only in the environment, one is used for that run but not
   written into the file.
 
@@ -673,6 +677,8 @@ GOPHENBERG_DATABASE_WAIT=60s
 - `GOPHENBERG_DATABASE_WAIT` keeps the value the site's `.env` holds,
   and `60s` while it holds none. Every other line is kept, after
   these, in the order of the names. A comment is not kept.
+- A dry run prints each kept line as its name and `(kept as it is)`.
+  The file keeps the value.
 
 `server:install` takes none of its own settings from this file, since
 the site's own user can write it, so a `GOPHENBERG_INSTALL_ROOT` line
@@ -687,8 +693,9 @@ could not read stops the run, naming the file:
 gophenberg: /opt/gophenberg/.env: GOPHENBERG_SHUTDOWN_GRACE: must be a duration like 30s, got "soon"
 ```
 
-A dry run prints the file to your terminal, so the run also stops on
-a file that could reach the terminal or hold the run instead:
+A dry run still prints the name of every line to your terminal, so
+the run also stops on a file that could reach the terminal or hold
+the run instead:
 
 - a line whose name or value holds a control character other than a
   tab, such as the escape character, or a byte that is not UTF-8

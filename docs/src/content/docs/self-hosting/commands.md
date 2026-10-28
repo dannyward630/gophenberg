@@ -7,9 +7,10 @@ The `gophenberg` binary serves the site, and it also runs the jobs an
 operator does beside it, such as creating the first account or
 applying the schema. Every command reads the same environment
 variables and `.env` file as the server, listed in
-[configuration](/self-hosting/configuration/). The one exception is
-[`server:install`](#serverinstall), which runs as root and takes none
-of its settings from a `.env` file, see
+[configuration](/self-hosting/configuration/). The two exceptions are
+[`server:install`](#serverinstall) and
+[`server:uninstall`](#serveruninstall). They run as root and take none
+of their settings from a `.env` file, see
 [the server settings](/self-hosting/configuration/#the-server-settings).
 
 With Docker Compose, put the command after the service name:
@@ -50,6 +51,7 @@ Available commands:
   account:role          set one account's role
  server
   server:install        install Gophenberg on this Linux server with PostgreSQL, Caddy and a systemd service
+  server:uninstall      remove what server:install set up on this server, keeping the site's data unless -delete-data
  update
   update:apply          update this server install to a newer Gophenberg, then ask for a restart
   update:check          check the update site for a newer Gophenberg and keep what it found
@@ -149,9 +151,9 @@ covers the address, the file and its settings.
 
 ## Dry runs and -yes
 
-Five commands only show what they would change until you add `-yes`:
-`seed`, `account:grant-role`, `account:role`, `account:disable` and
-`account:enable`. This line, for example:
+Six commands only show what they would change until you add `-yes`:
+`seed`, `account:grant-role`, `account:role`, `account:disable`,
+`account:enable` and `server:uninstall`. This line, for example:
 
 ```sh
 gophenberg account:role author@example.com editor -as admin@example.com
@@ -518,22 +520,28 @@ account holding it.
 gophenberg server:install [flags]
 ```
 
-Checks a fresh Linux server before Gophenberg is installed on it, with
-PostgreSQL, Caddy in front for HTTPS unless you keep a web server of
-your own, and a systemd service that runs the site. In this release,
-`-dry-run` checks the server and then prints what an install would
-do: each step it would take and the full text of every file it would
-write. It changes nothing on the server.
+Installs Gophenberg on a fresh Linux server. It sets up PostgreSQL,
+Caddy in front for HTTPS unless you keep a web server of your own,
+and a systemd service that runs the site. With `-dry-run` it only
+checks the server and prints what it would do.
 
 Run it on the server itself as root, with the `gophenberg` binary of
 a Linux release archive, see
 [check a download](/self-hosting/install/#check-a-download). It is not
-a command for the container image.
+a command for the container image. The archive goes in
+`/var/lib/gophenberg-installer`, a folder only root can open:
 
 ```sh
+sudo mkdir -m 0700 /var/lib/gophenberg-installer
+sudo cp gophenberg_%VERSION%_linux_amd64.tar.gz /var/lib/gophenberg-installer/
 tar -xzf gophenberg_%VERSION%_linux_amd64.tar.gz gophenberg
 sudo ./gophenberg server:install -dry-run -domain example.com -admin-email admin@example.com
+sudo ./gophenberg server:install -domain example.com -admin-email admin@example.com \
+  -archive /var/lib/gophenberg-installer/gophenberg_%VERSION%_linux_amd64.tar.gz
 ```
+
+The last line installs. It asks for the first administrator's name
+and password, see [the first administrator](#the-first-administrator).
 
 - `-domain host` is the host name the site answers at, such as
   `example.com`, or `localhost` to try it on the server itself. A
@@ -544,44 +552,40 @@ sudo ./gophenberg server:install -dry-run -domain example.com -admin-email admin
   either end, a letter in the last label, and 253 characters at most.
   So an address such as `203.0.113.7` is not a domain. A domain that
   breaks the rule stops the run before anything else is read.
-- `-admin-email email` is the email of the first administrator. The
-  dry run gives it to Caddy for the HTTPS certificate, unless
+- `-admin-email email` is the email of the first administrator. Caddy
+  also gives it to Let's Encrypt for the HTTPS certificate, unless
   `GOPHENBERG_INSTALL_CERTIFICATE_EMAIL` names another.
-- `-admin-name name` and `-admin-password-file file` name the first
-  administrator and the file holding the password. A dry run reads
-  neither.
+- `-admin-name name` is the first administrator's display name.
+- `-admin-password-file file` is a file whose first line is the first
+  administrator's password. It must be an absolute path, or the run
+  stops before anything else is read.
 - `-archive file` is the checked release archive, inside
-  `/var/lib/gophenberg-installer`. A dry run does not open it, but an
-  archive outside that folder stops the run before anything else is
-  read, as a bad domain does.
+  `/var/lib/gophenberg-installer`. A run needs it while `current`
+  names no build, so a first run always does. A dry run does not open
+  it, but an archive outside that folder stops the run before anything
+  else is read, as a bad domain does.
 - `-web-server name` picks the web server in front of the site:
   `caddy`, the default, has the install set Caddy up, and `none` keeps
   a web server of your own, see
   [with your own web server](#with-your-own-web-server). The first run
   keeps it in `/etc/gophenberg/server.env` as
   `GOPHENBERG_INSTALL_WEB_SERVER`, and a later run without the flag
-  keeps it. A later run that asks for the other one stops, since moving
-  a server from one to the other is not built yet. So does a later run
-  on a server where the install record shows the install set Caddy up,
-  once that line in `server.env` was changed to `none` by hand:
+  keeps it. A later run that asks for the other one stops. So does a
+  run whose line in `server.env` was changed to `none` by hand while
+  Gophenberg's Caddy site, `/etc/caddy/gophenberg.caddy`, is still
+  there:
 
   ```text
   gophenberg: GOPHENBERG_INSTALL_WEB_SERVER: this server was set up with caddy, and a later run cannot move it to none, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env
   ```
 
-  Any other name stops the run before anything else is read, as a bad
-  domain does.
+  [Moving to your own web server](#moving-to-your-own-web-server)
+  shows the steps. Any other name stops the run before anything else
+  is read, as a bad domain does.
 - `-skip-domain-check` skips the check that the domain points at this
   server, for a server behind a proxy the check cannot cross.
 - `-dry-run` runs every check, then prints each step and every file,
-  and changes nothing. It asks no questions.
-
-Without `-dry-run`, it runs the same checks, then stops with exit
-code 1:
-
-```text
-gophenberg: this build of server:install only checks the server, and -dry-run prints the steps it would take, so nothing was changed
-```
+  and changes nothing. It asks no question and opens no archive.
 
 A run goes in this order:
 
@@ -595,7 +599,14 @@ A run goes in this order:
    It stops when the record names a newer installer than this one, so
    an older binary never writes its files over newer ones.
 3. It checks the server, as listed below.
-4. With `-dry-run`, it prints the steps.
+4. With `-dry-run`, it prints the steps and ends.
+5. It opens the archive. Its `release.json` must name the version of
+   this binary and the platform of this server, such as `linux/amd64`.
+6. While the first administrator is still to be made, it asks for
+   what the flags leave out.
+7. It takes the steps, see [taking the steps](#taking-the-steps).
+
+Nothing on the server changes before the steps.
 
 It never reads the `.env` file of the folder it runs in, since the
 site's own user can write such a file. Every program it starts, such
@@ -636,6 +647,9 @@ says why and ends with `so nothing was changed`. In order:
   `/etc/apt/keyrings` or `/usr/local/bin`, or a folder root finds
   programs in, such as `/usr/bin`. So
   `GOPHENBERG_INSTALL_ROOT=/usr/local` stops here too.
+- **The current link.** A `current` link in the install root names a
+  build in `versions` that holds its `gophenberg`. Otherwise the run
+  cannot tell which build runs.
 - **Disk.** At least `GOPHENBERG_INSTALL_DISK_FLOOR_MB`, 1024 MB unless
   set, is free under the install root and under `/var/lib`, each
   measured at its nearest folder that exists.
@@ -651,6 +665,12 @@ says why and ends with `so nothing was changed`. In order:
   `gophenberg.service` and `gophenberg-rollback.service` in
   `/etc/systemd/system`. `GOPHENBERG_DATABASE_URL` must not be set
   either, since the install sets up a PostgreSQL of its own.
+- **The command on the path.** Nothing is at `/usr/local/bin/gophenberg`
+  but the command an earlier run wrote.
+- **The Caddyfile.** Once an earlier run wrote `/etc/caddy/Caddyfile`,
+  it still holds the two lines that run wrote:
+  `import /etc/caddy/gophenberg.caddy` and
+  `admin unix//run/caddy/admin.sock`.
 - **The domain.** The domain has an A or AAAA record. An address that
   never leaves the server, a loopback address such as `127.0.1.1` or
   an unspecified one such as `0.0.0.0`, stops the run, since Let's
@@ -711,7 +731,7 @@ server, so it does not end that way.
 Once every check passes, a dry run prints each step to standard
 output, and the notes and warnings of the checks stay on standard
 error. Under each step comes every file it would write, with its
-owner and mode, then its full text indented by four spaces. For
+owner and mode, then its text indented by four spaces. For
 `-domain example.com -admin-email admin@example.com` on a fresh
 server it begins:
 
@@ -767,13 +787,131 @@ For `localhost`, which Caddy serves with a certificate of its own, the
 Caddyfile names no email. It names none either when the run knows no
 certificate email.
 
-The list follows what the server already holds. When the install
-record says the Caddy step ended, the list leaves the Caddyfile alone
-and reloads Caddy. When it says the start step ended, the list
-restarts the site, and when it says the admin step ended, the list
-creates no administrator. A `current` link under the install root
-keeps the build it names, since updates go through
-[`update:apply`](#updateapply).
+In the site's `.env`, each line you added prints as its name and
+`(kept as it is)`, such as `GOPHENBERG_SMTP_PASSWORD=(kept as it is)`.
+So a password you keep there never reaches your terminal. The file
+keeps the value.
+
+On a later run the list follows what the server already holds, see
+[the install record and later runs](#the-install-record-and-later-runs).
+
+#### The first administrator
+
+A first run creates the first administrator, an account under the
+role `admin`. It asks on the terminal for each answer the flags leave
+out:
+
+```text
+Email of the first administrator: admin@example.com
+Name of the first administrator [admin]: Maria Perez
+Password:
+Password again:
+```
+
+- An empty name takes the part of the email before `@`, shown in the
+  brackets.
+- The password is typed twice and never shown.
+- An answer the account rules refuse, or two passwords that differ,
+  prints why and is asked again, such as
+  `password shorter than 12 characters, so type it again`.
+- Ctrl-C at a question ends the run with nothing changed, and the
+  terminal shows what you type again.
+
+A password file whose first line ends in a carriage return, as in a
+file saved with Windows line endings, stops the run. So does a flag
+whose answer the account rules refuse, such as a short password:
+
+```text
+gophenberg: -admin-password-file: password shorter than 12 characters, so nothing was changed
+```
+
+The questions need a terminal. A run with none, such as one a script
+starts, stops and names the flags to give:
+
+```text
+gophenberg: this run has no terminal to ask the first administrator's name and password on, so give -admin-name and -admin-password-file: open /dev/tty: no such device or address, so nothing was changed
+```
+
+#### Taking the steps
+
+Without `-dry-run`, the run takes the steps a dry run lists, in
+order. Before each one it prints its line, such as
+`Step 10: write the gophenberg command on the path`. Each file it
+writes is the one a dry run prints, with that owner and mode.
+
+The step that starts the site waits for its pages, up to
+`GOPHENBERG_UPDATE_VERIFY_TIMEOUT`, 1 minute unless
+[the server settings](/self-hosting/configuration/#the-server-settings)
+set it. A site that never answers stops the run:
+
+```text
+gophenberg: gophenberg.service did not pass its start check within 1m0s, the time GOPHENBERG_UPDATE_VERIFY_TIMEOUT allows, as at the last try it could not ask for /admin/: dial tcp 127.0.0.1:8081: connect: connection refused, so read why with sudo journalctl -u gophenberg
+```
+
+With Caddy, the HTTPS step waits up to
+`GOPHENBERG_INSTALL_HTTPS_WAIT`, 2 minutes unless set, for
+`https://<domain>/admin/` to answer 200. For `localhost` it trusts
+the root certificate Caddy signs `localhost` with. When no answer
+comes, the site still runs, so the run only warns on standard error
+and ends with exit code 0. The next run checks again:
+
+```text
+warning: https://example.com/admin/ did not answer 200 within 2m0s, the time GOPHENBERG_INSTALL_HTTPS_WAIT allows, as at the last try it could not be reached: dial tcp 203.0.113.7:443: i/o timeout. The site runs, so check that the hosting provider's firewall lets TCP 80, TCP 443 and UDP 443 in, then read sudo journalctl -u caddy, and the next sudo gophenberg server:install checks again
+```
+
+The last step prints a summary. The email shows only on the run that
+created the administrator:
+
+```text
+Gophenberg %VERSION% runs at https://example.com. Sign in at https://example.com/admin/ as admin@example.com.
+The hosting provider's firewall must let TCP 80, TCP 443 and UDP 443 in for visitors to reach the site.
+Commands to know:
+  sudo gophenberg update:status     shows the build that runs and the update on offer
+  sudo gophenberg update:apply      installs the update on offer
+  sudo journalctl -u gophenberg     shows what the site logged
+  sudo gophenberg server:uninstall  removes Gophenberg and keeps its data
+```
+
+#### The install record and later runs
+
+The install record, `/var/lib/gophenberg-installer/install.json`, is
+how a run knows what earlier runs did. Root owns it, with mode 0600.
+It marks each step started before the step runs, and ended once the
+step is done. It also names what the install put on the server, such
+as PostgreSQL and Caddy, the domain, and the SHA-256 of the Caddyfile
+the first run wrote.
+
+So a run cut off part way, such as by a power cut, picks up where it
+stopped. Run the same line again. Each step checks what is already
+done:
+
+- After a cut in the packages step, it runs `dpkg --configure -a`
+  first.
+- A database role or database that already exists counts as made.
+- A build folder left half unpacked is removed and unpacked again.
+- An administrator the cut-off run made is found with
+  `account:list`, so nothing is asked.
+
+A step an earlier run ended stays ended, even when a later run stops
+inside it.
+
+The first run puts the `gophenberg` command on the path. It runs
+`server:install` and `server:uninstall` with the installer's own
+copy, `/usr/local/lib/gophenberg/gophenberg`. It runs every other
+command as the user `gophenberg` in the install root. So a later run
+is:
+
+```sh
+sudo gophenberg server:install
+```
+
+It needs no flag, since `server.env` keeps the settings. It asks
+nothing and creates no administrator. It keeps the build `current`
+names, since updates go through [`update:apply`](#updateapply). It
+leaves the Caddyfile alone and reloads Caddy. It writes every other
+file again from the settings, then restarts the site. So to change a
+setting such as `GOPHENBERG_SERVICE_RESTART_DELAY`, change its line in
+`server.env` and run it again.
 
 #### With your own web server
 
@@ -811,6 +949,14 @@ Step 11: start gophenberg.service and wait until /admin/, /api/locale and / answ
 Step 12: create the first administrator with account:create-admin as gophenberg
 Step 13: print the summary and end the install record
 Step 14: print the lines for nginx, Caddy, Traefik and Apache that send example.com to the site at 127.0.0.1:8081
+```
+
+The summary names the address the site answers on, since your web
+server must send the domain there first:
+
+```text
+Gophenberg %VERSION% answers on 127.0.0.1:8081, the GOPHENBERG_ADDR the site listens on.
+Once your own web server sends example.com there, sign in at https://example.com/admin/ as admin@example.com.
 ```
 
 The last step prints, under a `prints:` line, the lines each of the
@@ -853,6 +999,129 @@ Your web server provides HTTPS for the domain, so the site's own
 address stays `https://`. While the site restarts after an update,
 your web server shows its own error page, unless it can hold requests
 until the site answers again, as the Caddy the install sets up does.
+
+### server:uninstall
+
+```text
+gophenberg server:uninstall [flags]
+```
+
+Removes what [`server:install`](#serverinstall) set up and keeps the
+site's data. Without `-yes` it only lists what it would remove and
+what it keeps. Run it as root, with the `gophenberg` command the
+install put on the path:
+
+```sh
+sudo gophenberg server:uninstall
+```
+
+On a server set up for `example.com` with Caddy, it prints:
+
+```text
+server:uninstall removes:
+  gophenberg.service, stopped and disabled
+  /etc/systemd/system/gophenberg.service
+  /etc/systemd/system/gophenberg-rollback.service
+  /etc/caddy/Caddyfile, putting back /etc/caddy/Caddyfile.before-gophenberg, the one the caddy package wrote
+  /etc/systemd/system/caddy.service.d/gophenberg.conf
+  /etc/caddy/gophenberg.caddy
+  /usr/local/share/gophenberg/maintenance
+  /usr/local/bin/gophenberg
+  /usr/local/lib/gophenberg/gophenberg
+  /opt/gophenberg/versions
+  /opt/gophenberg/downloads
+  /opt/gophenberg/current
+server:uninstall keeps:
+  the database gophenberg and its role gophenberg
+  the install root /opt/gophenberg, with the site's .env, media, themes and backups
+  /etc/gophenberg/server.env
+  the system user gophenberg
+  /var/lib/gophenberg-installer/install.json, so a later install picks up what is kept
+  the packages server:install installed, which sudo apt-get purge postgresql caddy removes
+  /etc/apt/keyrings/caddy.asc, /etc/apt/sources.list.d/caddy.sources and /etc/apt/preferences.d/gophenberg-caddy, which bring Caddy's security fixes from its own apt repository
+gophenberg: dry run, nothing changed, pass -yes to apply
+```
+
+Add `-yes` to remove what it lists. The run then ends with
+`server:uninstall removed what it lists and kept the rest.`
+
+- It stops the site and removes its two units.
+- A Caddyfile still as the install wrote it goes back to the one the
+  caddy package wrote, and Caddy restarts. A Caddyfile you changed,
+  such as with a site of your own, stays. Only the line
+  `import /etc/caddy/gophenberg.caddy` comes out, Caddy's drop-in
+  stays, and Caddy reloads.
+- The builds go, and so do the `previous` link and
+  `state/update.json` when they are there.
+- Anything already gone is skipped, so a second run prints
+  `server:uninstall finds nothing left to remove.` The command on the
+  path is gone by then, so run it with the binary of the release
+  archive, such as `sudo ./gophenberg server:uninstall`.
+- A run cut off part way, such as by a lost connection, is finished by
+  the next one, which restarts or reloads Caddy where the cut-off run
+  did not.
+
+It reads the install root, the domain and the web server from
+`/etc/gophenberg/server.env` alone, with the defaults of
+[the server settings](/self-hosting/configuration/#the-server-settings)
+for a missing line. It never takes them from its environment or a
+`.env` file. It stops on these lines before it changes anything:
+
+```text
+gophenberg: server:uninstall must run as root, such as with sudo, so nothing was changed
+gophenberg: this server has no install record at /var/lib/gophenberg-installer/install.json, so server:uninstall has nothing to remove
+```
+
+`-delete-data` also drops the database and its role. It removes the
+install root with everything in it, `backups` included, then
+`server.env` and the system user `gophenberg`. Nothing brings that
+data back, so copy a backup off the server first. It removes an
+install root only when the install record shows that `server:install`
+made it, and otherwise lists the folder as kept and says why. The
+install record then holds only the packages the install put there and
+the domain. The kept Caddy still holds TCP port 80, so a later install
+for that domain skips the domain check. When a Caddyfile you changed
+stays, the record also keeps the SHA-256 of the Caddyfile the install
+wrote, so a later install stops until the import line is back, as in
+[installing again](#installing-again). A later install takes the
+packages as its own, and needs `-domain` and the first administrator
+again.
+
+#### Installing again
+
+A later `server:install` reuses what was kept. It unpacks the build
+again from `-archive`, writes the files and starts the site. It
+reuses the database and asks nothing, since the first administrator
+exists:
+
+```sh
+sudo ./gophenberg server:install -archive /var/lib/gophenberg-installer/gophenberg_%VERSION%_linux_amd64.tar.gz
+```
+
+When the uninstall kept a Caddyfile you changed, the run stops until
+the import line is back. It never writes over your Caddyfile:
+
+```text
+gophenberg: /etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy" that an earlier run wrote, which has Caddy serve the site, and it must go back in before server:install runs again, so nothing was changed
+```
+
+#### Moving to your own web server
+
+A server the install set Caddy up on moves to a web server of your
+own in three steps:
+
+1. Run `sudo gophenberg server:uninstall -yes`.
+2. Change the line `GOPHENBERG_INSTALL_WEB_SERVER=caddy` in
+   `/etc/gophenberg/server.env` to `GOPHENBERG_INSTALL_WEB_SERVER=none`.
+3. Run `server:install` again, as in
+   [installing again](#installing-again).
+
+Caddy stays installed and running, with the Caddyfile the uninstall
+left, and still answers on its ports. Before another web server, such
+as nginx, takes ports 80 and 443, stop Caddy with
+`sudo systemctl disable --now caddy`, or remove it with
+`sudo apt-get purge caddy`. The run ends with the lines your web
+server needs, see [with your own web server](#with-your-own-web-server).
 
 ### update:check
 
