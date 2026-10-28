@@ -175,7 +175,7 @@ func pageNumberLike(raw string) bool {
 		return false
 	}
 	for _, digit := range raw {
-		if !unicode.IsDigit(digit) {
+		if !unicode.IsNumber(digit) {
 			return false
 		}
 	}
