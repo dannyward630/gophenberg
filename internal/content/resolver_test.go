@@ -193,12 +193,15 @@ func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 	_, zero := resolver.Resolve(t.Context(), "/page/0")
 	_, negative := resolver.Resolve(t.Context(), "/pages/page/-2")
 	_, signed := resolver.Resolve(t.Context(), "/page/+2")
+	_, plusOnly := resolver.Resolve(t.Context(), "/page/+")
+	_, minusOnly := resolver.Resolve(t.Context(), "/page/-")
 	_, nonASCIIDigits := resolver.Resolve(t.Context(), "/page/２")
 	_, superscriptNumber := resolver.Resolve(t.Context(), "/page/²")
 	_, words := resolver.Resolve(t.Context(), "/page/last")
 
 	for name, err := range map[string]error{
 		"zero": zero, "negative": negative, "signed": signed,
+		"sign only +": plusOnly, "sign only -": minusOnly,
 		"non-ASCII digits": nonASCIIDigits, "superscript": superscriptNumber, "words": words,
 	} {
 		if !errors.Is(err, content.ErrNotFound) {
@@ -214,6 +217,8 @@ func TestResolveRefusesInvalidPageSuffixesBeforeLookingUpContent(t *testing.T) {
 		"zero":        "0",
 		"negative":    "-2",
 		"signed":      "+2",
+		"sign only +": "+",
+		"sign only -": "-",
 		"non-ASCII":   "２",
 		"superscript": "²",
 		"overflow":    "999999999999999999999999999999999999",

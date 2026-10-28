@@ -168,11 +168,12 @@ func listingAt(address string) (string, int, error) {
 
 // pageNumberLike reports whether a suffix looks like a signed or unsigned numeral.
 func pageNumberLike(raw string) bool {
-	if strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-") {
+	signed := strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-")
+	if signed {
 		raw = raw[1:]
 	}
 	if raw == "" {
-		return false
+		return signed
 	}
 	for _, digit := range raw {
 		if !unicode.IsNumber(digit) {
