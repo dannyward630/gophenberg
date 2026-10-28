@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/gopherium/framework/gonsole"
 
@@ -117,6 +118,11 @@ func writtenPaths(files []file) []string {
 
 // Uninstall removes what server:install set up on machine and keeps the data, or with deleteData removes that too.
 func Uninstall(ctx context.Context, machine Machine, call gonsole.Call, deleteData bool) error {
+	unlock, err := lockedForRemoval(machine, call)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	u, err := removingOn(machine, call)
 	if err != nil {
 		return err
@@ -132,11 +138,22 @@ func Uninstall(ctx context.Context, machine Machine, call gonsole.Call, deleteDa
 	return u.apply(ctx)
 }
 
-// removingOn returns the run of server:uninstall on machine, refusing one that is not root's or finds no record.
-func removingOn(machine Machine, call gonsole.Call) (*removing, error) {
+// lockedForRemoval checks root and the installer folder for server:uninstall, and locks the folder for a run with -yes.
+func lockedForRemoval(machine Machine, call gonsole.Call) (func(), error) {
 	if machine.Euid() != 0 {
 		return nil, notRoot(uninstallCommand)
 	}
+	if err := checkInstallerFolder(machine); err != nil {
+		return nil, err
+	}
+	if !call.Apply {
+		return func() {}, nil
+	}
+	return lockInstallerFolder(machine)
+}
+
+// removingOn returns the run of server:uninstall on machine, refusing one that finds no record.
+func removingOn(machine Machine, call gonsole.Call) (*removing, error) {
 	settings, err := removalSettings(machine, call.Env)
 	if err != nil {
 		return nil, err
@@ -230,6 +247,9 @@ func (u *removing) planCaddy() error {
 	switch {
 	case u.putsBack():
 		u.putBack()
+	case u.held == nil && u.caddyOwed():
+		return stop("%s needs %s to take Gophenberg's site out of Caddy, and it is not there", uninstallCommand,
+			caddyfilePath)
 	case u.restartOwed():
 		u.finishPutBack()
 	default:
@@ -267,6 +287,11 @@ func (u *removing) installersCaddyfile() bool {
 // renderedCaddyfile returns the Caddyfile a first run writes under the settings of the run.
 func (u *removing) renderedCaddyfile() string {
 	return render("Caddyfile", site{settings: u.settings}.data())
+}
+
+// caddyOwed reports whether Caddy still has to let go of Gophenberg's site, by a reload or a restart.
+func (u *removing) caddyOwed() bool {
+	return u.machine.there(caddySitePath) || u.restartOwed()
 }
 
 // restartOwed reports whether Caddy still owes the restart of a put back or a first run that a cut-off left undone.
@@ -338,9 +363,23 @@ func (u *removing) takeOutImport() {
 	u.removed = append(u.removed, "the line "+caddyImport+" of "+caddyfilePath)
 	u.kept = append(u.kept, caddyfilePath+", which changed since server:install wrote it, so a reinstall asks for "+
 		"that line back")
-	kept := file{path: caddyfilePath, owner: "root", mode: 0o644, text: u.withoutImport()}
-	u.then(func(context.Context) error { return writeFile(u.system, inSystemTree(caddyfilePath), kept, nil) })
+	u.then(u.rewriteCaddyfile)
 	u.caddyfile = cmp.Or(u.found.Caddyfile, caddyfileSum(u.renderedCaddyfile()))
+}
+
+// rewriteCaddyfile writes the Caddyfile without the import line, with the mode, owner and group it has.
+func (u *removing) rewriteCaddyfile(context.Context) error {
+	name := inSystemTree(caddyfilePath)
+	info, err := u.system.Stat(name)
+	if err != nil {
+		return fmt.Errorf("installer: %w", err)
+	}
+	var ids *owner
+	if stat, described := info.Sys().(*syscall.Stat_t); described {
+		ids = &owner{uid: int(stat.Uid), gid: int(stat.Gid)}
+	}
+	kept := file{path: caddyfilePath, owner: "root", mode: info.Mode().Perm(), text: u.withoutImport()}
+	return writeFile(u.system, name, kept, ids)
 }
 
 // withoutImport returns the Caddyfile on the server without each of its lines that reads the import line.
@@ -378,6 +417,7 @@ func (m Machine) wroteCommand(info fs.FileInfo) bool {
 
 // planRoot opens the install root the record owns as a tree and lists its builds, downloads, links and update state.
 func (u *removing) planRoot() error {
+	u.keepOtherRoots()
 	root := u.settings.Root
 	if !u.machine.there(root) {
 		return nil
@@ -392,6 +432,24 @@ func (u *removing) planRoot() error {
 	}
 	u.tree = tree
 	return u.planBuilt()
+}
+
+// keepOtherRoots lists as kept each install root the record owns that is on the server and server.env does not name.
+func (u *removing) keepOtherRoots() {
+	for _, piece := range u.found.Installed {
+		if u.otherRoot(piece) {
+			u.kept = append(u.kept, piece+", an install root server:install made, kept since "+serverEnvPath+
+				" does not name it")
+		}
+	}
+}
+
+// otherRoot reports whether piece is an install root on the server that server.env does not name.
+func (u *removing) otherRoot(piece string) bool {
+	if !filepath.IsAbs(piece) || piece == u.settings.Root {
+		return false
+	}
+	return u.machine.there(piece)
 }
 
 // openRoot opens the install root, a real folder, as a tree that no link inside it leads out of.
@@ -469,7 +527,7 @@ func (u *removing) data() ([]datum, error) {
 func (u *removing) dropDatabase(ctx context.Context) error {
 	for _, program := range dropPrograms {
 		printed, err := u.machine.Run(ctx, program)
-		if strings.Contains(printed, "does not exist") {
+		if strings.Contains(printed, `"`+siteUser+`" does not exist`) {
 			continue
 		}
 		if err != nil {

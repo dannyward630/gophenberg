@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"os"
 	"os/user"
@@ -185,6 +186,20 @@ func TestUninstallStopsOnAServerWithNoInstallRecord(t *testing.T) {
 	wantUnchanged(t, server, before)
 }
 
+func TestUninstallStopsAtAnInstallerFolderAnotherUserOwnsBeforeItReadsTheRecord(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	server.owners[installerFolder] = 1000
+	server.write(recordPath, "{")
+	before := server.snapshot()
+
+	_, _, err := uninstallOn(server, nil, true, false)
+
+	wantRefused(t, err, installerFolderOpen)
+	wantUnchanged(t, server, before)
+}
+
 func TestUninstallRefusesServerSettingsAndARecordItCannotRead(t *testing.T) {
 	t.Parallel()
 
@@ -337,6 +352,46 @@ func TestUninstallKeepsACaddyfileThePersonChangedAndTakesOutOnlyTheImportLine(t 
 	wantKeptCaddy(t, server, caddyfileSum(wantedCaddyfile))
 }
 
+func TestUninstallKeepsTheModeOwnerAndGroupOfACaddyfileThePersonChanged(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	server.write(caddyfilePath, wantedCaddyfile+personSite)
+	server.chmod(caddyfilePath, 0o640)
+	if err := os.Chown(server.at(caddyfilePath), -1, siteGroup(t)); err != nil {
+		t.Fatalf("giving the Caddyfile a group: %v", err)
+	}
+
+	_, _, err := uninstallOn(server, nil, true, false)
+
+	if err != nil {
+		t.Fatalf("Uninstall() = %v, want the import line taken out", err)
+	}
+	wantText(t, server.at(caddyfilePath), strings.Replace(wantedCaddyfile, caddyImport+"\n", "", 1)+personSite)
+	wantEntry(t, server.at(caddyfilePath), 0o640, &owner{uid: os.Getuid(), gid: siteGroup(t)})
+}
+
+func TestUninstallStopsWhereTheCaddyfileThePersonChangedIsGoneBeforeItsImportLineComesOut(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	server.write(caddyfilePath, wantedCaddyfile+personSite)
+	running, err := removingOn(server.machine(), gonsole.Call{Env: envOf(nil), Stdout: io.Discard, Apply: true})
+	if err != nil {
+		t.Fatalf("removingOn() = %v, want the run ready", err)
+	}
+	t.Cleanup(running.close)
+	if err := running.plan(); err != nil {
+		t.Fatalf("plan() = %v, want the lists made", err)
+	}
+	server.remove(caddyfilePath)
+
+	err = running.apply(t.Context())
+
+	wantRefused(t, err, "installer: statat etc/caddy/Caddyfile: no such file or directory")
+	wantNothingAt(t, server, caddyfilePath)
+}
+
 // wantKeptCaddy fails t unless the record on server holds sum as its Caddyfile's and marks the caddy step ended.
 func wantKeptCaddy(t *testing.T, server *fakeServer, sum string) {
 	t.Helper()
@@ -394,6 +449,45 @@ func TestUninstallPutsBackThePackagesCaddyfileWhereTheCaddyfileIsGone(t *testing
 		t.Errorf("Uninstall() = %v, running %q, want %q", err, server.ran, removedPrograms)
 	}
 	wantText(t, server.at(caddyfilePath), packageCaddyfile)
+}
+
+// wantedNoCaddyfile is the stop of a run that owes Caddy a change while both the Caddyfile and the package's are gone.
+const wantedNoCaddyfile = "server:uninstall needs /etc/caddy/Caddyfile to take Gophenberg's site out of Caddy, and " +
+	"it is not there, so nothing was changed"
+
+func TestUninstallStopsBeforeAnyChangeWhereTheCaddyfileAndThePackagesOneAreGone(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	server.remove(caddyfilePath)
+	server.remove(keptCaddyfilePath)
+	before := server.snapshot()
+
+	stdout, _, err := uninstallOn(server, nil, true, false)
+
+	wantRefused(t, err, wantedNoCaddyfile)
+	if stdout != "" {
+		t.Errorf("Uninstall() printed %q, want nothing", stdout)
+	}
+	wantUnchanged(t, server, before)
+}
+
+func TestUninstallStopsBeforeAnyChangeWhereARestartIsOwedAndBothCaddyfilesAreGone(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	server.remove(caddySitePath)
+	server.remove(caddyfilePath)
+	server.remove(keptCaddyfilePath)
+	record := recordOf(t, server)
+	record.Caddyfile, record.Steps[stepCaddy] = "", stepStarted
+	server.saveRecord(record)
+	before := server.snapshot()
+
+	_, _, err := uninstallOn(server, nil, true, false)
+
+	wantRefused(t, err, wantedNoCaddyfile)
+	wantUnchanged(t, server, before)
 }
 
 func TestUninstallLeavesACaddyfileWithoutTheImportLineAndTheSumOfTheRecordAlone(t *testing.T) {
@@ -593,10 +687,14 @@ func TestUninstallWithDeleteDataSkipsADatabaseTheRecordNeverMade(t *testing.T) {
 func TestUninstallStopsWithWhatAFailedProgramPrintedAndLeavesTheRecordItSavedBeforeTheCaddyfileWentBack(t *testing.T) {
 	t.Parallel()
 
-	for program, printed := range map[string]string{
-		"dropdb":  "dropdb: error: database removal failed: ERROR:  database \"gophenberg\" is being accessed\n",
-		"userdel": "userdel: user gophenberg is currently used by process 4242\n",
+	noPostgres := "runuser: user postgres does not exist or the user entry does not contain all the required fields\n"
+	for _, row := range []struct{ program, printed string }{
+		{"dropdb", "dropdb: error: database removal failed: ERROR:  database \"gophenberg\" is being accessed\n"},
+		{"dropdb", noPostgres},
+		{"dropuser", noPostgres},
+		{"userdel", "userdel: user gophenberg is currently used by process 4242\n"},
 	} {
+		program, printed := row.program, row.printed
 		server := firstInstalled(t)
 		want := recordOf(t, server)
 		want.Caddyfile, want.Steps[stepCaddy] = "", stepStarted
@@ -762,6 +860,52 @@ func TestUninstallWithDeleteDataRemovesOnlyAnInstallRootTheRecordOwns(t *testing
 		t.Errorf("Uninstall() printed\n%s\nwant nothing of an install root the record does not own", stdout)
 	}
 	wantThere(t, server, siteEnvAt, "/opt/gophenberg/versions", "/opt/gophenberg/current")
+}
+
+func TestUninstallListsAsKeptAnInstallRootTheRecordOwnsThatServerEnvNoLongerNames(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	env := map[string]string{"GOPHENBERG_INSTALL_ROOT": "/srv/gophenberg"}
+	if _, _, err := runInstallUnder(server, env, flaggedRunOn(t, server)); err != nil {
+		t.Fatalf("Install() = %v, want Gophenberg installed in /srv/gophenberg", err)
+	}
+	server.answerRemovals()
+	server.forgetRun()
+	server.remove(serverEnvPath)
+
+	stdout, _, err := uninstallOn(server, nil, true, true)
+
+	kept := "server:uninstall keeps:\n  /srv/gophenberg, an install root server:install made, kept since " +
+		"/etc/gophenberg/server.env does not name it\n"
+	if err != nil || !strings.Contains(stdout, kept) {
+		t.Errorf("Uninstall() = %v, printing\n%s\nwant it to hold\n%s", err, stdout, kept)
+	}
+	wantThere(t, server, "/srv/gophenberg/.env")
+	want := []string{piecePostgreSQL, pieceCaddy}
+	if got := recordOf(t, server).Installed; !slices.Equal(got, want) {
+		t.Errorf("Uninstall() left the record owning %q, want %q", got, want)
+	}
+}
+
+func TestUninstallListsNoInstallRootServerEnvNoLongerNamesThatIsGoneAndLeavesItOutOfTheRecord(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	if err := (&installScenario{server: server}).setServerLine("GOPHENBERG_INSTALL_ROOT", "/srv/gophenberg"); err != nil {
+		t.Fatalf("changing the install root line: %v", err)
+	}
+	server.remove("/opt/gophenberg")
+
+	stdout, _, err := uninstallOn(server, nil, true, true)
+
+	if err != nil || strings.Contains(stdout, "/opt/gophenberg") {
+		t.Errorf("Uninstall() = %v, printing\n%s\nwant nothing of an install root that is gone", err, stdout)
+	}
+	want := []string{piecePostgreSQL, pieceCaddy}
+	if got := recordOf(t, server).Installed; !slices.Equal(got, want) {
+		t.Errorf("Uninstall() left the record owning %q, want %q", got, want)
+	}
 }
 
 func TestUninstallWithDeleteDataKeepsTheSumOfACaddyfileThePersonChanged(t *testing.T) {
@@ -982,9 +1126,14 @@ func TestUninstallStopsWhereItCannotLeaveTheInstallRecord(t *testing.T) {
 		if err := os.Rename(server.at(installerFolder), server.at("/var/lib/kept-installer")); err != nil {
 			t.Fatalf("moving the installer's folder: %v", err)
 		}
+		kept, err := os.Lstat(server.at("/var/lib/kept-installer"))
+		if err != nil {
+			t.Fatalf("describing the installer's folder: %v", err)
+		}
 		if err := os.Symlink("kept-installer", server.at(installerFolder)); err != nil {
 			t.Fatalf("linking the installer's folder: %v", err)
 		}
+		server.described[installerFolder] = ownedInfo{FileInfo: kept}
 
 		stdout, _, err := uninstallOn(server, nil, true, false)
 
