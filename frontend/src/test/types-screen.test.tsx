@@ -112,6 +112,7 @@ test('shows the types it holds at once when the list opens again, while it reads
 	await waitFor(() => expect(reading).toBe(true))
 	again.release()
 	expect(await (await typesList()).findByText('Handbooks', { exact: true })).toBeInTheDocument()
+	expect(await listedNames()).not.toContain('Guides')
 })
 
 test('says under the title what the screen holds', async () => {

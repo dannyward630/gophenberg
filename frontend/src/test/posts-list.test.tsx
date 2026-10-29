@@ -224,6 +224,7 @@ test('shows the rows it holds at once when the list opens again, while it reads 
 	await waitFor(() => expect(reading).toBe(true))
 	again.release()
 	expect(await screen.findByText('Notes on the Final Release')).toBeInTheDocument()
+	expect(screen.queryByText('Notes on the Next Release')).not.toBeInTheDocument()
 })
 
 test('never shows the rows of one type while the list of another loads', async () => {

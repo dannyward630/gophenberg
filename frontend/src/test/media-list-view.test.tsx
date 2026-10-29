@@ -467,6 +467,7 @@ test('shows the cards it holds at once when the library opens again, while it re
 	await waitFor(() => expect(reading).toBe(true))
 	again.release()
 	expect(await screen.findByText('Field manual')).toBeInTheDocument()
+	expect(screen.queryByText('Manual')).not.toBeInTheDocument()
 })
 
 test('opens Edit from a tap on a phone row of the page on show while the next page loads', async () => {
