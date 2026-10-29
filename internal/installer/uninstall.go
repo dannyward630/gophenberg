@@ -63,6 +63,9 @@ var caddyLeftovers = []struct{ path, why string }{
 	{keptCaddyfilePath, ", the Caddyfile the caddy package wrote"},
 }
 
+// unitNotLoaded ends each line systemctl reset-failed prints for a unit systemd no longer holds.
+const unitNotLoaded = " not loaded."
+
 // daemonReload has systemd read its units again once a unit or a drop-in is gone.
 var daemonReload = Program{Name: "systemctl", Args: []string{"daemon-reload"}}
 
@@ -118,7 +121,7 @@ func writtenPaths(files []file) []string {
 
 // Uninstall removes what server:install set up on machine and keeps the data, or with deleteData removes that too.
 func Uninstall(ctx context.Context, machine Machine, call gonsole.Call, deleteData bool) error {
-	unlock, err := lockedForRemoval(machine, call)
+	unlock, err := lockedFor(machine, uninstallCommand, call.Apply)
 	if err != nil {
 		return err
 	}
@@ -136,20 +139,6 @@ func Uninstall(ctx context.Context, machine Machine, call gonsole.Call, deleteDa
 		return err
 	}
 	return u.apply(ctx)
-}
-
-// lockedForRemoval checks root and the installer folder for server:uninstall, and locks the folder for a run with -yes.
-func lockedForRemoval(machine Machine, call gonsole.Call) (func(), error) {
-	if machine.Euid() != 0 {
-		return nil, notRoot(uninstallCommand)
-	}
-	if err := checkInstallerFolder(machine); err != nil {
-		return nil, err
-	}
-	if !call.Apply {
-		return func() {}, nil
-	}
-	return lockInstallerFolder(machine)
 }
 
 // removingOn returns the run of server:uninstall on machine, refusing one that finds no record.
@@ -228,9 +217,29 @@ func (u *removing) planService() {
 		u.removed = append(u.removed, pieceService+", stopped and disabled")
 		u.then(u.runs(Program{Name: "systemctl", Args: []string{"disable", "--now", pieceService}}))
 	}
-	u.then(u.runs(Program{Name: "systemctl", Args: append([]string{"reset-failed"}, names...)}))
+	u.then(u.resetFailed(names))
 	u.removesPaths(units...)
 	u.then(u.runs(daemonReload))
+}
+
+// resetFailed returns the change that clears the failed state of units, taking units systemd let go of as cleared.
+func (u *removing) resetFailed(units []string) func(context.Context) error {
+	program := Program{Name: "systemctl", Args: append([]string{"reset-failed"}, units...)}
+	return func(ctx context.Context) error {
+		printed, err := u.machine.Run(ctx, program)
+		if notLoaded(printed) {
+			return nil
+		}
+		return withPrinted(err, printed)
+	}
+}
+
+// notLoaded reports whether printed holds a line and each line it holds says systemd holds no such unit.
+func notLoaded(printed string) bool {
+	lines := slices.DeleteFunc(trimmedLines(printed), func(line string) bool { return line == "" })
+	return len(lines) > 0 && !slices.ContainsFunc(lines, func(line string) bool {
+		return !strings.HasSuffix(line, unitNotLoaded)
+	})
 }
 
 // planCaddy lists how the run takes Gophenberg's site out of Caddy and what of Caddy's it keeps, with why.
@@ -253,7 +262,7 @@ func (u *removing) planCaddy() error {
 	case u.restartOwed():
 		u.finishPutBack()
 	default:
-		u.keepCaddyfile()
+		return u.keepCaddyfile()
 	}
 	return nil
 }
@@ -343,49 +352,91 @@ func (u *removing) reopenCaddy(context.Context) error {
 	return u.leave(reopened)
 }
 
-// keepCaddyfile takes the import line out of a Caddyfile the person changed, reloads Caddy and lists what it keeps.
-func (u *removing) keepCaddyfile() {
-	if u.importsSite() {
-		u.takeOutImport()
+// keepCaddyfile keeps a Caddyfile the person changed with its sum, reloads or restarts Caddy and lists what it keeps.
+func (u *removing) keepCaddyfile() error {
+	if err := u.keepHeld(); err != nil {
+		return err
 	}
 	if u.importsSite() || u.machine.there(caddySitePath) {
-		u.then(u.runs(unitProgram("reload", caddyUnit)))
+		u.then(u.runs(unitProgram(site{record: u.found}.caddyVerb(), caddyUnit)))
 	}
 	for _, leftover := range caddyLeftovers {
 		if u.machine.there(leftover.path) {
 			u.kept = append(u.kept, leftover.path+leftover.why)
 		}
 	}
+	return nil
 }
 
-// takeOutImport lists the import line going out of a Caddyfile the person changed, which stays with its sum.
-func (u *removing) takeOutImport() {
-	u.removed = append(u.removed, "the line "+caddyImport+" of "+caddyfilePath)
-	u.kept = append(u.kept, caddyfilePath+", which changed since server:install wrote it, so a reinstall asks for "+
-		"that line back")
-	u.then(u.rewriteCaddyfile)
+// keepHeld lists a Caddyfile server:install wrote as kept and saves its sum, then lists its import line going out.
+func (u *removing) keepHeld() error {
+	if u.held == nil || !u.wroteCaddyfile() {
+		return nil
+	}
+	if u.importsSite() && u.caddyfileLinked() {
+		return stop("%s is a link, and the line %q must come out of the file it leads to before %s runs again",
+			caddyfilePath, caddyImport, uninstallCommand)
+	}
 	u.caddyfile = cmp.Or(u.found.Caddyfile, caddyfileSum(u.renderedCaddyfile()))
+	if u.caddyfile != u.found.Caddyfile {
+		u.then(u.saveSum)
+	}
+	u.takeOutImport()
+	return nil
 }
 
-// rewriteCaddyfile writes the Caddyfile without the import line, with the mode, owner and group it has.
+// wroteCaddyfile reports whether server:install wrote the Caddyfile, as a sum, the import line or the kept one shows.
+func (u *removing) wroteCaddyfile() bool {
+	if u.found.Caddyfile != "" || u.importsSite() {
+		return true
+	}
+	return u.machine.there(keptCaddyfilePath)
+}
+
+// caddyfileLinked reports whether the Caddyfile is a link.
+func (u *removing) caddyfileLinked() bool {
+	info, _ := u.machine.lstat(caddyfilePath)
+	return info != nil && info.Mode()&fs.ModeSymlink != 0
+}
+
+// saveSum saves the record found with the sum of the Caddyfile the run keeps, its steps as found, before Caddy changes.
+func (u *removing) saveSum(context.Context) error {
+	kept := u.found
+	kept.Caddyfile = u.caddyfile
+	return u.leave(kept)
+}
+
+// takeOutImport lists the Caddyfile as kept and, where it holds the import line, that line going out.
+func (u *removing) takeOutImport() {
+	asks := "the line " + caddyImport + " in it"
+	if u.importsSite() {
+		asks = "that line back"
+		u.removed = append(u.removed, "the line "+caddyImport+" of "+caddyfilePath)
+		u.then(u.rewriteCaddyfile)
+	}
+	u.kept = append(u.kept, caddyfilePath+", which changed since server:install wrote it, so a reinstall asks for "+asks)
+}
+
+// rewriteCaddyfile writes the Caddyfile as it reads now without the import line, with the mode, owner and group it has.
 func (u *removing) rewriteCaddyfile(context.Context) error {
 	name := inSystemTree(caddyfilePath)
-	info, err := u.system.Stat(name)
-	if err != nil {
+	held, readErr := u.system.ReadFile(name)
+	info, statErr := u.system.Stat(name)
+	if err := cmp.Or(readErr, statErr); err != nil {
 		return fmt.Errorf("installer: %w", err)
 	}
 	var ids *owner
 	if stat, described := info.Sys().(*syscall.Stat_t); described {
 		ids = &owner{uid: int(stat.Uid), gid: int(stat.Gid)}
 	}
-	kept := file{path: caddyfilePath, owner: "root", mode: info.Mode().Perm(), text: u.withoutImport()}
+	kept := file{path: caddyfilePath, owner: "root", mode: info.Mode().Perm(), text: withoutImport(string(held))}
 	return writeFile(u.system, name, kept, ids)
 }
 
-// withoutImport returns the Caddyfile on the server without each of its lines that reads the import line.
-func (u *removing) withoutImport() string {
+// withoutImport returns text without each of its lines that reads the import line.
+func withoutImport(text string) string {
 	var kept strings.Builder
-	for line := range strings.Lines(string(u.held)) {
+	for line := range strings.Lines(text) {
 		if strings.TrimSpace(line) != caddyImport {
 			kept.WriteString(line)
 		}

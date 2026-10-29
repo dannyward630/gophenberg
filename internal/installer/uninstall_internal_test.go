@@ -388,7 +388,7 @@ func TestUninstallStopsWhereTheCaddyfileThePersonChangedIsGoneBeforeItsImportLin
 
 	err = running.apply(t.Context())
 
-	wantRefused(t, err, "installer: statat etc/caddy/Caddyfile: no such file or directory")
+	wantRefused(t, err, "installer: openat etc/caddy/Caddyfile: no such file or directory")
 	wantNothingAt(t, server, caddyfilePath)
 }
 
@@ -421,7 +421,7 @@ func TestUninstallPutsBackThePackagesCaddyfileOverTheOneARunCutOffInTheCaddyStep
 	}
 }
 
-func TestUninstallTakesOutTheImportLineOfACaddyfileThePersonChangedAfterACutOffRun(t *testing.T) {
+func TestUninstallTakesOutTheImportLineOfACaddyfileThePersonChangedAfterACutOffRunAndRestartsCaddy(t *testing.T) {
 	t.Parallel()
 
 	server := firstInstalled(t)
@@ -430,8 +430,9 @@ func TestUninstallTakesOutTheImportLineOfACaddyfileThePersonChangedAfterACutOffR
 
 	_, _, err := uninstallOn(server, nil, true, false)
 
-	if err != nil || slices.Contains(server.ran, "systemctl restart caddy.service") {
-		t.Errorf("Uninstall() = %v, running %q, want the Caddyfile kept and Caddy reloaded", err, server.ran)
+	want := slices.Concat(removedPrograms[:3], []string{"systemctl restart caddy.service"})
+	if err != nil || !slices.Equal(server.ran, want) {
+		t.Errorf("Uninstall() = %v, running %q, want the Caddyfile kept and Caddy restarted %q", err, server.ran, want)
 	}
 	wantText(t, server.at(caddyfilePath), strings.Replace(wantedCaddyfile, caddyImport+"\n", "", 1)+personSite)
 	wantKeptCaddy(t, server, caddyfileSum(wantedCaddyfile))
@@ -490,7 +491,11 @@ func TestUninstallStopsBeforeAnyChangeWhereARestartIsOwedAndBothCaddyfilesAreGon
 	wantUnchanged(t, server, before)
 }
 
-func TestUninstallLeavesACaddyfileWithoutTheImportLineAndTheSumOfTheRecordAlone(t *testing.T) {
+// wantedKeptOwnCaddyfile is the line server:uninstall keeps a Caddyfile the person changed under with no import line.
+const wantedKeptOwnCaddyfile = "\n  /etc/caddy/Caddyfile, which changed since server:install wrote it, so a " +
+	"reinstall asks for the line import /etc/caddy/gophenberg.caddy in it\n"
+
+func TestUninstallKeepsACaddyfileWithoutTheImportLineAndTheSumOfTheRecordAsTheyAre(t *testing.T) {
 	t.Parallel()
 
 	server := firstInstalled(t)
@@ -502,8 +507,9 @@ func TestUninstallLeavesACaddyfileWithoutTheImportLineAndTheSumOfTheRecordAlone(
 	if err != nil || !slices.Equal(server.ran, want) {
 		t.Errorf("Uninstall() = %v, running %q, want Caddy reloaded while gophenberg.caddy is there", err, server.ran)
 	}
-	if strings.Contains(stdout, caddyfilePath+",") {
-		t.Errorf("Uninstall() printed\n%s\nwant no line for the Caddyfile", stdout)
+	if !strings.Contains(stdout, "server:uninstall keeps:"+wantedKeptOwnCaddyfile) {
+		t.Errorf("Uninstall() printed\n%s\nwant the Caddyfile kept first with the line%s", stdout,
+			wantedKeptOwnCaddyfile)
 	}
 	wantText(t, server.at(caddyfilePath), ownCaddyfile)
 	wantKeptCaddy(t, server, caddyfileSum(wantedCaddyfile))
