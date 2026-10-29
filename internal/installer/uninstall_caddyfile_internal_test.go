@@ -202,3 +202,21 @@ func TestUninstallLeavesALinkedCaddyfileWithoutTheImportLineALink(t *testing.T) 
 	}
 	wantText(t, server.at("/etc/caddy/main.caddy"), ownCaddyfile)
 }
+
+func TestUninstallPutsThePackagesCaddyfileBackOverALinkToTheOneTheInstallWrote(t *testing.T) {
+	t.Parallel()
+
+	server := firstInstalled(t)
+	linkCaddyfileOn(t, server, wantedCaddyfile)
+
+	_, _, err := uninstallOn(server, nil, true, false)
+
+	if err != nil {
+		t.Fatalf("Uninstall() = %v, want the package's Caddyfile put back", err)
+	}
+	if target, err := os.Readlink(server.at(caddyfilePath)); err == nil {
+		t.Errorf("the Caddyfile is still a link to %q, want a plain file in its place", target)
+	}
+	wantText(t, server.at(caddyfilePath), packageCaddyfile)
+	wantText(t, server.at("/etc/caddy/main.caddy"), wantedCaddyfile)
+}
