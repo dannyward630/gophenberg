@@ -584,6 +584,23 @@ func TestTheAdminStepStopsWhenTheEmailBelongsToAnAccountUnderAnotherRole(t *test
 	wantMark(t, server, stepAdmin, stepStarted)
 }
 
+func TestTheAdminStepStopsWhenTheEmailBelongsToAnEditorWhileAnotherEmailIsUnderAdmin(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.accounts = []listedAccount{
+		{Email: "owner@example.com", Role: "admin"}, {Email: "admin@example.com", Role: "editor"},
+	}
+	running, _ := servedOn(t, server, firstSite(t, "example.com", 255))
+	running.admin = mariaPerez
+
+	err := running.take(t.Context(), plannedStep(t, running, stepAdmin))
+
+	wantRefused(t, err, "admin@example.com already belongs to an account that is not an administrator, so run sudo "+
+		"gophenberg server:install again and give the first administrator another email")
+	wantMark(t, server, stepAdmin, stepStarted)
+}
+
 func TestTheAdminStepStopsWhenAccountListFailsOnAnEmailAlreadyTaken(t *testing.T) {
 	t.Parallel()
 

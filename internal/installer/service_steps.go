@@ -238,10 +238,10 @@ func (r *installing) createAdmin(ctx context.Context, _ step) error {
 	return withPrinted(err, printed)
 }
 
-// takenByAdmin accepts the email account:create-admin found taken once account:list lists an account under admin.
+// takenByAdmin accepts the email account:create-admin found taken once account:list lists that email under admin.
 func (r *installing) takenByAdmin(ctx context.Context) error {
-	listed, err := adminListed(ctx, r.machine, r.site.settings.Root)
-	if err != nil || listed {
+	listed, err := listedAccounts(ctx, r.machine, r.site.settings.Root)
+	if err != nil || slices.Contains(listed, account{Email: r.admin.email, Role: adminRole}) {
 		return err
 	}
 	return fmt.Errorf("%s already belongs to an account that is not an administrator, so run sudo gophenberg "+

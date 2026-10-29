@@ -305,7 +305,7 @@ func TestTheMachineChecksStopOnAParentOfTheInstallRootThatIsNotARealFolder(t *te
 const installerFolderOpen = "/var/lib/gophenberg-installer, which holds the install record, must be a real folder " +
 	"owned by root and writable by root alone, so nothing was changed"
 
-func TestTheMachineChecksStopAtAnInstallerFolderThatIsALinkAFileOrThatAnotherUserOwnsOrMayWrite(t *testing.T) {
+func TestInstallStopsAtAnInstallerFolderThatIsALinkAFileOrThatAnotherUserOwnsOrMayWrite(t *testing.T) {
 	t.Parallel()
 
 	link := newFakeServer(t)
@@ -324,22 +324,38 @@ func TestTheMachineChecksStopAtAnInstallerFolderThatIsALinkAFileOrThatAnotherUse
 	others.chmod(installerFolder, 0o702)
 
 	for _, server := range []*fakeServer{link, file, owned, group, others} {
-		err := server.check().run(t.Context())
+		_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: true})
 
 		wantRefused(t, err, installerFolderOpen)
 		if len(server.ran) != 0 {
-			t.Errorf("the checks ran %q, want the installer folder checked right after root", server.ran)
+			t.Errorf("the run ran %q, want the installer folder checked right after root", server.ran)
 		}
 	}
 }
 
-func TestTheMachineChecksRefuseAnInstallerFolderTheyCannotDescribe(t *testing.T) {
+func TestInstallStopsAtAnInstallerFolderAnotherUserOwnsBeforeItReadsTheRecord(t *testing.T) {
+	t.Parallel()
+
+	for _, dryRun := range []bool{false, true} {
+		server := newFakeServer(t)
+		server.write(recordPath, "{")
+		server.owners[installerFolder] = 1000
+		before := server.snapshot()
+
+		_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: dryRun})
+
+		wantRefused(t, err, installerFolderOpen)
+		wantUnchanged(t, server, before)
+	}
+}
+
+func TestInstallRefusesAnInstallerFolderItCannotDescribe(t *testing.T) {
 	t.Parallel()
 
 	server := newFakeServer(t)
 	server.broken[installerFolder] = syscall.EIO
 
-	err := server.check().run(t.Context())
+	_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: true})
 
 	wantRefused(t, err, "installer: input/output error")
 }

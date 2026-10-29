@@ -3,8 +3,10 @@
 package installer_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/gopherium/framework/gonsole"
@@ -27,10 +29,34 @@ func wantError(t *testing.T, err error, want string) {
 	}
 }
 
-func TestInstallRefusesADomainThatIsNotAHostNameBeforeItReachesTheMachine(t *testing.T) {
+// rootOwned describes a file as root's, whatever user the test runs as.
+type rootOwned struct{ fs.FileInfo }
+
+// Sys returns the system description of the file with root as its owner.
+func (i rootOwned) Sys() any {
+	stat := *i.FileInfo.Sys().(*syscall.Stat_t)
+	stat.Uid = 0
+	return &stat
+}
+
+// lstatAsRoot describes the file at path as os.Lstat does, with root as its owner.
+func lstatAsRoot(path string) (fs.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	return rootOwned{info}, nil
+}
+
+// rootRunOn returns the machine whose top is the folder root, run by root and every file in it root's.
+func rootRunOn(root string) installer.Machine {
+	return installer.Machine{Root: root, Lstat: lstatAsRoot, Euid: func() int { return 0 }}
+}
+
+func TestInstallRefusesADomainThatIsNotAHostNameBeforeItReadsAFile(t *testing.T) {
 	t.Parallel()
 
-	err := installer.Install(t.Context(), installer.Machine{}, callOf(nil), installer.Request{
+	err := installer.Install(t.Context(), rootRunOn(t.TempDir()), callOf(nil), installer.Request{
 		Domain: "not a host name", DryRun: true,
 	})
 
@@ -40,10 +66,10 @@ func TestInstallRefusesADomainThatIsNotAHostNameBeforeItReachesTheMachine(t *tes
 		`got "not a host name"`)
 }
 
-func TestInstallRefusesAPasswordFileThatIsNotAnAbsolutePathBeforeItReachesTheMachine(t *testing.T) {
+func TestInstallRefusesAPasswordFileThatIsNotAnAbsolutePathBeforeItReadsAFile(t *testing.T) {
 	t.Parallel()
 
-	err := installer.Install(t.Context(), installer.Machine{}, callOf(nil), installer.Request{
+	err := installer.Install(t.Context(), rootRunOn(t.TempDir()), callOf(nil), installer.Request{
 		Domain: "example.com", AdminPasswordFile: "admin-password",
 	})
 
@@ -55,7 +81,7 @@ func TestInstallRefusesAnInstallRootThatIsNotAbsoluteBeforeItChecksTheMachine(t 
 
 	call := callOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "planted/root"})
 
-	err := installer.Install(t.Context(), installer.Machine{Root: t.TempDir()}, call, installer.Request{
+	err := installer.Install(t.Context(), rootRunOn(t.TempDir()), call, installer.Request{
 		Domain: "example.com", DryRun: true,
 	})
 
@@ -73,7 +99,7 @@ func recorded(t *testing.T, body string) installer.Machine {
 	if err := os.WriteFile(record, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the install record: %v", err)
 	}
-	return installer.Machine{Root: root}
+	return rootRunOn(root)
 }
 
 func TestInstallRefusesAnInstallerOlderThanTheOneTheRecordNames(t *testing.T) {
@@ -144,10 +170,10 @@ func TestInstallRefusesAFileItMayNotReadAsRootWithTheReason(t *testing.T) {
 	}
 }
 
-func TestInstallChecksTheMachineOnceTheSettingsAndTheRecordAllowTheRun(t *testing.T) {
+func TestInstallStopsARunThatIsNotRootsBeforeItReadsTheRecord(t *testing.T) {
 	t.Parallel()
 
-	machine := recorded(t, `{"installer": "0.0.1"}`)
+	machine := recorded(t, `{"installer": "1000.0.0"`)
 	machine.Euid = func() int { return 1000 }
 
 	err := installer.Install(t.Context(), machine, callOf(nil), installer.Request{Domain: "example.com", DryRun: true})

@@ -5,10 +5,12 @@ package installer
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // lockedByAnother reports whether a run other than the one going on finds the installer folder of server locked.
@@ -90,6 +92,46 @@ func TestHeldAloneRefusesAFolderTheFileSystemWillNotLockAndLetsItGo(t *testing.T
 	}
 	if err := folder.Close(); !errors.Is(err, os.ErrClosed) {
 		t.Errorf("closing the folder again = %v, want it closed already when the lock failed", err)
+	}
+}
+
+// pipeAt puts a named pipe at the installer folder of server.
+func pipeAt(t *testing.T, server *fakeServer) {
+	t.Helper()
+	server.folder(filepath.Dir(installerFolder))
+	if err := syscall.Mkfifo(server.at(installerFolder), 0o700); err != nil {
+		t.Fatalf("making a pipe at the installer folder: %v", err)
+	}
+}
+
+// plainFileAt puts a plain file at the installer folder of server.
+func plainFileAt(_ *testing.T, server *fakeServer) {
+	server.write(installerFolder, "")
+}
+
+func TestInstallStopsAtAPipeOrAPlainFileAtTheInstallerFolderWithoutWaitingForAWriter(t *testing.T) {
+	t.Parallel()
+
+	for what, put := range map[string]func(*testing.T, *fakeServer){"a pipe": pipeAt, "a plain file": plainFileAt} {
+		for _, dryRun := range []bool{false, true} {
+			server := newFakeServer(t)
+			put(t, server)
+			ended := make(chan error, 1)
+			go func() {
+				_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: dryRun})
+				ended <- err
+			}()
+
+			select {
+			case err := <-ended:
+				wantRefused(t, err, installerFolderOpen)
+			case <-time.After(5 * time.Second):
+				t.Fatalf("Install() still waits on %s at the installer folder after 5s, want it to return at once", what)
+			}
+			if len(server.ran) != 0 {
+				t.Errorf("the run at %s ran %q, want nothing run", what, server.ran)
+			}
+		}
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"slices"
 	"strings"
 
@@ -30,13 +29,11 @@ type Request struct {
 
 // Install checks machine for server:install as request asks, then prints the steps of a dry run or takes them.
 func Install(ctx context.Context, machine Machine, call gonsole.Call, request Request) error {
-	if !request.DryRun {
-		unlock, err := lockInstallerFolder(machine)
-		if err != nil {
-			return rootOr(machine, installCommand, err)
-		}
-		defer unlock()
+	unlock, err := lockedFor(machine, installCommand, !request.DryRun)
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	check, err := checkFor(ctx, machine, call, request)
 	if err != nil {
 		return err
@@ -55,11 +52,11 @@ func Install(ctx context.Context, machine Machine, call gonsole.Call, request Re
 func checkFor(ctx context.Context, machine Machine, call gonsole.Call, request Request) (*machineCheck, error) {
 	settings, err := settingsOn(machine, call.Env, request)
 	if err != nil {
-		return nil, rootOr(machine, installCommand, err)
+		return nil, err
 	}
 	record, err := readRecord(machine)
 	if err != nil {
-		return nil, rootOr(machine, installCommand, err)
+		return nil, err
 	}
 	if err := record.allows(version.Version()); err != nil {
 		return nil, err
@@ -119,11 +116,11 @@ func (c *machineCheck) settleAdmin(ctx context.Context) error {
 	if !c.record.started(stepAdmin) {
 		return nil
 	}
-	made, err := adminListed(ctx, c.machine, c.settings.Root)
+	listed, err := listedAccounts(ctx, c.machine, c.settings.Root)
 	if err != nil {
 		return stop("cannot tell whether the run cut off in the admin step made the first administrator: %v", err)
 	}
-	if made {
+	if slices.ContainsFunc(listed, func(held account) bool { return held.Role == adminRole }) {
 		c.record.Steps[stepAdmin] = stepEnded
 	}
 	return nil
@@ -135,14 +132,13 @@ type account struct {
 	Role  string `json:"role"`
 }
 
-// adminListed reports whether account:list, run on machine as gophenberg in root, lists an account under admin.
-func adminListed(ctx context.Context, machine Machine, root string) (bool, error) {
+// listedAccounts returns the accounts account:list -json lists, run on machine as gophenberg in root.
+func listedAccounts(ctx context.Context, machine Machine, root string) ([]account, error) {
 	printed, err := machine.Run(ctx, siteCommand(root, "account:list", "-json"))
 	if err != nil {
-		return false, withPrinted(err, printed)
+		return nil, withPrinted(err, printed)
 	}
-	listed, err := accountsIn(printed)
-	return slices.ContainsFunc(listed, func(held account) bool { return held.Role == adminRole }), err
+	return accountsIn(printed)
 }
 
 // accountsIn returns the accounts account:list -json printed, past any line the site logged before them.
@@ -175,12 +171,4 @@ func (c *machineCheck) typedEmailRule() func(string) (string, error) {
 		}
 		return email, nil
 	}
-}
-
-// rootOr returns the stop of a run of command that is not root's for err on a file root alone may read, else err.
-func rootOr(machine Machine, command string, err error) error {
-	if errors.Is(err, fs.ErrPermission) && machine.Euid() != 0 {
-		return notRoot(command)
-	}
-	return err
 }

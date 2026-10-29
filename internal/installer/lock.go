@@ -10,9 +10,24 @@ import (
 	"syscall"
 )
 
+// lockedFor checks root and the installer folder for a run of command, then locks the folder when the run applies.
+func lockedFor(machine Machine, command string, applies bool) (func(), error) {
+	if machine.Euid() != 0 {
+		return nil, notRoot(command)
+	}
+	if err := checkInstallerFolder(machine); err != nil {
+		return nil, err
+	}
+	if !applies {
+		return func() {}, nil
+	}
+	return lockInstallerFolder(machine)
+}
+
 // lockInstallerFolder locks the installer folder for this run alone, none while it is missing, and returns the unlock.
 func lockInstallerFolder(machine Machine) (func(), error) {
-	folder, err := absentAsNil(os.Open(filepath.Join(machine.Root, installerFolder)))
+	folder, err := absentAsNil(os.OpenFile(filepath.Join(machine.Root, installerFolder), os.O_RDONLY|syscall.O_NONBLOCK,
+		0))
 	if err != nil {
 		return nil, err
 	}

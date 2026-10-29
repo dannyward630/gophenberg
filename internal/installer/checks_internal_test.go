@@ -96,6 +96,7 @@ type fakeServer struct {
 	effects      map[string]func(Program) answer
 	running      map[string]bool
 	siteDown     bool
+	unloads      bool
 	accounts     []listedAccount
 	ranFrom      string
 	notes        strings.Builder
@@ -498,17 +499,20 @@ func TestTheMachineChecksPassAFreshUbuntuServerAndNoteNothing(t *testing.T) {
 	}
 }
 
-func TestTheMachineChecksStopARunThatIsNotRoots(t *testing.T) {
+func TestInstallStopsARunThatIsNotRootsBeforeItReadsTheRecordOrRunsAnything(t *testing.T) {
 	t.Parallel()
 
-	server := newFakeServer(t)
-	server.euid = 1000
+	for _, dryRun := range []bool{false, true} {
+		server := newFakeServer(t)
+		server.euid = 1000
+		server.write(recordPath, "{")
 
-	err := server.check().run(t.Context())
+		_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: dryRun})
 
-	wantRefused(t, err, "server:install must run as root, such as with sudo, so nothing was changed")
-	if len(server.ran) != 0 {
-		t.Errorf("the checks ran %q as a plain user, want nothing run", server.ran)
+		wantRefused(t, err, "server:install must run as root, such as with sudo, so nothing was changed")
+		if len(server.ran) != 0 {
+			t.Errorf("the run ran %q as a plain user, want nothing run", server.ran)
+		}
 	}
 }
 

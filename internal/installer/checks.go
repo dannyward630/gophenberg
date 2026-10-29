@@ -48,9 +48,8 @@ var clockProbe = Program{Name: "timedatectl", Args: []string{"show", "-p", "NTPS
 
 // machineChecks are the checks of the machine in the order server:install runs them, before anything changes.
 var machineChecks = []func(context.Context, *machineCheck) error{
-	checkRoot, func(_ context.Context, c *machineCheck) error { return checkInstallerFolder(c.machine) }, checkSystem,
-	checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkCurrent, checkDisk, checkSitePort, checkPorts,
-	checkPieces, checkCommand, checkCaddyfile, checkDatabaseURL, checkDomain, checkClock,
+	checkSystem, checkSystemd, checkSandbox, checkMemory, checkInstallRoot, checkCurrent, checkDisk, checkSitePort,
+	checkPorts, checkPieces, checkCommand, checkCaddyfile, checkDatabaseURL, checkDomain, checkClock,
 }
 
 // machineCheck is one run of the machine checks, with what they read, where their notes go and what they find.
@@ -83,14 +82,6 @@ func (c *machineCheck) run(ctx context.Context) error {
 // stop returns the error a check stops the run with, format and args saying why, followed by nothing changed.
 func stop(format string, args ...any) error {
 	return fmt.Errorf(format+nothingChanged, args...)
-}
-
-// checkRoot stops a run that is not root's, since the steps after the checks change the whole server.
-func checkRoot(_ context.Context, c *machineCheck) error {
-	if c.machine.Euid() != 0 {
-		return notRoot(installCommand)
-	}
-	return nil
 }
 
 // notRoot returns the stop of a run of command that is not root's.
