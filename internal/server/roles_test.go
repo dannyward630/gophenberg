@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -189,16 +190,66 @@ func TestARoleCarryingOnlyTheAccountCapabilityCannotReachAnAdministrator(t *test
 		t.Fatalf("Grant() = %v, want the plugin role granted", err)
 	}
 	handler, cookie, users := signedInAs(t, roles, "team_lead")
+	member := addWithRole(t, users, "member@example.com", "Maria Perez", role.Member)
 	author := addWithRole(t, users, "author@example.com", "Maria Perez", role.Author)
 	owner := addWithRole(t, users, "owner@example.com", "Maria Perez", role.Admin)
-	promotion := "/api/users/" + author.ID.String() + "/role"
+	refused := []struct {
+		name string
+		sent call
+		want string
+	}{
+		{
+			name: "promoting a member",
+			sent: call{http.MethodPut, "/api/users/" + member.ID.String() + "/role", `{"role":"admin"}`},
+			want: "role_not_grantable",
+		},
+		{
+			name: "promoting an author",
+			sent: call{http.MethodPut, "/api/users/" + author.ID.String() + "/role", `{"role":"admin"}`},
+			want: "user_not_editable",
+		},
+		{
+			name: "disabling an administrator",
+			sent: call{http.MethodPatch, "/api/users/" + owner.ID.String(), `{"disabled":true}`},
+			want: "user_not_editable",
+		},
+	}
 
-	promoted := ask(handler, cookie, call{http.MethodPut, promotion, `{"role":"admin"}`})
-	disabled := ask(handler, cookie, call{http.MethodPatch, "/api/users/" + owner.ID.String(), `{"disabled":true}`})
+	for _, write := range refused {
+		recorder := ask(handler, cookie, write.sent)
 
-	for name, recorder := range map[string]*httptest.ResponseRecorder{"promoting": promoted, "disabling": disabled} {
-		if got := refusalOf(t, recorder); recorder.Code != http.StatusForbidden || got.Code != "role_beyond_reach" {
-			t.Errorf("%s answered %d %+v for a team lead, want 403 role_beyond_reach", name, recorder.Code, got)
+		if got := refusalOf(t, recorder); recorder.Code != http.StatusForbidden || got.Code != write.want {
+			t.Errorf("%s answered %d %+v for a team lead, want 403 %s", write.name, recorder.Code, got, write.want)
 		}
+	}
+}
+
+func TestTheUserListTellsATeamLeadWhichAccountsItMayEdit(t *testing.T) {
+	t.Parallel()
+
+	roles := role.Registry()
+	if err := roles.Grant("teams", "team_lead", string(role.ManageUsers)); err != nil {
+		t.Fatalf("Grant() = %v, want the plugin role granted", err)
+	}
+	handler, cookie, users := signedInAs(t, roles, "team_lead")
+	addWithRole(t, users, "member@example.com", "Maria Perez", role.Member)
+	addWithRole(t, users, "owner@example.com", "Maria Perez", role.Admin)
+
+	recorder := ask(handler, cookie, call{http.MethodGet, "/api/users", ""})
+
+	var listed []struct {
+		Email    string `json:"email"`
+		Editable bool   `json:"editable"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decoding the user list %q: %v", recorder.Body.String(), err)
+	}
+	editable := map[string]bool{}
+	for _, account := range listed {
+		editable[account.Email] = account.Editable
+	}
+	want := map[string]bool{"holder@example.com": true, "member@example.com": true, "owner@example.com": false}
+	if !maps.Equal(editable, want) {
+		t.Errorf("the user list marks %v editable, want %v", editable, want)
 	}
 }
