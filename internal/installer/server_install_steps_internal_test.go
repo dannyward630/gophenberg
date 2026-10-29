@@ -93,6 +93,7 @@ func initializeServerInstall(t *testing.T) func(*godog.ScenarioContext) {
 		sc.Given(`^PostgreSQL is installed on the server$`, s.installPostgreSQL)
 		sc.Given(`^Caddy is installed on the server$`, s.installCaddy)
 		sc.Given(`^another user can write (/opt|/var/lib/gophenberg-installer)$`, s.openFolder)
+		sc.Given(`^a plain file sits at /var/lib/gophenberg-installer$`, s.fileAtInstallerFolder)
 		sc.Given(`^the install record names the installer "([^"]*)"$`, s.recordInstaller)
 		sc.Given(`^an earlier run installed Gophenberg for example.com on the server$`, s.installEarlier)
 		sc.Given(`^another server:install is running on the server$`, s.runAnother)
@@ -265,6 +266,11 @@ func (s *installScenario) installCaddy() {
 func (s *installScenario) openFolder(path string) {
 	s.server.folder(path)
 	s.server.chmod(path, 0o777)
+}
+
+// fileAtInstallerFolder puts a plain file where the installer folder belongs.
+func (s *installScenario) fileAtInstallerFolder() {
+	s.server.write(installerFolder, "")
 }
 
 // recordInstaller has the install record name installer as the newest installer that ran on the server.

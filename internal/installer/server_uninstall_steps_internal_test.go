@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -33,6 +34,11 @@ func initializeServerUninstall(sc *godog.ScenarioContext, s *installScenario) {
 	sc.Given(`^the operator ran "([^"]*)"$`, s.ranEarlier)
 	sc.Given(`^the person added the site example.org to /etc/caddy/Caddyfile$`, s.addPersonSite)
 	sc.Given(`^the person deleted (/\S+)$`, s.deleteByHand)
+	sc.Given(`^systemd lets go of the site's units once the site stops$`, s.letGoOfUnits)
+	sc.Given(`^the person moved /etc/caddy/Caddyfile to /etc/caddy/(\S+) and left a link to it in its place$`,
+		s.linkCaddyfile)
+	sc.Then(`^/etc/caddy/Caddyfile is still a link to /etc/caddy/(\S+)$`, s.caddyfileLinksTo)
+	sc.Then(`^(/\S+) still holds the line "([^"]*)"$`, s.stillHoldsLine)
 	sc.Given(`^the person gave /etc/caddy/Caddyfile the group caddy and mode 0640$`, s.narrowCaddyfile)
 	sc.Then(`^/etc/caddy/Caddyfile still belongs to root and the group caddy with mode 0640$`, s.keepsNarrowCaddyfile)
 	sc.When(`^the person puts the line "([^"]*)" back in /etc/caddy/Caddyfile$`, s.putCaddyfileLineBack)
@@ -142,7 +148,24 @@ func (s *fakeServer) removingSystemctl(program Program) answer {
 	if slices.Contains(program.Args, "--now") {
 		s.running[program.Args[len(program.Args)-1]] = false
 	}
+	if s.unloads && program.Args[0] == "reset-failed" {
+		return failed("systemctl", notLoadedLines(program.Args[1:]))
+	}
 	return s.systemctl(program)
+}
+
+// notLoadedLines returns what systemctl reset-failed prints for each of units that systemd no longer holds.
+func notLoadedLines(units []string) string {
+	var printed strings.Builder
+	for _, unit := range units {
+		printed.WriteString("Failed to reset failed state of unit " + unit + ": Unit " + unit + " not loaded.\n")
+	}
+	return printed.String()
+}
+
+// letGoOfUnits has systemd let go of the site's units once the site stops, as systemd 255 does.
+func (s *installScenario) letGoOfUnits() {
+	s.server.unloads = true
 }
 
 // userdel removes the OS user its line names, as userdel does.
@@ -164,6 +187,33 @@ func (s *installScenario) addPersonSite() error {
 // deleteByHand takes away the file at path, as a person does by hand.
 func (s *installScenario) deleteByHand(path string) {
 	s.server.remove(path)
+}
+
+// linkCaddyfile moves the Caddyfile to name in its folder and puts a link to it in its place, as a person does by hand.
+func (s *installScenario) linkCaddyfile(name string) error {
+	moved := filepath.Join(filepath.Dir(caddyfilePath), name)
+	if err := os.Rename(s.server.at(caddyfilePath), s.server.at(moved)); err != nil {
+		return err
+	}
+	return os.Symlink(name, s.server.at(caddyfilePath))
+}
+
+// caddyfileLinksTo fails unless the Caddyfile on the server is still a link to name in its folder.
+func (s *installScenario) caddyfileLinksTo(name string) error {
+	target, err := os.Readlink(s.server.at(caddyfilePath))
+	if err == nil && target != name {
+		err = fmt.Errorf("the Caddyfile is a link to %s, want one to %s", target, name)
+	}
+	return err
+}
+
+// stillHoldsLine fails unless the file at path on the server holds line.
+func (s *installScenario) stillHoldsLine(path, line string) error {
+	held, err := os.ReadFile(s.server.at(path))
+	if err == nil && !slices.Contains(trimmedLines(string(held)), line) {
+		err = fmt.Errorf("the server holds %s as\n%s\nwant the line %q", path, held, line)
+	}
+	return err
 }
 
 // narrowCaddyfile gives the Caddyfile the group of the OS user caddy and mode 0640, as a person does by hand.

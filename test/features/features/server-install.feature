@@ -1,19 +1,20 @@
 Feature: Install Gophenberg on a Linux server
   sudo gophenberg server:install sets up Gophenberg on a fresh Ubuntu
   24.04, Debian 12 or Debian 13 server. Before it changes anything it
-  reads its settings, reads its install record and checks the server:
-  root, the system, systemd and the sandbox of the site's service, memory,
-  disk, the ports, any PostgreSQL or Caddy it did not install, the folders
-  above the install root, and that the domain points at this server. A
-  check that fails stops the run with a line that says why and that
-  nothing was changed. A later run skips the ports and the pieces the
-  install record says an earlier run installed. With -dry-run the run then
-  prints each step it would take and the full text of every file it would
-  write, and still changes nothing. A line the person added to the site's
-  .env prints by its key alone, its value hidden, and the file keeps that
-  value. Without -dry-run it then opens the
-  release archive -archive names and checks that its release.json names
-  this installer's version and this server's platform. While the first
+  checks that root runs it and that its installer folder is a real folder
+  root alone may write, then reads its settings, reads its install record
+  and checks the server: the system, systemd and the sandbox of the site's
+  service, memory, disk, the ports, any PostgreSQL or Caddy it did not
+  install, the folders above the install root, and that the domain points
+  at this server. A check that fails stops the run with a line that says
+  why and that nothing was changed. A later run skips the ports and the
+  pieces the install record says an earlier run installed. With -dry-run
+  the run then prints each step it would take and the full text of every
+  file it would write, and still changes nothing. A line the person added
+  to the site's .env prints by its key alone, its value hidden, and the
+  file keeps that value. Without -dry-run it then opens the release
+  archive -archive names and checks that its release.json names this
+  installer's version and this server's platform. While the first
   administrator is still to be made, it asks on the terminal for what the
   flags leave out: the email, the name and the password, typed twice and
   never shown. A typed answer the account rules refuse is asked again.
@@ -183,6 +184,15 @@ Feature: Install Gophenberg on a Linux server
   Scenario: An installer folder another user can write is refused
     Given another user can write /var/lib/gophenberg-installer
     When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A plain file where the installer folder belongs is refused before the run reads the install record
+    Given a plain file sits at /var/lib/gophenberg-installer
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+    When the operator runs "server:install -domain example.com"
     Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
     And nothing on the server changed
 
@@ -430,6 +440,7 @@ Feature: Install Gophenberg on a Linux server
       User=gophenberg
       Group=gophenberg
       WorkingDirectory=/opt/gophenberg
+      ExecCondition=+/usr/bin/systemctl is-failed --quiet gophenberg.service
       ExecStart=/opt/gophenberg/previous/gophenberg update:rollback -after-failure
       ExecStartPost=+/usr/bin/systemctl reset-failed gophenberg.service
       ExecStartPost=+/usr/bin/systemctl start gophenberg.service
@@ -1142,6 +1153,15 @@ Feature: Install Gophenberg on a Linux server
       """
     And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email maria.perez@example.com -name Maria Perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
     And the install record marks the step admin ended
+
+  Scenario: An administrator email an account under another role holds stops the run while another email is under admin
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And an account a person made by hand holds owner@example.com under the role admin
+    And an account a person made by hand holds admin@example.com under the role editor
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "admin@example.com already belongs to an account that is not an administrator, so run sudo gophenberg server:install again and give the first administrator another email"
+    And the install record marks the step admin started
 
   Scenario: A later run keeps the person's .env lines and writes a changed restart delay from server.env
     Given an earlier run installed Gophenberg for example.com on the server

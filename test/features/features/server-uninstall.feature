@@ -2,8 +2,11 @@ Feature: Remove Gophenberg from a Linux server
   sudo gophenberg server:uninstall removes what server:install set up and
   keeps the site's data. It reads its settings from
   /etc/gophenberg/server.env alone, never from the environment or the
-  site's .env, and stops on a server with no install record. It lists what
-  it removes and what it keeps, and without -yes it changes nothing. With
+  site's .env. It stops on a server with no install record, on a run with
+  -yes while another server:install or server:uninstall is running, and
+  at a Caddyfile the person changed that is a link while its import line
+  has to come out. It lists what it removes and what it keeps, and
+  without -yes it changes nothing. With
   -yes it stops and removes the site's service, takes Gophenberg's site
   out of Caddy, and removes the command on the path, the installer's own
   copy, the builds, the downloads and the links. It keeps the database and
@@ -11,13 +14,17 @@ Feature: Remove Gophenberg from a Linux server
   backups, server.env, the install record, the system user gophenberg and
   the packages. A Caddyfile still as server:install wrote it goes back to
   the one the caddy package wrote, and a Caddyfile the person changed
-  loses only its import line, so a later server:install asks for that
-  line back and never writes over it. With -delete-data it also drops the
+  stays and loses only its import line, so a later server:install asks
+  for that line back and never writes over it. The install record keeps
+  the sum of that Caddyfile before Caddy's files change, and Caddy
+  restarts on it where server:install never ended its caddy step, else
+  it reloads. With -delete-data it also drops the
   database and its role and removes the install root, server.env and the
   user, and it removes an install root only when the install record shows
   that server:install made it. The record keeps the domain, since the
   kept Caddy still holds port 80, so a later install for that domain
-  skips the domain check. Each piece already gone is skipped, so a
+  skips the domain check. A unit systemd already let go of once the site
+  stopped counts as cleared. Each piece already gone is skipped, so a
   second run finds nothing left to remove. The install record shows that
   the Caddyfile is going back before it does, so a run cut off part way
   is finished by the next one, which restarts or reloads Caddy where the
@@ -61,6 +68,16 @@ Feature: Remove Gophenberg from a Linux server
     When the operator runs "server:uninstall -yes"
     Then the run stops with "server:uninstall needs /etc/caddy/Caddyfile to take Gophenberg's site out of Caddy, and it is not there, so nothing was changed"
     And nothing on the server changed
+
+  Scenario: A Caddyfile the person changed that is a link to another file holding the import line is refused
+    Given server:install installed Gophenberg for example.com on the server
+    And the person added the site example.org to /etc/caddy/Caddyfile
+    And the person moved /etc/caddy/Caddyfile to /etc/caddy/main.caddy and left a link to it in its place
+    When the operator runs "server:uninstall -yes"
+    Then the run stops with "/etc/caddy/Caddyfile is a link, and the line "import /etc/caddy/gophenberg.caddy" must come out of the file it leads to before server:uninstall runs again, so nothing was changed"
+    And nothing on the server changed
+    And /etc/caddy/Caddyfile is still a link to /etc/caddy/main.caddy
+    And /etc/caddy/main.caddy still holds the line "import /etc/caddy/gophenberg.caddy"
 
   Scenario: Without -yes it lists what it removes and keeps and changes nothing
     Given server:install installed Gophenberg for example.com on the server
@@ -140,6 +157,32 @@ Feature: Remove Gophenberg from a Linux server
     And the install record marks only these steps ended: server-env, packages, user, database, admin
     And the install record owns only these pieces: postgresql, caddy, /opt/gophenberg
     And the install record holds no SHA-256 of a Caddyfile
+
+  Scenario: Units systemd already let go of once the site stopped count as cleared, and the run goes on
+    Given server:install installed Gophenberg for example.com on the server
+    And systemd lets go of the site's units once the site stops
+    When the operator runs "server:uninstall -yes"
+    Then the run succeeds
+    And the run ran these programs, the checks' own left out:
+      """
+      systemctl disable --now gophenberg.service
+      systemctl reset-failed gophenberg.service gophenberg-rollback.service
+      systemctl daemon-reload
+      systemctl daemon-reload
+      systemctl restart caddy.service
+      """
+    And the run ends with:
+      """
+      server:uninstall removed what it lists and kept the rest.
+      """
+    And the server holds nothing at these paths:
+      """
+      /etc/systemd/system/gophenberg.service
+      /etc/systemd/system/gophenberg-rollback.service
+      /etc/caddy/gophenberg.caddy
+      /usr/local/bin/gophenberg
+      /opt/gophenberg/versions
+      """
 
   Scenario: It keeps a Caddyfile the person changed, with the drop-in, and takes out only the import line
     Given server:install installed Gophenberg for example.com on the server
@@ -381,6 +424,50 @@ Feature: Remove Gophenberg from a Linux server
     And the server holds /etc/caddy/Caddyfile as the caddy package wrote it
     And the server holds nothing at /etc/caddy/Caddyfile.before-gophenberg
     And the install record holds no SHA-256 of a Caddyfile
+
+  Scenario: A Caddyfile the person changed after a first run cut off in the caddy step stays, and Caddy restarts on it
+    Given a first run for example.com was cut off in the caddy step once it wrote the Caddyfile
+    And the person added the site example.org to /etc/caddy/Caddyfile
+    When the operator runs "server:uninstall -yes"
+    Then the run succeeds
+    And the run prints:
+      """
+      server:uninstall keeps:
+        /etc/caddy/Caddyfile, which changed since server:install wrote it, so a reinstall asks for that line back
+      """
+    And /etc/caddy/Caddyfile still holds the person's site
+    And /etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy"
+    And the run ran "systemctl restart caddy.service"
+    And the run never ran "systemctl reload caddy.service"
+    And the install record still holds the SHA-256 of the Caddyfile server:install wrote
+    And the install record marks the step caddy ended
+
+  Scenario: A Caddyfile the person wrote in place of the one a cut-off first run wrote stays, and a reinstall asks for the import line
+    Given a first run for example.com was cut off in the caddy step once it wrote the Caddyfile
+    And the person's own Caddy serves example.com from /etc/caddy/Caddyfile
+    When the operator runs "server:uninstall -yes"
+    Then the run succeeds
+    And the run prints:
+      """
+      server:uninstall keeps:
+        /etc/caddy/Caddyfile, which changed since server:install wrote it, so a reinstall asks for the line import /etc/caddy/gophenberg.caddy in it
+      """
+    And /etc/caddy/Caddyfile is as the person wrote it
+    And the run ran "systemctl restart caddy.service"
+    And the install record still holds the SHA-256 of the Caddyfile server:install wrote
+    When the operator runs "server:install -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "/etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy" that an earlier run wrote, which has Caddy serve the site, and it must go back in before server:install runs again, so nothing was changed"
+    And nothing on the server changed
+    And /etc/caddy/Caddyfile is as the person wrote it
+
+  Scenario: A reinstall after a cut-off first run never writes over the Caddyfile the person changed, even once server:uninstall stopped at Caddy
+    Given a first run for example.com was cut off in the caddy step once it wrote the Caddyfile
+    And the person added the site example.org to /etc/caddy/Caddyfile
+    And server:uninstall -yes was cut off at its first "systemctl restart caddy.service"
+    When the operator runs "server:install -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "/etc/caddy/Caddyfile lacks the line "import /etc/caddy/gophenberg.caddy" that an earlier run wrote, which has Caddy serve the site, and it must go back in before server:install runs again, so nothing was changed"
+    And nothing on the server changed
+    And /etc/caddy/Caddyfile still holds the person's site
 
   Scenario: A run cut off once the Caddyfile went back is finished by the next run, and a reinstall writes the Caddyfile again
     Given server:install installed Gophenberg for example.com on the server
