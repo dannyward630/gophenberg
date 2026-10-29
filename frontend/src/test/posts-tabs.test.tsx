@@ -336,5 +336,6 @@ test('keeps the list and the rows of All, marked busy, while the trash loads', a
 	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true')
 	trash.release()
 	expect(await screen.findByText('Old Notes')).toBeInTheDocument()
+	expect(screen.queryByText('Notes on the Next Release')).not.toBeInTheDocument()
 	expect(list).toBeInTheDocument()
 })
