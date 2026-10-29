@@ -449,11 +449,12 @@ func theAccountReadsTheSettings(ctx context.Context) error {
 
 // listSettingsRead is what the settings answer carries for the lists.
 type listSettingsRead struct {
-	PageSizes         []int  `json:"list_page_sizes"`
-	PageSize          int    `json:"list_page_size"`
-	ToastMilliseconds int    `json:"toast_milliseconds"`
-	ToastNameLength   int    `json:"toast_name_length"`
-	FormatLocale      string `json:"format_locale"`
+	PageSizes               []int  `json:"list_page_sizes"`
+	PageSize                int    `json:"list_page_size"`
+	ToastMilliseconds       int    `json:"toast_milliseconds"`
+	ToastActionMilliseconds int    `json:"toast_action_milliseconds"`
+	ToastNameLength         *int   `json:"toast_name_length"`
+	FormatLocale            string `json:"format_locale"`
 }
 
 // settingsRead returns what the last settings answer carried for the lists.
@@ -485,15 +486,27 @@ func theSettingsOfferThePageSizes(ctx context.Context, first, second, third, fou
 	return nil
 }
 
-// theSettingsKeepAToast asserts how long a toast stays and how much of a name it shows.
-func theSettingsKeepAToast(ctx context.Context, milliseconds, length int) error {
+// theSettingsKeepAToast asserts how long a toast stays, without an action and with one.
+func theSettingsKeepAToast(ctx context.Context, milliseconds, actionMilliseconds int) error {
 	held, err := settingsRead(ctx)
 	if err != nil {
 		return err
 	}
-	if held.ToastMilliseconds != milliseconds || held.ToastNameLength != length {
-		return fmt.Errorf("the settings keep a toast %d milliseconds naming %d characters, want %d and %d",
-			held.ToastMilliseconds, held.ToastNameLength, milliseconds, length)
+	if held.ToastMilliseconds != milliseconds || held.ToastActionMilliseconds != actionMilliseconds {
+		return fmt.Errorf("the settings keep a toast %d milliseconds, %d with an action, want %d and %d",
+			held.ToastMilliseconds, held.ToastActionMilliseconds, milliseconds, actionMilliseconds)
+	}
+	return nil
+}
+
+// theSettingsLeaveTheNameInAToastWhole asserts the settings name no length a toast cuts a name to.
+func theSettingsLeaveTheNameInAToastWhole(ctx context.Context) error {
+	held, err := settingsRead(ctx)
+	if err != nil {
+		return err
+	}
+	if held.ToastNameLength != nil {
+		return fmt.Errorf("the settings cut the name in a toast at %d characters, want it whole", *held.ToastNameLength)
 	}
 	return nil
 }
@@ -562,6 +575,8 @@ func initializeContentList(sc *godog.ScenarioContext) {
 	sc.Then(`^the request is refused with the code "([^"]*)"$`, theRequestIsRefusedWithTheCode)
 	sc.Then(`^the settings offer the page sizes (\d+), (\d+), (\d+) and (\d+) opening at (\d+)$`,
 		theSettingsOfferThePageSizes)
-	sc.Then(`^the settings keep a toast (\d+) milliseconds naming at most (\d+) characters$`, theSettingsKeepAToast)
+	sc.Then(`^the settings keep a toast (\d+) milliseconds, or (\d+) milliseconds when it offers an action$`,
+		theSettingsKeepAToast)
+	sc.Then(`^the settings leave the name in a toast whole$`, theSettingsLeaveTheNameInAToastWhole)
 	sc.Then(`^the settings write dates and numbers in "([^"]*)"$`, theSettingsWriteDatesAndNumbersIn)
 }
