@@ -231,9 +231,9 @@ func TestServerInstallRefusesAnInstallRootThatIsNotAbsolute(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{"GOPHENBERG_INSTALL_ROOT": "planted/root"}
+	machine := installer.Machine{Root: t.TempDir(), Lstat: lstatAsRoot, Euid: func() int { return 0 }}
 
-	got := testkit.Run(t, onMachine(env, installer.Machine{Root: t.TempDir()}), "", "server:install", "-dry-run",
-		"-domain", "example.com")
+	got := testkit.Run(t, onMachine(env, machine), "", "server:install", "-dry-run", "-domain", "example.com")
 
 	wantAnswer(t, got, gonsole.ExitFailed,
 		`gophenberg: GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "planted/root"`)
@@ -337,6 +337,9 @@ func TestOnlyTheServerCommandsLeaveTheDotEnvFileUnread(t *testing.T) {
 
 func TestMainBinaryLeavesTheDotEnvFileUnreadForTheServerCommands(t *testing.T) {
 	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, which takes server:install past its root check onto the real server")
+	}
 
 	binary, env := testkit.CoverBinary(t, "GOPHENBERG_", "gophenberg")
 	folder := t.TempDir()
@@ -345,14 +348,13 @@ func TestMainBinaryLeavesTheDotEnvFileUnreadForTheServerCommands(t *testing.T) {
 		t.Fatalf("writing the .env file: %v", err)
 	}
 
-	install, code := stderrOf(t, binary, append(slices.Clone(env), "GOPHENBERG_INSTALL_MEMORY_FLOOR_MB=0"), folder,
-		"server:install", "-dry-run", "-domain", "example.com")
+	install, code := stderrOf(t, binary, env, folder, "server:install", "-dry-run", "-domain", "example.com")
 	status, _ := stderrOf(t, binary, env, folder, "update:status")
 
-	want := "gophenberg: GOPHENBERG_INSTALL_MEMORY_FLOOR_MB: must stand above zero, got \"0\"\n"
+	want := "gophenberg: server:install must run as root, such as with sudo, so nothing was changed\n"
 	if install != want || code != gonsole.ExitFailed {
-		t.Errorf("server:install = %d, printing %q, want %d and only the memory floor of its environment %q, the "+
-			".env file never read", code, install, gonsole.ExitFailed, want)
+		t.Errorf("server:install = %d, printing %q, want %d and only the root line %q, nothing of the .env file",
+			code, install, gonsole.ExitFailed, want)
 	}
 	if want := `GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "planted/root"`; !strings.Contains(status, want) {
 		t.Errorf("update:status printed %q, want the .env file read and %q", status, want)
