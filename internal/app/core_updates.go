@@ -181,9 +181,7 @@ func rolledBack(settings updater.Settings, env gonsole.Env, afterFailure bool) (
 	if !afterFailure {
 		return updater.Rollback(settings)
 	}
-	return updater.RollbackAfterFailure(settings, updater.Failure{
-		ServiceResult: env.Getenv("MONITOR_SERVICE_RESULT"), ExitStatus: env.Getenv("MONITOR_EXIT_STATUS"),
-	})
+	return updater.RollbackAfterFailure(settings, updater.Failure{ServiceResult: env.Getenv("MONITOR_SERVICE_RESULT")})
 }
 
 // updateStatusCommand returns the command that shows the builds of a server install, its last update and backups.
