@@ -39,7 +39,8 @@ func listSettingsFrom(env gonsole.Env) (server.ListSettings, error) {
 	if err != nil {
 		return server.ListSettings{}, err
 	}
-	held.ToastNameLength, err = env.Count("TOAST_NAME_LENGTH", server.DefaultToastNameLength)
+	held.ToastActionDuration, err = env.Duration("TOAST_ACTION_DURATION", server.DefaultToastActionDuration,
+		browserTimer...)
 	if err != nil {
 		return server.ListSettings{}, err
 	}
