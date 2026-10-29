@@ -33,21 +33,6 @@ function shown(page: Page, message: string) {
 }
 
 /**
- * Returns a title as the site's toasts name it, cut at the served length with an ellipsis when it runs longer.
- * @param page - The page whose session reads the settings.
- * @param title - The title to name.
- * @returns The name a toast shows.
- */
-async function toastName(page: Page, title: string): Promise<string> {
-	const served = (await (await page.request.get('/api/settings')).json()) as { toast_name_length: number }
-	const characters = Array.from(title)
-	if (characters.length <= served.toast_name_length) {
-		return title
-	}
-	return `${characters.slice(0, served.toast_name_length).join('').trimEnd()}…`
-}
-
-/**
  * Returns the tab of the list's status filter carrying the label, matched whole so no title holding the word answers.
  * @param page - The page holding the list.
  * @param label - The label of the tab.
@@ -258,19 +243,18 @@ test('takes a post trashed from the editor back out of the trash from the list',
 	await page.getByRole('button', { name: 'Save draft' }).click()
 	await expect(shown(page, 'Draft saved.')).toBeVisible()
 
-	const named = await toastName(page, TRASH_TITLE)
 	await page.getByRole('button', { name: 'Move to trash' }).click()
-	const confirm = page.getByRole('dialog', { name: `Are you sure you want to move "${named}" to the trash?` })
+	const confirm = page.getByRole('dialog', { name: `Are you sure you want to move "${TRASH_TITLE}" to the trash?` })
 	await expect(confirm.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
 	await confirm.getByRole('button', { name: 'Move to trash' }).click()
 
 	await expect(page.getByRole('main').getByRole('button', { name: 'Add Post', exact: true })).toBeVisible()
-	await expect(shown(page, `"${named}" moved to the trash.`)).toBeVisible()
+	await expect(shown(page, `"${TRASH_TITLE}" moved to the trash.`)).toBeVisible()
 
 	await statusTab(page, 'Trash').click()
 	await page.getByRole('row').filter({ hasText: TRASH_TITLE }).getByRole('button', { name: 'Actions' }).click()
 	await page.getByRole('menuitem', { name: 'Restore' }).click()
-	await expect(shown(page, `"${named}" has been restored.`)).toBeVisible()
+	await expect(shown(page, `"${TRASH_TITLE}" has been restored.`)).toBeVisible()
 
 	await statusTab(page, 'Draft').click()
 	await expect(page.getByRole('link', { name: TRASH_TITLE })).toBeVisible()
@@ -279,7 +263,6 @@ test('takes a post trashed from the editor back out of the trash from the list',
 test('lays out Move to trash and the small confirm it opens as the WordPress editor does', async ({ page }) => {
 	await openNewDraft(page)
 	await page.getByRole('textbox', { name: 'Title' }).fill(LAYOUT_TITLE)
-	const named = await toastName(page, LAYOUT_TITLE)
 	const trigger = page.getByRole('button', { name: 'Move to trash' })
 
 	const placed = await trigger.evaluate((element) => {
@@ -305,7 +288,7 @@ test('lays out Move to trash and the small confirm it opens as the WordPress edi
 	expect(field?.y ?? 0).toBeGreaterThan((button?.y ?? 0) + (button?.height ?? 0))
 
 	await trigger.click()
-	const confirm = page.getByRole('dialog', { name: `Are you sure you want to move "${named}" to the trash?` })
+	const confirm = page.getByRole('dialog', { name: `Are you sure you want to move "${LAYOUT_TITLE}" to the trash?` })
 	await expect(confirm.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused()
 	await expect(confirm.getByRole('heading')).toHaveCount(0)
 	await expect.poll(async () => Math.round((await confirm.boundingBox())?.width ?? 0)).toBe(400)
@@ -356,10 +339,9 @@ test('reads a trashed post and restores it into the editor', async ({ page }) =>
 	await page.getByRole('textbox', { name: 'Title' }).fill(READ_TITLE)
 	await page.getByRole('button', { name: 'Save draft' }).click()
 	await expect(shown(page, 'Draft saved.')).toBeVisible()
-	const named = await toastName(page, READ_TITLE)
 	await page.getByRole('button', { name: 'Move to trash' }).click()
 	await page.getByRole('dialog').getByRole('button', { name: 'Move to trash' }).click()
-	await expect(shown(page, `"${named}" moved to the trash.`)).toBeVisible()
+	await expect(shown(page, `"${READ_TITLE}" moved to the trash.`)).toBeVisible()
 
 	await statusTab(page, 'Trash').click()
 	await page.getByRole('link', { name: READ_TITLE }).click()

@@ -372,29 +372,33 @@ test.describe('on a phone', () => {
 		expect(moved.widest).toBe(PHONE.width)
 	})
 
-	test('raises the saved message across the foot of the screen on one line', async ({ page }) => {
-		await openDraft(page)
-		await page.getByRole('textbox', { name: 'Title' }).fill(`A draft the phone toast saved ${RUN}`)
+	test.describe('under reduced motion', () => {
+		test.use({ reducedMotion: 'reduce' })
 
-		await page.getByRole('button', { name: 'Save draft' }).tap()
+		test('raises the saved message across the foot of the screen on one line', async ({ page }) => {
+			await openDraft(page)
+			await page.getByRole('textbox', { name: 'Title' }).fill(`A draft the phone toast saved ${RUN}`)
 
-		const toast = page.locator('#root').getByText('Draft saved.')
-		await expect(toast).toBeVisible()
-		const placed = await toast.evaluate((element) => {
-			const held = element.closest('.godmin-toast') as HTMLElement
-			const style = getComputedStyle(held)
-			const inset = ['padding-top', 'padding-bottom', 'border-top-width', 'border-bottom-width'].reduce(
-				(total, side) => total + Number.parseFloat(style.getPropertyValue(side)),
-				0,
-			)
-			const card = held.getBoundingClientRect()
-			return {
-				centre: Math.round((card.left + card.right) / 2),
-				gap: Math.round(window.innerHeight - card.bottom),
-				lines: Math.round((card.height - inset) / Number.parseFloat(style.lineHeight)),
-			}
+			await page.getByRole('button', { name: 'Save draft' }).tap()
+
+			const toast = page.locator('#root').getByText('Draft saved.')
+			await expect(toast).toBeVisible()
+			const placed = () => toast.evaluate((element) => {
+				const held = element.closest('.godmin-toast') as HTMLElement
+				const style = getComputedStyle(held)
+				const inset = ['padding-top', 'padding-bottom', 'border-top-width', 'border-bottom-width'].reduce(
+					(total, side) => total + Number.parseFloat(style.getPropertyValue(side)),
+					0,
+				)
+				const card = held.getBoundingClientRect()
+				return {
+					centre: Math.round((card.left + card.right) / 2),
+					gap: Math.round(window.innerHeight - card.bottom),
+					lines: Math.round((card.height - inset) / Number.parseFloat(style.lineHeight)),
+				}
+			})
+			await expect.poll(placed).toEqual({ centre: PHONE.width / 2, gap: 32, lines: 1 })
 		})
-		expect(placed).toEqual({ centre: PHONE.width / 2, gap: 32, lines: 1 })
 	})
 
 	test('shows the move to trash confirm as a sheet along the bottom edge and closes it on a tap', async ({ page }) => {
