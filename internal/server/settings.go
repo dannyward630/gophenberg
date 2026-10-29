@@ -19,12 +19,12 @@ import (
 
 // The list settings served when the environment names none.
 const (
-	DefaultListPageSize    = 20
-	DefaultListPageCap     = 100
-	DefaultPickerPageSize  = 50
-	DefaultToastDuration   = 6 * time.Second
-	DefaultToastNameLength = 45
-	DefaultFormatLocale    = "es-ES"
+	DefaultListPageSize        = 20
+	DefaultListPageCap         = 100
+	DefaultPickerPageSize      = 50
+	DefaultToastDuration       = 6 * time.Second
+	DefaultToastActionDuration = 10 * time.Second
+	DefaultFormatLocale        = "es-ES"
 )
 
 // DefaultListPageSizes returns the page sizes a list offers when the environment names none.
@@ -50,10 +50,10 @@ type ListSettings struct {
 	PickerPageSize int
 	// PageCap is the most items one admin page carries, a larger request answered at the cap.
 	PageCap int
-	// ToastDuration is how long a confirmation toast stays on screen.
+	// ToastDuration is how long a confirmation toast with no action stays on screen.
 	ToastDuration time.Duration
-	// ToastNameLength is how many characters of an item's name a toast shows.
-	ToastNameLength int
+	// ToastActionDuration is how long a confirmation toast with an action, such as Undo, stays on screen.
+	ToastActionDuration time.Duration
 	// FormatLocale is the locale dates and numbers are written in, whatever the interface language.
 	FormatLocale string
 }
@@ -68,24 +68,24 @@ func listsOf(cfg Config) ListSettings {
 	held.PickerPageSize = cmp.Or(held.PickerPageSize, DefaultPickerPageSizeAmong(held.PageSizes, held.PageSize))
 	held.PageCap = cmp.Or(held.PageCap, DefaultListPageCap)
 	held.ToastDuration = cmp.Or(held.ToastDuration, DefaultToastDuration)
-	held.ToastNameLength = cmp.Or(held.ToastNameLength, DefaultToastNameLength)
+	held.ToastActionDuration = cmp.Or(held.ToastActionDuration, DefaultToastActionDuration)
 	held.FormatLocale = cmp.Or(held.FormatLocale, DefaultFormatLocale)
 	return held
 }
 
 // settingsResponse names the values the site chose for itself and the list and screen settings it serves read only.
 type settingsResponse struct {
-	LocaleDefault     string `json:"locale_default"`
-	ContentPerPage    int    `json:"content_per_page"`
-	JPEGQuality       int    `json:"jpeg_quality"`
-	ListPageSizes     []int  `json:"list_page_sizes"`
-	ListPageSize      int    `json:"list_page_size"`
-	PickerPageSize    int    `json:"picker_page_size"`
-	ToastMilliseconds int64  `json:"toast_milliseconds"`
-	ToastNameLength   int    `json:"toast_name_length"`
-	FormatLocale      string `json:"format_locale"`
-	UpdatesProgress   int64  `json:"updates_progress_milliseconds"`
-	UpdatesRestart    int64  `json:"updates_restart_wait_milliseconds"`
+	LocaleDefault           string `json:"locale_default"`
+	ContentPerPage          int    `json:"content_per_page"`
+	JPEGQuality             int    `json:"jpeg_quality"`
+	ListPageSizes           []int  `json:"list_page_sizes"`
+	ListPageSize            int    `json:"list_page_size"`
+	PickerPageSize          int    `json:"picker_page_size"`
+	ToastMilliseconds       int64  `json:"toast_milliseconds"`
+	ToastActionMilliseconds int64  `json:"toast_action_milliseconds"`
+	FormatLocale            string `json:"format_locale"`
+	UpdatesProgress         int64  `json:"updates_progress_milliseconds"`
+	UpdatesRestart          int64  `json:"updates_restart_wait_milliseconds"`
 }
 
 // settingsRequest names the values a caller asks the site to choose.
@@ -153,14 +153,14 @@ func (s *server) chosenSettings(ctx context.Context) (settingsResponse, error) {
 		ContentPerPage: content.ResolvePerPage(held[content.PerPageSettingKey], found[content.PerPageSettingKey]),
 		JPEGQuality: mediahost.ResolveJPEGQuality(
 			held[mediahost.JPEGQualityKey], found[mediahost.JPEGQualityKey]),
-		ListPageSizes:     s.lists.PageSizes,
-		ListPageSize:      s.lists.PageSize,
-		PickerPageSize:    s.lists.PickerPageSize,
-		ToastMilliseconds: s.lists.ToastDuration.Milliseconds(),
-		ToastNameLength:   s.lists.ToastNameLength,
-		FormatLocale:      s.lists.FormatLocale,
-		UpdatesProgress:   s.updatesScreen.ProgressInterval.Milliseconds(),
-		UpdatesRestart:    s.updatesScreen.RestartWait.Milliseconds(),
+		ListPageSizes:           s.lists.PageSizes,
+		ListPageSize:            s.lists.PageSize,
+		PickerPageSize:          s.lists.PickerPageSize,
+		ToastMilliseconds:       s.lists.ToastDuration.Milliseconds(),
+		ToastActionMilliseconds: s.lists.ToastActionDuration.Milliseconds(),
+		FormatLocale:            s.lists.FormatLocale,
+		UpdatesProgress:         s.updatesScreen.ProgressInterval.Milliseconds(),
+		UpdatesRestart:          s.updatesScreen.RestartWait.Milliseconds(),
 	}, nil
 }
 
