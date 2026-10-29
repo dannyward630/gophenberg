@@ -16,7 +16,6 @@ import { bulkBar } from './bulkBar'
 import { gate } from './gate'
 import { renderAt, renderRoutedAt } from './render'
 import { storedPost } from './postFixture'
-import { siteSettings } from './siteSettings'
 import { clickDimmedPage, waitBusy } from './typeFixtures'
 import { warmPostsScreen } from './warm'
 
@@ -580,47 +579,35 @@ test('opens the permanent delete confirm at the medium width WordPress gives it'
 	expect(await screen.findByRole('dialog')).toHaveClass('has-size-medium')
 })
 
-test('cuts a long title in the permanent delete confirm at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 5 })))
-	renderAt('/content/post')
-	await openTrashedRowActions()
-
-	await userEvent.click(await screen.findByRole('menuitem', { name: 'Permanently delete…' }))
-
-	expect(await screen.findByRole('dialog')).toHaveTextContent('Delete "Old N…" for good? This cannot be undone.')
-})
-
 test('asks the Spanish permanent delete in the words of its title, button and toast', async () => {
 	setLocaleData(await catalogFor('es-ES'), 'gophenberg')
 	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
-	const named = (title: string) => title
 
-	expect(deleteQuestion([OLD_NOTES], named, postName))
+	expect(deleteQuestion([OLD_NOTES], postName))
 		.toBe('¿Borrar permanentemente «Old Notes»? Esto no se puede deshacer.')
-	expect(deleteQuestion([OLD_NOTES, { ...OLD_NOTES, id: SECOND_ID }], named, postName))
+	expect(deleteQuestion([OLD_NOTES, { ...OLD_NOTES, id: SECOND_ID }], postName))
 		.toBe('¿Borrar permanentemente 2 elementos? Esto no se puede deshacer.')
 })
 
 test('counts exact millions with "de" in the Spanish trash, restore and delete words', async () => {
 	setLocaleData(await catalogFor('es-ES'), 'gophenberg')
 	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
-	const named = (title: string) => title
 	const million = 1000000
 	const failure: BulkFailure<Post> = { item: OLD_NOTES, error: new Error('refused') }
 	const picked = Array.from({ length: million }, () => OLD_NOTES)
 	const refused = Array.from({ length: million }, () => failure)
 
-	expect(trashQuestion(picked, named)).toBe('¿Mover 1.000.000 de elementos a la papelera?')
-	expect(deleteQuestion(picked, named, postName))
+	expect(trashQuestion(picked)).toBe('¿Mover 1.000.000 de elementos a la papelera?')
+	expect(deleteQuestion(picked, postName))
 		.toBe('¿Borrar permanentemente 1.000.000 de elementos? Esto no se puede deshacer.')
-	expect(trashWords(named).done(million, undefined)).toBe('1.000.000 de elementos movidos a la papelera.')
-	expect(trashWords(named).failed(refused, million)).toBe('No se han podido mover 1.000.000 de elementos a la papelera.')
-	expect(restoreWords(named, 'page').done(million, undefined)).toBe('Se han restaurado 1.000.000 de páginas.')
-	expect(restoreWords(named, 'post').done(million, undefined)).toBe('Se han restaurado 1.000.000 de entradas.')
-	expect(restoreWords(named, 'post').failed(refused, million))
+	expect(trashWords().done(million, undefined)).toBe('1.000.000 de elementos movidos a la papelera.')
+	expect(trashWords().failed(refused, million)).toBe('No se han podido mover 1.000.000 de elementos a la papelera.')
+	expect(restoreWords('page').done(million, undefined)).toBe('Se han restaurado 1.000.000 de páginas.')
+	expect(restoreWords('post').done(million, undefined)).toBe('Se han restaurado 1.000.000 de entradas.')
+	expect(restoreWords('post').failed(refused, million))
 		.toBe('No se han podido restaurar 1.000.000 de elementos.')
-	expect(deleteWords(named, postName).done(million, undefined)).toBe('1.000.000 de elementos borrados permanentemente.')
-	expect(deleteWords(named, postName).failed(refused, million))
+	expect(deleteWords(postName).done(million, undefined)).toBe('1.000.000 de elementos borrados permanentemente.')
+	expect(deleteWords(postName).failed(refused, million))
 		.toBe('No se han podido borrar permanentemente 1.000.000 de elementos.')
 })
 

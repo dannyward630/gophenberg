@@ -72,15 +72,14 @@ function refusedLines(failures: BulkFailure<File>[], asked: number): string {
 
 /**
  * Returns the words an upload to the library reads as.
- * @param name - Cuts a file name to the length a toast shows.
  * @returns The toast naming the one file stored or counting the files stored, and the notice for the refused ones.
  */
-function uploadWords(name: (title: string) => string): BulkWords<File> {
+function uploadWords(): BulkWords<File> {
 	return {
 		done: (count, only) =>
 			only === undefined
 				? sprintf(_n('Uploaded %s file.', 'Uploaded %s files.', count, 'gophenberg'), formatNumber(count))
-				: sprintf(__('"%s" uploaded.', 'gophenberg'), name(only.name)),
+				: sprintf(__('"%s" uploaded.', 'gophenberg'), only.name),
 		failed: refusedLines,
 	}
 }
@@ -150,7 +149,7 @@ function useUpload(region: RefObject<HTMLDivElement | null>) {
 		if (outcome.done > 0) {
 			await refresh()
 		}
-		const toast = bulkNotes(files, outcome, uploadWords(toaster.name)).toast
+		const toast = bulkNotes(files, outcome, uploadWords()).toast
 		if (toast !== undefined) {
 			toaster.show(toast)
 		}
@@ -296,7 +295,7 @@ function MediaList(props: {
 			onChangeSelection={openOnTap(list, openTapped(media.data, props.mayChange, (item) => edit(item, 'row')))}
 			isItemClickable={props.mayChange}
 			onClickItem={(item: MediaItem) => edit(item, focusedTrigger())}
-			isLoading={media.isFetching}
+			isLoading={media.isPending || media.isPlaceholderData}
 			getItemId={(item: MediaItem) => String(item.id)}
 			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), {
 				type: _x('Media', 'admin section', 'gophenberg').toLowerCase(),

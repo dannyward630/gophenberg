@@ -3,6 +3,8 @@
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
+test.use({ reducedMotion: 'reduce' })
+
 /**
  * Opens a fresh draft, gives it a title and saves it, raising the saved message.
  * @param page - The page to drive.

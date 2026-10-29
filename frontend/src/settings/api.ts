@@ -15,7 +15,7 @@ const listSettingsSchema = z.object({
 	list_page_size: z.number(),
 	picker_page_size: z.number(),
 	toast_milliseconds: z.number(),
-	toast_name_length: z.number(),
+	toast_action_milliseconds: z.number(),
 	format_locale: z.string(),
 	updates_progress_milliseconds: z.number(),
 	updates_restart_wait_milliseconds: z.number(),

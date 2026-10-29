@@ -7,7 +7,9 @@ import userEvent from '@testing-library/user-event'
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
 import { beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 
+import { mediaQueryKey } from '../media/api'
 import { gate } from './gate'
+import { leaveStale } from './reopen'
 import { adminUser, renderAt, renderRoutedAt } from './render'
 import { siteSettings } from './siteSettings'
 
@@ -431,10 +433,41 @@ test('keeps the cards of a page and its page count while the next one loads', as
 	await waitFor(() => expect(asking).toBe(true))
 
 	expect(screen.getByText('Harbor at dawn')).toBeInTheDocument()
+	expect(document.querySelector('.dataviews-view-grid')).toHaveAttribute('aria-busy', 'true')
 	const pages = within(screen.getByRole('combobox', { name: 'Current page' })).getAllByRole('option')
 	expect(pages.map((page) => page.textContent)).toEqual(['1', '2', '3'])
 	next.release()
 	expect(await screen.findByText('Manual')).toBeInTheDocument()
+})
+
+test('shows the cards it holds at once when the library opens again, while it reads them anew', async () => {
+	const { client, router } = renderRoutedAt('/media')
+	await screen.findByText('Harbor at dawn')
+	await leaveStale(router, client, mediaQueryKey)
+	const again = gate()
+	let reading = false
+	server.use(
+		http.get('/api/media', async () => {
+			reading = true
+			await again.held
+			return HttpResponse.json({
+				items: [HARBOR, { ...MANUAL, title: 'Field manual' }],
+				total: 2,
+				per_page: siteSettings.list_page_size,
+			})
+		}),
+	)
+
+	await act(async () => {
+		await router.navigate({ to: '/media' })
+	})
+
+	expect(await screen.findByText('Harbor at dawn')).toBeInTheDocument()
+	expect(document.querySelector('.dataviews-view-grid')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
+	again.release()
+	expect(await screen.findByText('Field manual')).toBeInTheDocument()
+	expect(screen.queryByText('Manual')).not.toBeInTheDocument()
 })
 
 test('opens Edit from a tap on a phone row of the page on show while the next page loads', async () => {

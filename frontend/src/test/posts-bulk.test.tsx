@@ -7,7 +7,6 @@ import { beforeAll, beforeEach, expect, test, vi } from 'vitest'
 
 import { renderAt, renderRoutedAt } from './render'
 import { storedPost } from './postFixture'
-import { siteSettings } from './siteSettings'
 import { warmPostsScreen } from './warm'
 
 warmPostsScreen()
@@ -89,15 +88,16 @@ test('trashes every selected post behind one confirm', async () => {
 	expect(trashed).toEqual(expect.arrayContaining([FIRST.id, SECOND.id]))
 })
 
-test('quotes the one ticked post in the bulk trash confirm, cut at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 10 })))
+test('quotes the whole title of the one ticked post in the bulk trash confirm, however long', async () => {
+	const long = 'Notes from a long weekend walk along the harbor at dawn'
+	listed = [{ ...FIRST, title: long }, SECOND]
 	renderAt('/content/post')
-	await screen.findByText('Welcome to Gophenberg')
-	await userEvent.click(screen.getByRole('checkbox', { name: 'Welcome to Gophenberg' }))
+	await screen.findByText(long)
+	await userEvent.click(screen.getByRole('checkbox', { name: long }))
 
 	await userEvent.click(screen.getByRole('button', { name: 'Trash…' }))
 
-	expect(await screen.findByRole('dialog')).toHaveTextContent('Move "Welcome to…" to the trash?')
+	expect(await screen.findByRole('dialog')).toHaveTextContent(`Move "${long}" to the trash?`)
 })
 
 test('stops offering the bulk trash once the ticked posts sit in the trash', async () => {

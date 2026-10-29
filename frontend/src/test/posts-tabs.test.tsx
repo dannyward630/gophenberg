@@ -316,9 +316,10 @@ test('offers no Empty Trash from the trash of another type while an empty trash 
 	expect(await screen.findByText('No items found.')).toBeInTheDocument()
 })
 
-test('never shows the rows of All under Trash while the trash loads', async () => {
+test('keeps the list and the rows of All, marked busy, while the trash loads', async () => {
 	renderAt('/content/post')
 	await screen.findByText('Notes on the Next Release')
+	const list = document.querySelector('.dataviews-wrapper')
 	const trash = gate()
 	server.use(
 		http.get('/api/content', async () => {
@@ -330,7 +331,11 @@ test('never shows the rows of All under Trash while the trash loads', async () =
 	await userEvent.click(tab('Trash'))
 
 	await waitFor(() => expect(tab('Trash')).toHaveAttribute('aria-current', 'page'))
-	expect(screen.queryByText('Notes on the Next Release')).not.toBeInTheDocument()
+	expect(list).toBeInTheDocument()
+	expect(screen.getByText('Notes on the Next Release')).toBeInTheDocument()
+	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true')
 	trash.release()
 	expect(await screen.findByText('Old Notes')).toBeInTheDocument()
+	expect(screen.queryByText('Notes on the Next Release')).not.toBeInTheDocument()
+	expect(list).toBeInTheDocument()
 })

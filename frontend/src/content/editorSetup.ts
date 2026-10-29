@@ -77,7 +77,7 @@ export function previewItem(width: PreviewWidth) {
  * @returns The class attribute of the editor root.
  */
 export function editorClass(narrow: boolean): string {
-	return narrow ? 'gophenberg-editor gophenberg-editor--narrow godmin-arrival' : 'gophenberg-editor godmin-arrival'
+	return narrow ? 'gophenberg-editor gophenberg-editor--narrow' : 'gophenberg-editor'
 }
 
 /**

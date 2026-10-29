@@ -23,7 +23,7 @@ export function TrashPost({ postId, title }: { postId: string, title: string }) 
 	const [asking, setAsking] = useState(false)
 	const [trashing, setTrashing] = useState(false)
 	const label = __('Move to trash', 'gophenberg')
-	const named = toaster.name(title === '' ? __('(no title)', 'gophenberg') : title)
+	const named = title === '' ? __('(no title)', 'gophenberg') : title
 	const trash = () => {
 		setTrashing(true)
 		const editing = router.latestLocation.pathname

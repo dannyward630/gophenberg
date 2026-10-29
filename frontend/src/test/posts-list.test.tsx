@@ -11,6 +11,7 @@ import '../index.css'
 import { catalogFor } from '../i18n/catalog'
 import { gate } from './gate'
 import { storedPostWithId } from './postFixture'
+import { leaveStale } from './reopen'
 import { renderAt, renderRoutedAt } from './render'
 import { siteSettings } from './siteSettings'
 import { warmPostsScreen } from './warm'
@@ -176,7 +177,7 @@ test('offers no page sizes when the settings could not be read', async () => {
 	expect(screen.queryByRole('radiogroup', { name: 'Items per page' })).not.toBeInTheDocument()
 })
 
-test('keeps the rows of a page while the next one loads', async () => {
+test('keeps the rows of a page, marked busy, while the next one loads', async () => {
 	serveRows([PUBLISHED], 45, 20)
 	renderAt('/content/post')
 	await screen.findByText('Welcome to Gophenberg')
@@ -191,8 +192,39 @@ test('keeps the rows of a page while the next one loads', async () => {
 	await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
 
 	expect(screen.getByText('Welcome to Gophenberg')).toBeInTheDocument()
+	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true')
 	next.release()
 	expect(await screen.findByText('Notes on the Next Release')).toBeInTheDocument()
+})
+
+test('shows the rows it holds at once when the list opens again, while it reads them anew', async () => {
+	const { client, router } = renderRoutedAt('/content/post')
+	await screen.findByText('Welcome to Gophenberg')
+	await leaveStale(router, client, ['posts'])
+	const again = gate()
+	let reading = false
+	server.use(
+		http.get('/api/content', async () => {
+			reading = true
+			await again.held
+			return HttpResponse.json({
+				items: [PUBLISHED, { ...DRAFT, title: 'Notes on the Final Release' }],
+				total: 2,
+				per_page: 20,
+			})
+		}),
+	)
+
+	await act(async () => {
+		await router.navigate({ to: '/content/$typeKey', params: { typeKey: 'post' } })
+	})
+
+	expect(await screen.findByText('Welcome to Gophenberg')).toBeInTheDocument()
+	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
+	again.release()
+	expect(await screen.findByText('Notes on the Final Release')).toBeInTheDocument()
+	expect(screen.queryByText('Notes on the Next Release')).not.toBeInTheDocument()
 })
 
 test('never shows the rows of one type while the list of another loads', async () => {

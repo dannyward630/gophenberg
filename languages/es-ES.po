@@ -179,6 +179,10 @@ msgstr "Desactivado"
 msgid "Dismiss"
 msgstr "Descartar"
 
+#, fuzzy
+msgid "Dismiss this notice"
+msgstr "Descartar este aviso"
+
 msgid "Document"
 msgstr "Documento"
 
@@ -284,6 +288,14 @@ msgstr "Cargando la entrada."
 
 msgid "Loading the screen."
 msgstr "Cargando la pantalla."
+
+#, fuzzy
+msgid "Loading the settings."
+msgstr "Cargando los ajustes."
+
+#, fuzzy
+msgid "Loading the updates."
+msgstr "Cargando las actualizaciones."
 
 msgid "Loading themes."
 msgstr "Cargando los temas."

@@ -193,6 +193,18 @@ test('shows the fields a plugin declared without offering to change them', async
 	expect(buttons[0]).toHaveAccessibleName('Close')
 })
 
+test('keeps the Field Groups title and shows a spinner under it while the groups are on their way', async () => {
+	server.use(http.get('/api/groups', () => new Promise(() => {})))
+	renderAt('/field-groups')
+
+	const main = await screen.findByRole('main')
+
+	expect(await within(main).findByRole('heading', { level: 2 })).toHaveTextContent('Field Groups')
+	const status = await within(main).findByRole('status')
+	expect(status).toHaveTextContent('Loading field groups.')
+	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
+})
+
 test('reports groups it could not load', async () => {
 	vi.spyOn(console, 'error').mockImplementation(() => {})
 	server.use(http.get('/api/groups', () => new HttpResponse(null, { status: 500 })))

@@ -266,7 +266,7 @@ function PostsTable(props: {
 	}
 	return (
 		<DataViews
-			key={`${listed.key} ${props.status}`}
+			key={listed.key}
 			{...pageProps(listed, posts.data, props.settings)}
 			empty={<PostsEmpty narrowed={narrows(props.view, props.status)} adding={props.registered ? listed : undefined} />}
 			fields={columnsOn(props.columns, props.status)}
@@ -281,7 +281,7 @@ function PostsTable(props: {
 			renderItemLink={({ item, ...link }) => (
 				<Link to="/content/$typeKey/$postId/edit" params={{ typeKey: item.type, postId: item.id }} {...link} />
 			)}
-			isLoading={posts.isFetching || props.waiting}
+			isLoading={posts.isPending || posts.isPlaceholderData || props.waiting}
 			getItemId={(post) => post.id}
 			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), { type: pluralOf(listed).toLowerCase() })}
 		/>

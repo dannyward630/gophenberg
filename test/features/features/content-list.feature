@@ -187,5 +187,6 @@ Feature: The content list
     Given a signed in administrator
     When the account reads the settings
     Then the settings offer the page sizes 10, 20, 50 and 100 opening at 20
-    And the settings keep a toast 6000 milliseconds naming at most 45 characters
+    And the settings keep a toast 6000 milliseconds, or 10000 milliseconds when it offers an action
+    And the settings leave the name in a toast whole
     And the settings write dates and numbers in "es-ES"

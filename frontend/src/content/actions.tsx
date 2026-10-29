@@ -2,7 +2,7 @@
 
 import { backupIcon, sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
 import type { Action, RenderModalProps } from '@gophenberg/frontend-sdk/dataviews'
-import { RunConfirm, useBulkRun, useToaster, useUnsavedText } from '@gopherium/godmin'
+import { RunConfirm, useBulkRun, useUnsavedText } from '@gopherium/godmin'
 import type { BulkRun, ListRun, UnsavedText } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
 import { __, _x } from '@wordpress/i18n'
@@ -10,7 +10,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
 
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
-import type { NameCut } from '../lists/itemWords'
 import { postName, restoreWords, trashQuestion, trashWords } from './actionWords'
 import { deletePost, restorePost, trashPost } from './api'
 import type { Post } from './api'
@@ -48,44 +47,42 @@ function useRunOver(list: ListRun): BulkRun<Post> {
 interface PostConfirmProps extends RenderModalProps<Post> {
 	/** Runs one call over the picked posts. */
 	run: BulkRun<Post>
-	/** Cuts a title to the length a toast shows. */
-	name: NameCut
 }
 
 /**
  * Renders the confirm moving the picked posts to the trash, closing only itself once the run ends.
- * @param props - The posts, the handler closing the modal, the run and the name cut.
+ * @param props - The posts, the handler closing the modal and the run.
  * @returns The confirm.
  */
-function TrashConfirm({ items, closeModal, run, name }: PostConfirmProps) {
+function TrashConfirm({ items, closeModal, run }: PostConfirmProps) {
 	return (
 		<RunConfirm
 			items={items}
 			closeModal={closeModal}
 			confirmLabel={__('Move to trash', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
-			run={(picked) => run(picked, (post) => trashPost(post.id), trashWords(name))}
+			run={(picked) => run(picked, (post) => trashPost(post.id), trashWords())}
 		>
-			{trashQuestion(items, name)}
+			{trashQuestion(items)}
 		</RunConfirm>
 	)
 }
 
 /**
  * Renders the confirm deleting the picked posts for good, closing only itself once the run ends.
- * @param props - The posts, the handler closing the modal, the run and the name cut.
+ * @param props - The posts, the handler closing the modal and the run.
  * @returns The confirm.
  */
-function DeleteConfirm({ items, closeModal, run, name }: PostConfirmProps) {
+function DeleteConfirm({ items, closeModal, run }: PostConfirmProps) {
 	return (
 		<RunConfirm
 			items={items}
 			closeModal={closeModal}
 			confirmLabel={__('Delete permanently', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
-			run={(picked) => run(picked, (post) => deletePost(post.id), deleteWords(name, postName))}
+			run={(picked) => run(picked, (post) => deletePost(post.id), deleteWords(postName))}
 		>
-			{deleteQuestion(items, name, postName)}
+			{deleteQuestion(items, postName)}
 		</RunConfirm>
 	)
 }
@@ -94,16 +91,10 @@ function DeleteConfirm({ items, closeModal, run, name }: PostConfirmProps) {
  * Returns the actions offered on the rows of a trash view.
  * @param mine - Whether the session may change a post.
  * @param run - Runs one call over the picked posts.
- * @param name - Cuts a title to the length a toast shows.
  * @param type - The content type the list shows.
  * @returns The restore first, a primary action DataViews also draws on the row, then the permanent delete.
  */
-function trashViewActions(
-	mine: (post: Post) => boolean,
-	run: BulkRun<Post>,
-	name: NameCut,
-	type: string,
-): Action<Post>[] {
+function trashViewActions(mine: (post: Post) => boolean, run: BulkRun<Post>, type: string): Action<Post>[] {
 	return [
 		{
 			id: 'restore',
@@ -112,7 +103,7 @@ function trashViewActions(
 			isPrimary: true,
 			supportsBulk: true,
 			isEligible: mine,
-			callback: (items) => run(items, (post) => restorePost(post.id), restoreWords(name, type)),
+			callback: (items) => run(items, (post) => restorePost(post.id), restoreWords(type)),
 		},
 		{
 			id: 'delete',
@@ -122,7 +113,7 @@ function trashViewActions(
 			isEligible: mine,
 			hideModalHeader: true,
 			modalFocusOnMount: 'firstContentElement',
-			RenderModal: (props) => <DeleteConfirm {...props} run={run} name={name} />,
+			RenderModal: (props) => <DeleteConfirm {...props} run={run} />,
 		},
 	]
 }
@@ -139,7 +130,6 @@ interface UnsavedForms {
  * Returns the actions offered on the rows of a list outside the trash, the view first and the trash last.
  * @param mine - Whether the session may change a post.
  * @param run - Runs one call over the picked posts.
- * @param name - Cuts a title to the length a toast shows.
  * @param served - Whether the site serves the type the list shows.
  * @param unsaved - The text failed row forms left unsaved.
  * @returns The view, a primary action DataViews also draws on the row, then the duplicate, offered on every post not
@@ -149,7 +139,6 @@ interface UnsavedForms {
 function listActions(
 	mine: (post: Post) => boolean,
 	run: BulkRun<Post>,
-	name: NameCut,
 	served: boolean,
 	unsaved: UnsavedForms,
 ): Action<Post>[] {
@@ -180,7 +169,7 @@ function listActions(
 			isEligible: changeable,
 			hideModalHeader: true,
 			modalFocusOnMount: 'firstContentElement',
-			RenderModal: (props) => <TrashConfirm {...props} run={run} name={name} />,
+			RenderModal: (props) => <TrashConfirm {...props} run={run} />,
 		},
 	]
 }
@@ -211,7 +200,6 @@ function viewAction(served: boolean): Action<Post> {
  */
 export function usePostActions(status: string, listed: ContentType, list: ListRun): Action<Post>[] {
 	const run = useRunOver(list)
-	const name = useToaster().name
 	const session = useSession().data
 	const copies = useUnsavedText()
 	const renames = useUnsavedText()
@@ -219,8 +207,8 @@ export function usePostActions(status: string, listed: ContentType, list: ListRu
 	return useMemo(() => {
 		const mine = (post: Post) => sessionMayChange(session, post.authorId)
 		if (status === 'trash') {
-			return trashViewActions(mine, run, name, key)
+			return trashViewActions(mine, run, key)
 		}
-		return listActions(mine, run, name, active, { copies, renames })
-	}, [active, copies, key, name, renames, run, session, status])
+		return listActions(mine, run, active, { copies, renames })
+	}, [active, copies, key, renames, run, session, status])
 }

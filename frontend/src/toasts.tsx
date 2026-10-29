@@ -15,9 +15,9 @@ export function AdminToaster({ children }: { children: ReactNode }) {
 	const settings = useListSettings().data
 	return (
 		<Toaster
-			dismissLabel={__('Dismiss', 'gophenberg')}
+			dismissLabel={__('Dismiss this notice', 'gophenberg')}
 			dismissAfter={settings?.toast_milliseconds}
-			nameLength={settings?.toast_name_length}
+			actionDismissAfter={settings?.toast_action_milliseconds}
 		>
 			{children}
 		</Toaster>

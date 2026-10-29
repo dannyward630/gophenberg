@@ -13,7 +13,6 @@ import { useMemo, useState } from 'react'
 import { holdWrite, writesSettled } from '../content/postWrites'
 import { useRenameSend } from '../lists/RenameModal'
 import { deleteQuestion, deleteWords } from '../lists/itemWords'
-import type { NameCut } from '../lists/itemWords'
 import { deleteMedia, editMedia } from './api'
 import type { MediaDescriptions, MediaItem } from './api'
 import { mediaFields } from './fields'
@@ -24,8 +23,6 @@ import { saveFailure, titleOf } from './format'
 export interface MediaTools {
 	/** The query client the writes run on. */
 	client: QueryClient
-	/** Cuts a name to the length a toast shows. */
-	name: NameCut
 	/** Reads the library again. */
 	refresh: () => Promise<unknown>
 	/** Runs a call over files that may leave the list. */
@@ -275,11 +272,11 @@ export function DeleteMediaModal({ items, closeModal, tools }: MediaModalProps) 
 				tools.removals(
 					picked,
 					(item) => inTurn(tools.client, item.id, () => deleteMedia(item.id)),
-					deleteWords(tools.name, titleOf),
+					deleteWords(titleOf),
 				)
 			}
 		>
-			{deleteQuestion(items, tools.name, titleOf)}
+			{deleteQuestion(items, titleOf)}
 		</RunConfirm>
 	)
 }

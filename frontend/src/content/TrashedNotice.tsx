@@ -22,7 +22,7 @@ export function TrashedNotice({ postId, title }: { postId: string, title: string
 		mutationFn: () => restorePost(postId),
 		onSuccess: async () => {
 			await Promise.all([client.invalidateQueries({ queryKey: ['post', postId], exact: true }), refresh()])
-			toaster.show(sprintf(__('"%s" has been restored.', 'gophenberg'), toaster.name(title)))
+			toaster.show(sprintf(__('"%s" has been restored.', 'gophenberg'), title))
 		},
 		onError: () => client.invalidateQueries({ queryKey: ['post', postId], exact: true }),
 	})

@@ -5,7 +5,7 @@ import { __, _x, sprintf } from '@wordpress/i18n'
 import { fetchUsers, setUserDisabled, usersQueryKey } from '@gopherium/react-auth/admin'
 import type { User } from '@gopherium/react-auth/admin'
 import { useSession } from '@gopherium/react-auth'
-import { ErrorNotice, LoadingRows, Page } from '@gopherium/godmin'
+import { ErrorNotice, LoadingScreen, Page } from '@gopherium/godmin'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
@@ -63,11 +63,11 @@ function UsersBody({
 		return <ErrorNotice>{__('Users could not be loaded.', 'gophenberg')}</ErrorNotice>
 	}
 	if (users === undefined) {
-		return <LoadingRows label={__('Loading users.', 'gophenberg')} />
+		return <LoadingScreen label={__('Loading users.', 'gophenberg')} />
 	}
 	return (
 		<div
-			className="godmin-table-scroll godmin-arrival"
+			className="godmin-table-scroll"
 			role="region"
 			aria-label={__('Users', 'gophenberg')}
 			tabIndex={0}

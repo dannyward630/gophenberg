@@ -8,8 +8,10 @@ import { resetLocaleData, setLocaleData } from '@wordpress/i18n'
 import { beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 
 import '../index.css'
+import { typesQueryKey } from '../content/nav'
 import { catalogFor } from '../i18n/catalog'
 import { gate } from './gate'
+import { leaveStale } from './reopen'
 import { renderAt, renderRoutedAt } from './render'
 import { siteSettings } from './siteSettings'
 import {
@@ -85,6 +87,32 @@ test('lists every registered type in a list region with the address it answers u
 	expect(pages.getByText('/pages')).toBeInTheDocument()
 	expect((await rowOf('Posts')).getByText('/', { exact: true })).toBeInTheDocument()
 	expect(screen.getByRole('region', { name: 'Content Types' })).toHaveAttribute('tabindex', '-1')
+})
+
+test('shows the types it holds at once when the list opens again, while it reads them anew', async () => {
+	const { client, router } = renderRoutedAt('/content-types')
+	const names = await listedNames()
+	await leaveStale(router, client, typesQueryKey)
+	const again = gate()
+	let reading = false
+	server.use(
+		http.get('/api/types', async () => {
+			reading = true
+			await again.held
+			return HttpResponse.json({ items: [POST_TYPE, PAGE_TYPE, { ...GUIDE_TYPE, plural_label: 'Handbooks' }] })
+		}),
+	)
+
+	await act(async () => {
+		await router.navigate({ to: '/content-types' })
+	})
+
+	expect(await listedNames()).toEqual(names)
+	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
+	again.release()
+	expect(await (await typesList()).findByText('Handbooks', { exact: true })).toBeInTheDocument()
+	expect(await listedNames()).not.toContain('Guides')
 })
 
 test('says under the title what the screen holds', async () => {

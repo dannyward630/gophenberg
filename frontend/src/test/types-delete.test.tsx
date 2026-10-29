@@ -10,7 +10,6 @@ import { beforeEach, expect, onTestFinished, test, vi } from 'vitest'
 import { catalogFor } from '../i18n/catalog'
 import { gate } from './gate'
 import { renderAt } from './render'
-import { siteSettings } from './siteSettings'
 import {
 	PAGE_TYPE,
 	POST_TYPE,
@@ -66,15 +65,6 @@ test('asks before deleting a type under no header, naming it in quotes, and dele
 	expect(within(dialog).queryByRole('heading')).not.toBeInTheDocument()
 	expect(within(dialog).queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
 	expect(asked).toEqual([])
-})
-
-test('cuts a long type name in the delete question at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 3 })))
-	renderAt('/content-types')
-
-	const dialog = await openDelete()
-
-	expect(within(dialog).getByText('Delete "Pag…" for good? This cannot be undone.')).toBeInTheDocument()
 })
 
 test('asks at the width of a WordPress row confirm, Delete in the accent after an accent text Cancel', async () => {

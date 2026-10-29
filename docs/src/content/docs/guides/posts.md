@@ -170,10 +170,9 @@ takes no second press.
 
 Each finished action shows a short message at the bottom of the
 screen that names the post, such as `"Hello world" moved to the
-trash.` A long title is cut short with `…`, in the message and in
-the question. When you act on several posts at once, the message
-counts them instead. There is no Undo. A trashed post comes back
-from the Trash tab.
+trash.` The message and the question show the whole title. When you
+act on several posts at once, the message counts them instead. There
+is no Undo. A trashed post comes back from the Trash tab.
 
 When the server refuses, the message at the bottom of the screen
 gives the reason instead, from the list and from the editor alike. A

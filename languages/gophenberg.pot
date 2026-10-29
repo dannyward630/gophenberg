@@ -736,6 +736,9 @@ msgstr ""
 msgid "Dismiss"
 msgstr ""
 
+msgid "Dismiss this notice"
+msgstr ""
+
 msgid "Document"
 msgstr ""
 
@@ -1001,6 +1004,12 @@ msgid "Loading the post."
 msgstr ""
 
 msgid "Loading the screen."
+msgstr ""
+
+msgid "Loading the settings."
+msgstr ""
+
+msgid "Loading the updates."
 msgstr ""
 
 msgid "Loading themes."

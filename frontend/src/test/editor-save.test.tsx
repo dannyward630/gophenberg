@@ -63,7 +63,7 @@ beforeEach(() => {
 	)
 })
 
-test('ghosts the post and fades the editor in over it', async () => {
+test('shows a spinner while the post loads, then the editor in its place', async () => {
 	let release: () => void = () => {}
 	const held = new Promise<void>((resolve) => {
 		release = resolve
@@ -81,9 +81,8 @@ test('ghosts the post and fades the editor in over it', async () => {
 	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
 
 	release()
-	await screen.findByRole('textbox', { name: 'Title' })
-	const editor = document.querySelector('.gophenberg-editor') as Element
-	expect([...editor.classList]).toContain('godmin-arrival')
+	expect(await screen.findByRole('textbox', { name: 'Title' })).toBeInTheDocument()
+	expect(document.querySelector('.godmin-loading-screen')).toBeNull()
 })
 
 test('shows the stored title in its own field', async () => {

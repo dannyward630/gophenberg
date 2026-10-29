@@ -68,7 +68,7 @@ test('leaves the root out of the history, so going back never lands on it', asyn
 	expect(router.history.length).toBe(1)
 })
 
-test('holds the loading ghost at the root until the type registry answers', async () => {
+test('holds the loading spinner at the root until the type registry answers', async () => {
 	const registry = gate()
 	server.use(
 		http.get('/api/types', async () => {

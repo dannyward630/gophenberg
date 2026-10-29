@@ -46,7 +46,7 @@ func timedConfig() runConfig {
 
 		lists: server.ListSettings{
 			PageSizes: []int{5, 15, 45}, PageSize: 15, PickerPageSize: 45, PageCap: 60,
-			ToastDuration: 2500 * time.Millisecond, ToastNameLength: 30, FormatLocale: "en-GB",
+			ToastDuration: 2500 * time.Millisecond, ToastActionDuration: 8 * time.Second, FormatLocale: "en-GB",
 		},
 
 		updates: updateSettings{

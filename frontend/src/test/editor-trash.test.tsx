@@ -10,7 +10,6 @@ import { listenAt } from './announcements'
 import { gate } from './gate'
 import { renderAt, renderRoutedAt } from './render'
 import { storedPost, storedPostWithId } from './postFixture'
-import { siteSettings } from './siteSettings'
 
 const EDITOR_PATH = `/content/post/${storedPost.id}/edit`
 
@@ -251,16 +250,6 @@ test('focuses Cancel when the confirm opens, as the shared confirm does', async 
 	const { dialog } = await openConfirmLaidOut()
 
 	await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus())
-})
-
-test('cuts a long title in the trash confirm at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 10 })))
-	renderAt(EDITOR_PATH)
-
-	await userEvent.click(await screen.findByRole('button', { name: 'Move to trash' }))
-
-	expect(await screen.findByRole('dialog', { name: 'Are you sure you want to move "Welcome to…" to the trash?' }))
-		.toBeInTheDocument()
 })
 
 test('keeps the post when Cancel takes the confirm away, and gives the focus back to Move to trash', async () => {

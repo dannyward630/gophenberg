@@ -15,7 +15,6 @@ import { listenAt } from './announcements'
 import { gate } from './gate'
 import { renderAt } from './render'
 import { storedPostWithId } from './postFixture'
-import { siteSettings } from './siteSettings'
 import { clickDimmedPage, waitBusy } from './typeFixtures'
 
 beforeAll(async () => {
@@ -146,21 +145,11 @@ test('asks to confirm before trashing', async () => {
 	expect(trashed).toEqual([])
 })
 
-test('cuts a long title in the trash confirm at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 10 })))
-	renderAt('/content/post')
-	await openRowActions()
-
-	await userEvent.click(await screen.findByRole('menuitem', { name: 'Trash…' }))
-
-	expect(await screen.findByRole('dialog')).toHaveTextContent('Move "Welcome to…" to the trash?')
-})
-
 test('quotes the name in the Spanish trash confirm as the Spanish toasts do', async () => {
 	setLocaleData(await catalogFor('es-ES'), 'gophenberg')
 	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
 
-	expect(trashQuestion([WELCOME], (title) => title)).toBe('¿Mover «Welcome to Gophenberg» a la papelera?')
+	expect(trashQuestion([WELCOME])).toBe('¿Mover «Welcome to Gophenberg» a la papelera?')
 })
 
 test('confirms the Spanish trash with the verb WordPress es_ES uses, not the noun', async () => {
@@ -316,16 +305,6 @@ test('moves the focus to the list once the trash finishes', async () => {
 
 	await screen.findByText('"Welcome to Gophenberg" moved to the trash.', { selector: '.godmin-toast' })
 	await waitFor(() => expect(screen.getByRole('region', { name: 'Posts' })).toHaveFocus())
-})
-
-test('cuts a long title in the toast at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 10 })))
-	renderAt('/content/post')
-
-	await trashTheListedPost()
-
-	expect(await screen.findByText('"Welcome to…" moved to the trash.', { selector: '.godmin-toast' }))
-		.toBeInTheDocument()
 })
 
 test('shows the reason a refused trash gave in a toast, never above the list', async () => {

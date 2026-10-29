@@ -949,15 +949,6 @@ test('names a file with no title as (no title) in the delete question', async ()
 	expect(within(dialog).getByText('Delete "(no title)" for good? This cannot be undone.')).toBeInTheDocument()
 })
 
-test('cuts a long title in the delete question at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 5 })))
-	renderAt('/media')
-
-	const dialog = await openCardDialog('Harbor at dawn', 'Permanently delete…')
-
-	expect(within(dialog).getByText('Delete "Harbo…" for good? This cannot be undone.')).toBeInTheDocument()
-})
-
 test('keeps the confirm busy with Cancel greyed while the delete runs, then closes it and names the file', async () => {
 	const answer = gate()
 	server.use(
@@ -1186,7 +1177,7 @@ test.each([
 	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(moved)
 })
 
-/** Drops a focus the list holds each time the library is read, as a browser drops it from the inert list. */
+/** Drops a focus the list holds each time the library is read. */
 function dropFocusWhileReading() {
 	server.use(
 		http.get('/api/media', () => {
