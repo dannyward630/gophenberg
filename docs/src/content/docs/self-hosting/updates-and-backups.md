@@ -242,6 +242,15 @@ Some things work differently after this update:
   whole busy timeout. Two steps still run to the end, so they can wait
   up to the busy timeout after Ctrl-C: storing the record of a change
   an account command applied, and saving what `update:check` found.
+- A confirmation message now shows the whole name of an item, as
+  WordPress does. `GOPHENBERG_TOAST_NAME_LENGTH` no longer does
+  anything and can go from your settings, and `/api/settings` no
+  longer serves `toast_name_length`.
+  `GOPHENBERG_TOAST_ACTION_DURATION`, a new setting, 10s unless set,
+  times a message with a button, which only a plugin raises today. A
+  plugin screen that called `toaster.name` now breaks, so put the
+  whole name in its message instead. See
+  [the admin lists](/self-hosting/configuration/#the-admin-lists).
 
 Updating from further back also runs the migrations of every release
 you skip, so read each of their notes. Coming from five releases back

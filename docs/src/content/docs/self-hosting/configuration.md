@@ -50,8 +50,8 @@ so it takes the default.
 | `GOPHENBERG_LIST_PAGE_SIZE` | No | `20` | The page size an admin list opens at, one of the sizes above |
 | `GOPHENBERG_LIST_PAGE_CAP` | No | `100` | The most items one admin list page carries. A request for more gets this many |
 | `GOPHENBERG_PICKER_PAGE_SIZE` | No | `50` | The page size the media picker opens at, one of the sizes above. Unset and with no `50` among them, the size a list opens at |
-| `GOPHENBERG_TOAST_DURATION` | No | `6s` | How long a confirmation message stays on screen, in whole milliseconds from `1ms` to `2147483647ms` |
-| `GOPHENBERG_TOAST_NAME_LENGTH` | No | `45` | How many characters of an item's name a confirmation message shows before it cuts the name short |
+| `GOPHENBERG_TOAST_DURATION` | No | `6s` | How long a confirmation message with no button stays on screen, in whole milliseconds from `1ms` to `2147483647ms` |
+| `GOPHENBERG_TOAST_ACTION_DURATION` | No | `10s` | How long a confirmation message with a button stays on screen, in whole milliseconds from `1ms` to `2147483647ms` |
 | `GOPHENBERG_FORMAT_LOCALE` | No | `es-ES` | The locale the admin writes dates, times and numbers in, whatever language its screens are in |
 | `GOPHENBERG_THEME_READY_TIMEOUT` | No | `30s` | How long a starting theme has to answer before it is given up on |
 | `GOPHENBERG_THEME_START_ATTEMPTS` | No | `5` | How many times in a row a theme that will not start is started before it is given up on, from 1 to 1000 |
@@ -392,9 +392,12 @@ change them. They shape every list the same way:
   `GOPHENBERG_LIST_PAGE_CAP` items, whatever a request asks for. The
   largest page size has to fit under it.
 - **The confirmation messages.** `GOPHENBERG_TOAST_DURATION` sets how
-  long a message after an action stays on screen.
-  `GOPHENBERG_TOAST_NAME_LENGTH` sets how many characters of an item's
-  name such a message shows before it cuts the name short with "…".
+  long a message with no button stays on screen.
+  `GOPHENBERG_TOAST_ACTION_DURATION` sets how long a message with a
+  button stays, a message which only a plugin raises today. It is 10
+  seconds, as WordPress's next release keeps it, so there is time to
+  reach the button. A message always shows the whole name of the
+  item.
 - **The format.** `GOPHENBERG_FORMAT_LOCALE` sets the locale for
   dates, times and numbers, whatever language a person reads the
   admin in. The tag `es-ES` writes 04/10/2026, 14:05 and 1.234,56.
@@ -764,12 +767,12 @@ The server refuses to start, and says why, when:
 - `GOPHENBERG_PICKER_PAGE_SIZE` is not one of those sizes.
 - `GOPHENBERG_LIST_PAGE_CAP` is not a whole number from 1 to
   2147483647, or stands below the largest page size.
-- `GOPHENBERG_TOAST_DURATION` is not a whole number of milliseconds
-  from `1ms` to `2147483647ms`, the longest a browser timer holds.
+- `GOPHENBERG_TOAST_DURATION` or `GOPHENBERG_TOAST_ACTION_DURATION`
+  is not a whole number of milliseconds from `1ms` to `2147483647ms`,
+  the longest a browser timer holds.
 - `GOPHENBERG_UPDATES_SCREEN_PROGRESS_INTERVAL` or
   `GOPHENBERG_UPDATES_SCREEN_RESTART_WAIT` is not a whole number of
   milliseconds from `1ms` to `2147483647ms`, for the same reason.
-- `GOPHENBERG_TOAST_NAME_LENGTH` is not a positive whole number.
 - `GOPHENBERG_FORMAT_LOCALE` is not a language tag such as `es-ES` or
   `en-GB`.
 - `GOPHENBERG_AVATARS`, `GOPHENBERG_AVATAR_DEFAULT` or

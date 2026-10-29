@@ -202,7 +202,6 @@ them. A phone list has no tick boxes.
 
 A short message at the bottom of the screen names the file, such as
 `"Sunset" permanently deleted.`, or counts the files when you deleted
-several. A long title is cut short with `…`, in the message and in
-the question. When the server refuses, the message gives the reason
-instead, and when some of several files fail it counts the ones that
-failed.
+several. The message and the question show the whole title. When
+the server refuses, the message gives the reason instead, and when
+some of several files fail it counts the ones that failed.
