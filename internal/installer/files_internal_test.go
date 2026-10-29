@@ -60,6 +60,7 @@ Type=oneshot
 User=gophenberg
 Group=gophenberg
 WorkingDirectory=/opt/gophenberg
+ExecCondition=+/usr/bin/systemctl is-failed --quiet gophenberg.service
 ExecStart=/opt/gophenberg/previous/gophenberg update:rollback -after-failure
 ExecStartPost=+/usr/bin/systemctl reset-failed gophenberg.service
 ExecStartPost=+/usr/bin/systemctl start gophenberg.service
