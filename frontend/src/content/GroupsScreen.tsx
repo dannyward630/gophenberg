@@ -13,7 +13,7 @@ import {
 	upIcon,
 } from '@gophenberg/frontend-sdk'
 import { __, _x, sprintf } from '@wordpress/i18n'
-import { ErrorNotice, LoadingRows, Page, useToaster } from '@gopherium/godmin'
+import { ErrorNotice, LoadingScreen, Page, useToaster } from '@gopherium/godmin'
 import { formatNumber } from '@gopherium/gottext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -312,11 +312,11 @@ function GroupsBody(
 		return <ErrorNotice>{__('The field groups could not be loaded.', 'gophenberg')}</ErrorNotice>
 	}
 	if (props.loading) {
-		return <LoadingRows label={__('Loading field groups.', 'gophenberg')} />
+		return <LoadingScreen label={__('Loading field groups.', 'gophenberg')} />
 	}
 	return (
 		<div
-			className="godmin-table-scroll godmin-arrival"
+			className="godmin-table-scroll"
 			role="region"
 			aria-label={__('Field Groups', 'gophenberg')}
 			tabIndex={0}

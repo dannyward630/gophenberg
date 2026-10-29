@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { Button, InputControl, Skeleton, Stack, Text } from '@gophenberg/frontend-sdk'
+import { Button, InputControl, Stack, Text } from '@gophenberg/frontend-sdk'
 import { __ } from '@wordpress/i18n'
-import { ErrorNotice, Page } from '@gopherium/godmin'
+import { ErrorNotice, LoadingScreen, Page } from '@gopherium/godmin'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -112,7 +112,10 @@ function settingsBody(held: UseQueryResult<SiteSettings>) {
 			</ErrorNotice>
 		)
 	}
-	return held.data ? <SettingsForm held={held.data} /> : <Skeleton />
+	if (held.data === undefined) {
+		return <LoadingScreen label={__('Loading the settings.', 'gophenberg')} />
+	}
+	return <SettingsForm held={held.data} />
 }
 
 /**

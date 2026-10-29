@@ -2,7 +2,7 @@
 
 import { Badge, Button, Stack, Text, uploadIcon } from '@gophenberg/frontend-sdk'
 import { __, _x, sprintf } from '@wordpress/i18n'
-import { ErrorNotice, FileButton, LoadingRows, Page, useToaster } from '@gopherium/godmin'
+import { ErrorNotice, FileButton, LoadingScreen, Page, useToaster } from '@gopherium/godmin'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -176,14 +176,14 @@ function ThemesBody(props: {
 		return <ErrorNotice>{__('Themes could not be loaded.', 'gophenberg')}</ErrorNotice>
 	}
 	if (props.loading) {
-		return <LoadingRows label={__('Loading themes.', 'gophenberg')} />
+		return <LoadingScreen label={__('Loading themes.', 'gophenberg')} />
 	}
 	if (props.themes.length === 0) {
 		return <Text>{__('No themes are installed.', 'gophenberg')}</Text>
 	}
 	return (
 		<div
-			className="godmin-table-scroll godmin-arrival"
+			className="godmin-table-scroll"
 			role="region"
 			aria-label={__('Themes', 'gophenberg')}
 			tabIndex={0}

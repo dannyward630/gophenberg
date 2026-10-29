@@ -50,6 +50,18 @@ function nextCheckIn(away: number) {
 	return { ...upToDate, next_check: new Date(Date.now() + away).toISOString() }
 }
 
+test('keeps the Updates title and shows a spinner under it while the updates are on their way', async () => {
+	server.use(http.get('/api/updates', () => new Promise(() => {})))
+	renderAt('/update-core')
+
+	const main = await screen.findByRole('main')
+
+	expect(await within(main).findByRole('heading', { level: 2 })).toHaveTextContent('Gophenberg Updates')
+	const status = await within(main).findByRole('status')
+	expect(status).toHaveTextContent('Loading the updates.')
+	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
+})
+
 test('names the version that runs under the title, as WordPress does', async () => {
 	await openUpdates(upToDate)
 

@@ -107,7 +107,7 @@ function TypesTable(props: {
 			defaultLayouts={list.defaultLayouts}
 			selection={list.selection}
 			onChangeSelection={list.onChangeSelection}
-			isLoading={types.isFetching}
+			isLoading={types.isPending}
 			getItemId={(type) => type.key}
 			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), {
 				type: __('Content Types', 'gophenberg').toLowerCase(),

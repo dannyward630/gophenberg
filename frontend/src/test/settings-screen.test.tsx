@@ -2,7 +2,7 @@
 
 import { http, HttpResponse, server } from '@gophenberg/frontend-sdk/testing'
 import { defaultUser } from '@gopherium/react-auth/testing'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, expect, test } from 'vitest'
 
@@ -21,6 +21,24 @@ beforeEach(() => {
 			HttpResponse.json({ ...siteSettings, locale_default: '', content_per_page: 20, jpeg_quality: 82 }),
 		),
 	)
+})
+
+test('keeps the Settings title and shows a spinner under it while the settings are on their way', async () => {
+	let reads = 0
+	server.use(
+		http.get('/api/settings', () => {
+			reads += 1
+			return reads === 1 ? HttpResponse.json(siteSettings) : new Promise<never>(() => {})
+		}),
+	)
+	renderAt(PATH, adminUser)
+
+	const main = await screen.findByRole('main')
+
+	expect(await within(main).findByRole('heading', { level: 2 })).toHaveTextContent('Settings')
+	const status = await within(main).findByRole('status')
+	expect(status).toHaveTextContent('Loading the settings.')
+	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
 })
 
 test('shows what the site chose for itself', async () => {

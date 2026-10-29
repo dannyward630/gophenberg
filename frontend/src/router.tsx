@@ -31,7 +31,7 @@ const framedRoute = createRoute({
 
 /**
  * Sends the root to the list of the default content type, replacing the root in the history.
- * @returns The redirect once a default type is held, else the registry failure under a title, or the loading ghost.
+ * @returns The redirect once a default type is held, else the registry failure under a title, or the loading spinner.
  */
 function DefaultList() {
 	const landing = useDefaultType()

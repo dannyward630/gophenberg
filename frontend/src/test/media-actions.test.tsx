@@ -1177,7 +1177,7 @@ test.each([
 	expect(document.querySelectorAll('.dataviews-view-grid__card')[1]).toBe(moved)
 })
 
-/** Drops a focus the list holds each time the library is read, as a browser drops it from the inert list. */
+/** Drops a focus the list holds each time the library is read. */
 function dropFocusWhileReading() {
 	server.use(
 		http.get('/api/media', () => {

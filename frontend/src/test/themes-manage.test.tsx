@@ -116,6 +116,18 @@ test('still offers to deactivate a chosen theme whose files are gone', async () 
 	expect(screen.getByRole('button', { name: 'Deactivate aurora' })).toBeTruthy()
 })
 
+test('keeps the Themes title and shows a spinner under it while the themes are on their way', async () => {
+	server.use(http.get('/api/themes', () => new Promise(() => {})))
+	renderAt('/themes')
+
+	const main = await screen.findByRole('main')
+
+	expect(await within(main).findByRole('heading', { level: 2 })).toHaveTextContent('Themes')
+	const status = await within(main).findByRole('status')
+	expect(status).toHaveTextContent('Loading themes.')
+	expect(status.closest('.godmin-loading-screen')).not.toBeNull()
+})
+
 test('claims nothing about what is serving until the themes have been read', async () => {
 	vi.spyOn(console, 'error').mockImplementation(() => {})
 	server.use(http.get('/api/themes', () => new HttpResponse(null, { status: 500 })))

@@ -5,7 +5,7 @@ import { expect, test } from 'vitest'
 
 import { BootLoading } from '../boot'
 
-test('ghosts the screen while the session loads', () => {
+test('shows a spinner while the session loads', () => {
 	render(<BootLoading />)
 
 	const status = screen.getByRole('status')

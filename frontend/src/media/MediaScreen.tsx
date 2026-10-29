@@ -295,7 +295,7 @@ function MediaList(props: {
 			onChangeSelection={openOnTap(list, openTapped(media.data, props.mayChange, (item) => edit(item, 'row')))}
 			isItemClickable={props.mayChange}
 			onClickItem={(item: MediaItem) => edit(item, focusedTrigger())}
-			isLoading={media.isFetching}
+			isLoading={media.isPending || media.isPlaceholderData}
 			getItemId={(item: MediaItem) => String(item.id)}
 			searchLabel={sprintf(__('Search %(type)s…', 'gophenberg'), {
 				type: _x('Media', 'admin section', 'gophenberg').toLowerCase(),

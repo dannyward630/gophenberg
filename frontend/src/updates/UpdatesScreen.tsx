@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { Skeleton, Stack, Text } from '@gophenberg/frontend-sdk'
-import { ErrorNotice, Page } from '@gopherium/godmin'
+import { Stack, Text } from '@gophenberg/frontend-sdk'
+import { ErrorNotice, LoadingScreen, Page } from '@gopherium/godmin'
 import { __, sprintf } from '@wordpress/i18n'
 
 import { CheckLines } from './CheckLines'
@@ -24,7 +24,7 @@ function updatesBody(state: UpdatesScreenState) {
 		)
 	}
 	if (overview === undefined) {
-		return <Skeleton />
+		return <LoadingScreen label={__('Loading the updates.', 'gophenberg')} />
 	}
 	return (
 		<Stack direction="column" gap="lg">
