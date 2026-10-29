@@ -7,6 +7,7 @@ late_after_update=20
 late_at_boot=30
 (( upload_bytes = 40 << 20 ))
 update_port=8070
+probe_pause=0.2
 root_key_iterations=600000
 self="$(readlink -f "${BASH_SOURCE[0]}")"
 repo="$(dirname "$(dirname "$(dirname "$self")")")"
@@ -66,7 +67,7 @@ reset_failed() {
 begin() {
 	scenario="$1"
 	scenario_began=$SECONDS
-	scenario_started="$(date +%s)"
+	scenario_started="$(date +%s.%6N)"
 	echo "=== $scenario"
 	reset_failed
 }
@@ -212,7 +213,7 @@ rolled_back() {
 
 # starts_before_limit prints how many times the journal file shows the site's unit started before its start limit hit.
 starts_before_limit() {
-	awk '/start-limit-hit/ { exit }
+	awk '/Start request repeated too quickly/ { exit }
 		/^Started (gophenberg\.service|Gophenberg\.$)/ { starts++ }
 		END { print starts + 0 }' "$1"
 }
@@ -285,7 +286,7 @@ kept() {
 	sudo test -e "$1" || fail "server:uninstall removed $1"
 }
 
-# probe asks the address every 200 ms and adds when it asked, the status and how long the answer took to the file.
+# probe asks the address every probe pause and adds when it asked, the status and how long the answer took to the file.
 probe() {
 	local file="$1" address="$2" asked answer
 	shift 2
@@ -293,11 +294,11 @@ probe() {
 		asked="$(date +%s.%N)"
 		answer="$(curl -s -o /dev/null --max-time 30 -w '%{http_code} %{time_total}' "$@" "$address" || true)"
 		printf '%s %s\n' "$asked" "$answer" >> "$file"
-		sleep 0.2
+		sleep "$probe_pause"
 	done
 }
 
-# start_probes asks the home page through Caddy and the site's own address every 200 ms in the background.
+# start_probes asks the home page through Caddy and the site's own address every probe pause in the background.
 start_probes() {
 	: > "$front_file"
 	: > "$back_file"
@@ -323,12 +324,12 @@ stop_probes() {
 gap_of() {
 	awk '$2 == "000" { if (last) down = 1; next }
 		{ if (down && $1 - last > gap) gap = $1 - last; last = $1; down = 0 }
-		END { printf "%.1f\n", gap }' "$1"
+		END { printf "%.3f\n", gap }' "$1"
 }
 
 # longest_of prints the longest time in seconds one request took, from the file of a probe.
 longest_of() {
-	awk '$3 > longest { longest = $3 } END { printf "%.1f\n", longest }' "$1"
+	awk '$3 > longest { longest = $3 } END { printf "%.3f\n", longest }' "$1"
 }
 
 # below reports whether the first number is smaller than the second.
@@ -343,16 +344,23 @@ answered_only() {
 	[ -z "$others" ] || fail "requests through Caddy got other answers than $2: $others"
 }
 
-# judge_held stops unless, under the retry duration, Caddy answered 200 alone and held a request past the restart delay.
+# judge_held stops unless, under the retry duration, Caddy answered 200 alone and held a request past the held floor.
 judge_held() {
-	local gap="$1" longest="$2" delay="$3" retry="$4"
+	local gap="$1" longest="$2" delay="$3" retry="$4" floor
 	if ! below "$gap" "$retry"; then
 		echo "the gap passed the retry duration of ${retry}s, so the maintenance page may answer"
 		answered_only "$front_file" '200|503'
 		return
 	fi
 	answered_only "$front_file" 200
-	below "$delay" "$longest" || fail "no request through Caddy was held past the restart delay of ${delay}s"
+	floor="$(held_floor "$delay")"
+	below "$floor" "$longest" ||
+		fail "no request through Caddy was held past ${floor}s, the restart delay of ${delay}s less one probe pause"
+}
+
+# held_floor prints the restart delay given less one probe pause, the least a request asked during the gap is held.
+held_floor() {
+	awk -v delay="$1" -v pause="$probe_pause" 'BEGIN { printf "%.3f\n", delay - pause }'
 }
 
 # host_facts prints what the runner image brings that the install depends on, and what already listens.
@@ -666,7 +674,8 @@ scenario_start_limit() {
 		fail "sudo gophenberg update:apply -to $c1 did not end with exit 0"
 	wait_until settled rolled-back "$d"
 	journal gophenberg.service > "$work/journal.txt"
-	grep -q start-limit-hit "$work/journal.txt" || fail "the journal shows no start-limit-hit of Gophenberg $c1"
+	grep -q 'Start request repeated too quickly' "$work/journal.txt" ||
+		fail "the journal shows no start limit of Gophenberg $c1"
 	starts="$(starts_before_limit "$work/journal.txt")"
 	echo "Gophenberg $c1 started $starts times before the start limit hit"
 	[ "$starts" = "$(server_setting GOPHENBERG_SERVICE_START_LIMIT_BURST)" ] ||
