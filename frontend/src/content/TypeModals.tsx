@@ -198,9 +198,7 @@ export function AddTypeDialog({ onClose }: { onClose: () => void }) {
 		createType({ ...form, key: slugifyKey(form.singularLabel), routeWord: slugifyKey(form.pluralLabel) }).then(
 			async (created) => {
 				await refreshTypes(client)
-				toaster.show(
-					sprintf(_x('"%s" successfully created.', 'content type', 'gophenberg'), toaster.name(pluralOf(created))),
-				)
+				toaster.show(sprintf(_x('"%s" successfully created.', 'content type', 'gophenberg'), pluralOf(created)))
 				closeWhileOpen()
 			},
 			(failure: Error) => toaster.show(failure.message),

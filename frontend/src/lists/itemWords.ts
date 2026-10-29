@@ -4,12 +4,9 @@ import type { BulkFailure, BulkWords } from '@gopherium/godmin'
 import { formatNumber } from '@gopherium/gottext'
 import { __, _n, sprintf } from '@wordpress/i18n'
 
-/** Cuts a title to the length a toast shows. */
-export type NameCut = (title: string) => string
-
 /** The sentences a run over items reads as. */
 interface RunSentences {
-	/** The toast for the one item a run finished, given its cut name. */
+	/** The toast for the one item a run finished, given its name. */
 	named: (name: string) => string
 	/** The toast counting the items a run finished. */
 	finished: (count: number) => string
@@ -28,18 +25,13 @@ function reasonOf<Item>(failures: BulkFailure<Item>[]): string {
 
 /**
  * Returns the words a run over items reads as.
- * @param name - Cuts a name to the length a toast shows.
  * @param nameOf - Returns the name an item is listed under.
  * @param sentences - The toasts of the run, the one counting its failures included.
  * @returns The words for the items that finished and for the ones that failed, the reason itself for a run over one.
  */
-export function itemWords<Item>(
-	name: NameCut,
-	nameOf: (item: Item) => string,
-	sentences: RunSentences,
-): BulkWords<Item> {
+export function itemWords<Item>(nameOf: (item: Item) => string, sentences: RunSentences): BulkWords<Item> {
 	return {
-		done: (count, only) => (only === undefined ? sentences.finished(count) : sentences.named(name(nameOf(only)))),
+		done: (count, only) => (only === undefined ? sentences.finished(count) : sentences.named(nameOf(only))),
 		failed: (failures, asked) => (asked === 1 ? reasonOf(failures) : sentences.unfinished(failures.length)),
 	}
 }
@@ -47,14 +39,13 @@ export function itemWords<Item>(
 /**
  * Returns the question asked before the given items are deleted for good.
  * @param items - The items acted on.
- * @param name - Cuts a name to the length a toast shows.
  * @param nameOf - Returns the name an item is listed under.
  * @returns The question naming the item when only one was picked.
  */
-export function deleteQuestion<Item>(items: Item[], name: NameCut, nameOf: (item: Item) => string): string {
+export function deleteQuestion<Item>(items: Item[], nameOf: (item: Item) => string): string {
 	if (items.length === 1) {
 		const one = __('Delete "%(title)s" for good? This cannot be undone.', 'gophenberg')
-		return sprintf(one, { title: name(nameOf(items[0])) })
+		return sprintf(one, { title: nameOf(items[0]) })
 	}
 	const many = _n(
 		'Delete %s item for good? This cannot be undone.',
@@ -67,12 +58,11 @@ export function deleteQuestion<Item>(items: Item[], name: NameCut, nameOf: (item
 
 /**
  * Returns the words a permanent delete over items reads as.
- * @param name - Cuts a name to the length a toast shows.
  * @param nameOf - Returns the name an item is listed under.
  * @returns The words for the items deleted and for the ones that stayed.
  */
-export function deleteWords<Item>(name: NameCut, nameOf: (item: Item) => string): BulkWords<Item> {
-	return itemWords(name, nameOf, {
+export function deleteWords<Item>(nameOf: (item: Item) => string): BulkWords<Item> {
+	return itemWords(nameOf, {
 		named: (title) => sprintf(__('"%s" permanently deleted.', 'gophenberg'), title),
 		finished: (count) =>
 			sprintf(

@@ -131,16 +131,6 @@ test('names the one file it stored in a toast', async () => {
 	expect(await screen.findByText('"harbor.jpg" uploaded.', { selector: '.godmin-toast' })).toBeInTheDocument()
 })
 
-test('cuts a long file name in the upload toast at the length the site serves', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 5 })))
-	storing()
-	renderAt('/media')
-
-	await choose(file('harbor.jpg'))
-
-	expect(await screen.findByText('"harbo…" uploaded.', { selector: '.godmin-toast' })).toBeInTheDocument()
-})
-
 test('counts the files it stored in a toast when several were chosen', async () => {
 	storing()
 	renderAt('/media')

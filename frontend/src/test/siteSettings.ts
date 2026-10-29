@@ -9,7 +9,7 @@ export const siteSettings = {
 	list_page_size: 20,
 	picker_page_size: 50,
 	toast_milliseconds: 6000,
-	toast_name_length: 45,
+	toast_action_milliseconds: 10000,
 	format_locale: 'es-ES',
 	updates_progress_milliseconds: 2000,
 	updates_restart_wait_milliseconds: 300000,

@@ -8,7 +8,6 @@ import type { QueryClient } from '@tanstack/react-query'
 import { __ } from '@wordpress/i18n'
 import { useCallback, useMemo } from 'react'
 
-import type { NameCut } from '../lists/itemWords'
 import { originOf } from './typeFields'
 import { AddressModal, DescribeModal, MakeDefaultModal } from './TypeModals'
 import type { RunOnList } from './TypeModals'
@@ -41,8 +40,6 @@ function demotable(type: ContentType): boolean {
 interface ActionTools {
 	/** The query client the writes run on. */
 	client: QueryClient
-	/** Cuts a name to the length a toast shows. */
-	name: NameCut
 	/** Runs a call over types that may leave the list. */
 	removals: BulkRun<ContentType>
 	/** Runs a call over types, leaving the focus to the run on the list around it. */
@@ -101,7 +98,7 @@ function formActions(tools: ActionTools): Action<ContentType>[] {
 function switchActions(tools: ActionTools): Action<ContentType>[] {
 	const activeAs = (on: boolean) => (types: ContentType[]) =>
 		tools.runOnList(types, () =>
-			tools.switches(types, (type) => editInTurn(tools.client, type.key, { active: on }), switchWords(tools.name, on)),
+			tools.switches(types, (type) => editInTurn(tools.client, type.key, { active: on }), switchWords(on)),
 		)
 	const nestingAs =
 		(hierarchical: boolean) =>
@@ -149,9 +146,9 @@ function DeleteTypesModal({ items, closeModal, tools }: RenderModalProps<Content
 			closeModal={closeModal}
 			confirmLabel={__('Delete', 'gophenberg')}
 			cancelLabel={__('Cancel', 'gophenberg')}
-			run={(types) => tools.removals(types, (type) => deleteInTurn(tools.client, type.key), removalWords(tools.name))}
+			run={(types) => tools.removals(types, (type) => deleteInTurn(tools.client, type.key), removalWords())}
 		>
-			{removalQuestion(items, tools.name)}
+			{removalQuestion(items)}
 		</RunConfirm>
 	)
 }
@@ -220,7 +217,6 @@ function useRunOnList(list: ListRun, pageKeys: () => Promise<string[]>): RunOnLi
  */
 export function useTypeActions(list: ListRun, pageKeys: () => Promise<string[]>): Action<ContentType>[] {
 	const client = useQueryClient()
-	const name = useToaster().name
 	const refresh = useCallback(() => refreshTypes(client), [client])
 	const removals = useBulkRun<ContentType>(list, refresh)
 	const switches = useBulkRun<ContentType>(NO_FOCUS_MOVE, refresh)
@@ -229,7 +225,7 @@ export function useTypeActions(list: ListRun, pageKeys: () => Promise<string[]>)
 	const descriptions = useUnsavedText()
 	const routeWords = useUnsavedText()
 	return useMemo(() => {
-		const tools = { client, name, removals, switches, edit, runOnList, descriptions, routeWords }
+		const tools = { client, removals, switches, edit, runOnList, descriptions, routeWords }
 		return [...formActions(tools), ...switchActions(tools), deleteAction(tools)]
-	}, [client, descriptions, edit, name, removals, routeWords, runOnList, switches])
+	}, [client, descriptions, edit, removals, routeWords, runOnList, switches])
 }

@@ -10,7 +10,6 @@ import { holdWrite } from '../content/postWrites'
 import { gate } from './gate'
 import { renderAt } from './render'
 import { storedPost } from './postFixture'
-import { siteSettings } from './siteSettings'
 import { warmPostsScreen } from './warm'
 
 warmPostsScreen()
@@ -257,15 +256,14 @@ test('names no parent for a copy of an item at the top of its tree', async () =>
 	expect(created[0]).not.toHaveProperty('parent_id')
 })
 
-test('names the copy in a toast cut at the length the site serves, and reads the list again', async () => {
-	server.use(http.get('/api/settings', () => HttpResponse.json({ ...siteSettings, toast_name_length: 10 })))
+test('names the copy in full in a toast, and reads the list again', async () => {
 	renderAt('/content/post')
 	const dialog = await openDuplicate()
 	const before = listings
 
 	await userEvent.click(within(dialog).getByRole('button', { name: 'Duplicate' }))
 
-	const toast = '"Welcome to…" successfully created.'
+	const toast = '"Welcome to Gophenberg (Copy)" successfully created.'
 	expect(await screen.findByText(toast, { selector: '.godmin-toast' })).toBeInTheDocument()
 	await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 	expect(listings).toBeGreaterThan(before)

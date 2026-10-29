@@ -46,7 +46,7 @@ test('names the menu button in the language the reader loaded, from the words go
 })
 
 test('describes how to dismiss a toast in the language the reader loaded', async () => {
-	setLocaleData({ Dismiss: ['Descartar'] }, 'gophenberg')
+	setLocaleData({ 'Dismiss this notice': ['Descartar este aviso'] }, 'gophenberg')
 	onTestFinished(() => resetLocaleData({}, 'gophenberg'))
 	renderToast()
 
@@ -54,5 +54,5 @@ test('describes how to dismiss a toast in the language the reader loaded', async
 
 	expect(
 		await screen.findByRole('button', { name: 'Saved.' }),
-	).toHaveAccessibleDescription('Descartar')
+	).toHaveAccessibleDescription('Descartar este aviso')
 })

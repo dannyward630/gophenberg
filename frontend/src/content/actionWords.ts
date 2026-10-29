@@ -5,7 +5,6 @@ import { formatNumber } from '@gopherium/gottext'
 import { __, _n, sprintf } from '@wordpress/i18n'
 
 import { itemWords } from '../lists/itemWords'
-import type { NameCut } from '../lists/itemWords'
 import type { Post } from './api'
 
 /**
@@ -20,12 +19,11 @@ export function postName(post: Post): string {
 /**
  * Returns the question asked before the given posts are trashed.
  * @param items - The posts acted on.
- * @param name - Cuts a title to the length a toast shows.
  * @returns The question naming the post when only one was picked.
  */
-export function trashQuestion(items: Post[], name: NameCut): string {
+export function trashQuestion(items: Post[]): string {
 	if (items.length === 1) {
-		return sprintf(__('Move "%(title)s" to the trash?', 'gophenberg'), { title: name(postName(items[0])) })
+		return sprintf(__('Move "%(title)s" to the trash?', 'gophenberg'), { title: postName(items[0]) })
 	}
 	const many = _n('Move %s item to the trash?', 'Move %s items to the trash?', items.length, 'gophenberg')
 	return sprintf(many, formatNumber(items.length))
@@ -33,11 +31,10 @@ export function trashQuestion(items: Post[], name: NameCut): string {
 
 /**
  * Returns the words a trash over posts reads as.
- * @param name - Cuts a title to the length a toast shows.
  * @returns The words for the posts trashed and for the ones that stayed.
  */
-export function trashWords(name: NameCut): BulkWords<Post> {
-	return itemWords(name, postName, {
+export function trashWords(): BulkWords<Post> {
+	return itemWords(postName, {
 		named: (title) => sprintf(__('"%s" moved to the trash.', 'gophenberg'), title),
 		finished: (count) =>
 			sprintf(_n('%s item moved to the trash.', '%s items moved to the trash.', count, 'gophenberg'), formatNumber(count)),
@@ -65,12 +62,11 @@ function restoredCount(type: string, count: number): string {
 
 /**
  * Returns the words a restore over posts reads as.
- * @param name - Cuts a title to the length a toast shows.
  * @param type - The content type the posts belong to.
  * @returns The words for the posts restored and for the ones that stayed in the trash.
  */
-export function restoreWords(name: NameCut, type: string): BulkWords<Post> {
-	return itemWords(name, postName, {
+export function restoreWords(type: string): BulkWords<Post> {
+	return itemWords(postName, {
 		named: (title) => sprintf(__('"%s" has been restored.', 'gophenberg'), title),
 		finished: (count) => restoredCount(type, count),
 		unfinished: (count) =>

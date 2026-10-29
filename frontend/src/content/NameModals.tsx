@@ -73,7 +73,7 @@ export function DuplicateModal({ items: [post], closeModal, unsaved }: PostModal
 						unsaved.delete(post.id)
 					}
 					await refresh()
-					toaster.show(sprintf(__('"%s" successfully created.', 'gophenberg'), toaster.name(title)))
+					toaster.show(sprintf(__('"%s" successfully created.', 'gophenberg'), title))
 				},
 				(failure: Error) => {
 					if (stillLatest()) {

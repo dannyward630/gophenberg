@@ -2,7 +2,7 @@
 
 import { sessionMayChange, trashIcon } from '@gophenberg/frontend-sdk'
 import type { Action } from '@gophenberg/frontend-sdk/dataviews'
-import { useBulkRun, useToaster, useUnsavedText } from '@gopherium/godmin'
+import { useBulkRun, useUnsavedText } from '@gopherium/godmin'
 import type { ListRun } from '@gopherium/godmin'
 import { useSession } from '@gopherium/react-auth'
 import { useQueryClient } from '@tanstack/react-query'
@@ -43,14 +43,13 @@ export function useMayChange(): (item: MediaItem) => boolean {
  */
 export function useMediaTools(list: ListRun): MediaTools {
 	const client = useQueryClient()
-	const name = useToaster().name
 	const refresh = useRefreshMedia()
 	const removals = useBulkRun<MediaItem>(list, refresh)
 	const edits = useUnsavedText<MediaDescriptions>()
 	const renames = useUnsavedText()
 	return useMemo(
-		() => ({ client, name, refresh, removals, edits, renames }),
-		[client, edits, name, refresh, removals, renames],
+		() => ({ client, refresh, removals, edits, renames }),
+		[client, edits, refresh, removals, renames],
 	)
 }
 

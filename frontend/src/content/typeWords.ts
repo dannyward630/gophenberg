@@ -5,18 +5,16 @@ import { formatNumber } from '@gopherium/gottext'
 import { __, _n, _x, sprintf } from '@wordpress/i18n'
 
 import { deleteQuestion, itemWords } from '../lists/itemWords'
-import type { NameCut } from '../lists/itemWords'
 import { pluralOf } from './typeText'
 import type { ContentType } from './types'
 
 /**
  * Returns the words a switch on or off over types reads as.
- * @param name - Cuts a name to the length a toast shows.
  * @param on - Whether the switch turns the types on.
  * @returns The words for the types switched and for the ones that stayed.
  */
-export function switchWords(name: NameCut, on: boolean): BulkWords<ContentType> {
-	return itemWords(name, pluralOf, {
+export function switchWords(on: boolean): BulkWords<ContentType> {
+	return itemWords(pluralOf, {
 		named: (type) =>
 			sprintf(on ? __('"%s" activated.', 'gophenberg') : __('"%s" deactivated.', 'gophenberg'), type),
 		finished: (count) =>
@@ -43,11 +41,10 @@ export function switchWords(name: NameCut, on: boolean): BulkWords<ContentType> 
 
 /**
  * Returns the words deleting types for good reads as, counting content types where the posts list counts items.
- * @param name - Cuts a name to the length a toast shows.
  * @returns The words for the types deleted and for the ones that stayed.
  */
-export function removalWords(name: NameCut): BulkWords<ContentType> {
-	return itemWords(name, pluralOf, {
+export function removalWords(): BulkWords<ContentType> {
+	return itemWords(pluralOf, {
 		named: (type) => sprintf(_x('"%s" permanently deleted.', 'content type', 'gophenberg'), type),
 		finished: (count) =>
 			sprintf(
@@ -70,12 +67,11 @@ export function removalWords(name: NameCut): BulkWords<ContentType> {
 /**
  * Returns the question asked before types are deleted for good.
  * @param types - The types picked.
- * @param name - Cuts a name to the length a toast shows.
  * @returns The question naming the type when only one was picked, else counting content types.
  */
-export function removalQuestion(types: ContentType[], name: NameCut): string {
+export function removalQuestion(types: ContentType[]): string {
 	if (types.length === 1) {
-		return deleteQuestion(types, name, pluralOf)
+		return deleteQuestion(types, pluralOf)
 	}
 	const many = _n(
 		'Delete %s content type for good? This cannot be undone.',
