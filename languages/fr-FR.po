@@ -443,6 +443,10 @@ msgid "Dismiss"
 msgstr "Ignorer"
 
 #, fuzzy
+msgid "Dismiss this notice"
+msgstr "Ignorer cette notification"
+
+#, fuzzy
 msgid "Document"
 msgstr "Document"
 
@@ -877,6 +881,14 @@ msgstr "Chargement de l'article."
 #, fuzzy
 msgid "Loading the screen."
 msgstr "Chargement de l'écran."
+
+#, fuzzy
+msgid "Loading the settings."
+msgstr "Chargement des réglages."
+
+#, fuzzy
+msgid "Loading the updates."
+msgstr "Chargement des mises à jour."
 
 #, fuzzy
 msgid "Loading themes."
