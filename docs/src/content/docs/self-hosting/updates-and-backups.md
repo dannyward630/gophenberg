@@ -812,9 +812,10 @@ have fixed what failed, run:
 /opt/gophenberg/current/gophenberg update:apply -to 1.4.1 -retry
 ```
 
-Under systemd, a service that stops at exit code 76 can start a
-rollback unit, which runs `update:rollback -after-failure` and then
-starts the service again, see
+Under systemd, once systemd gave up restarting the site, a rollback
+unit runs `update:rollback -after-failure` and then starts the
+service again. A start that failed its check with exit code 76 and a
+build that keeps crashing both count, see
 [update:rollback](/self-hosting/commands/#updaterollback). To take
 back an update that passed its check, run `update:rollback` and
 restart Gophenberg. It refuses that version from then on too.

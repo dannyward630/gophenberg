@@ -589,26 +589,26 @@ and password, see [the first administrator](#the-first-administrator).
 
 A run goes in this order:
 
-1. It reads [the server settings](/self-hosting/configuration/#the-server-settings)
-   and stops on a bad value, naming every bad value at once. On a
-   server an earlier run set up, a run that is not root's stops here
-   with the root line below, since root alone may read `server.env`
-   and the install record.
-2. It reads the install record,
+1. It runs the first two checks listed below, root and the installer
+   folder, before it opens any file. So a run that is not root's stops
+   with the root line below.
+2. Without `-dry-run`, it stops at once while another `server:install`
+   or `server:uninstall -yes` is running on the server.
+3. It reads [the server settings](/self-hosting/configuration/#the-server-settings)
+   and stops on a bad value, naming every bad value at once.
+4. It reads the install record,
    `/var/lib/gophenberg-installer/install.json`, when one is there.
    It stops when the record names a newer installer than this one, so
    an older binary never writes its files over newer ones.
-3. It checks the server, as listed below.
-4. With `-dry-run`, it prints the steps and ends.
-5. It opens the archive. Its `release.json` must name the version of
+5. It runs the rest of the checks listed below.
+6. With `-dry-run`, it prints the steps and ends.
+7. It opens the archive. Its `release.json` must name the version of
    this binary and the platform of this server, such as `linux/amd64`.
-6. While the first administrator is still to be made, it asks for
+8. While the first administrator is still to be made, it asks for
    what the flags leave out.
-7. It takes the steps, see [taking the steps](#taking-the-steps).
+9. It takes the steps, see [taking the steps](#taking-the-steps).
 
-Nothing on the server changes before the steps. A run without
-`-dry-run` stops at once while another `server:install` or
-`server:uninstall -yes` is running on the server.
+Nothing on the server changes before the steps.
 
 It never reads the `.env` file of the folder it runs in, since the
 site's own user can write such a file. Every program it starts, such
@@ -1055,9 +1055,14 @@ Add `-yes` to remove what it lists. The run then ends with
 - It stops the site and removes its two units.
 - A Caddyfile still as the install wrote it goes back to the one the
   caddy package wrote, and Caddy restarts. A Caddyfile you changed,
-  such as with a site of your own, stays. Only the line
-  `import /etc/caddy/gophenberg.caddy` comes out, Caddy's drop-in
-  stays, and Caddy reloads.
+  such as with a site of your own, stays, and so does Caddy's drop-in.
+  The line `import /etc/caddy/gophenberg.caddy` comes out when it is
+  there. Before Caddy's files change, the install record keeps the
+  SHA-256 of the Caddyfile the install wrote, so a later install never
+  writes over yours, even when the uninstall stops part way. Caddy then
+  reloads, or restarts when the install never ended its caddy step,
+  such as after a first run that stopped at `caddy validate` or a
+  Caddy restart that failed.
 - The builds go, and so do the `previous` link and
   `state/update.json` when they are there.
 - Anything already gone is skipped, so a second run prints
@@ -1080,6 +1085,7 @@ gophenberg: /var/lib/gophenberg-installer, which holds the install record, must 
 gophenberg: another server:install or server:uninstall is running on this server, so nothing was changed
 gophenberg: this server has no install record at /var/lib/gophenberg-installer/install.json, so server:uninstall has nothing to remove
 gophenberg: server:uninstall needs /etc/caddy/Caddyfile to take Gophenberg's site out of Caddy, and it is not there, so nothing was changed
+gophenberg: /etc/caddy/Caddyfile is a link, and the line "import /etc/caddy/gophenberg.caddy" must come out of the file it leads to before server:uninstall runs again, so nothing was changed
 ```
 
 `-delete-data` also drops the database and its role. It removes the
@@ -1094,7 +1100,8 @@ the install put there and the domain. The
 kept Caddy still holds TCP port 80, so a later install
 for that domain skips the domain check. When a Caddyfile you changed
 stays, the record also keeps the SHA-256 of the Caddyfile the install
-wrote, so a later install stops until the import line is back, as in
+wrote, even after a first run that stopped in its caddy step, so a
+later install stops until the import line is back, as in
 [installing again](#installing-again). A later install takes the
 packages as its own, and needs `-domain` and the first administrator
 again.
@@ -1234,15 +1241,16 @@ update instead. It never opens the database, so it works when the database is
 what broke.
 
 `-after-failure` is the form the rollback unit of the service manager
-runs after a failed start. It reads `MONITOR_SERVICE_RESULT` and
-`MONITOR_EXIT_STATUS`, which systemd hands that unit, and takes the
-update back only when the state says the update switched builds and
-systemd says the starts hit the start limit, `start-limit-hit`, or the
-new build exited with code 76. It then exits with code 0, so the unit
-starts the service again. Otherwise it changes nothing and exits with
-code 1. It takes back each update once, so two failing builds never
-take turns. An update that raised the minimum version and whose new
-build already reached the database stays down: it writes that the
+runs. The unit acts only once systemd gave up restarting the site. It
+reads `MONITOR_SERVICE_RESULT`, which systemd hands that unit, and
+takes the update back only when the state says the update switched
+builds and systemd reports any result but `success`. So a start that
+failed its check with exit code 76 and a build that keeps crashing
+both count. It then exits with code 0, so the unit starts the service
+again. Otherwise it changes nothing and exits with code 1. It takes
+back each update once, so two failing builds never take turns. An
+update that raised the minimum version and whose new build already
+reached the database stays down: it writes that the
 update failed, so `update:status` shows the steps that restore the
 backup, prints them and exits with code 1. One whose new build never
 reached the database, such as one that started while PostgreSQL was
