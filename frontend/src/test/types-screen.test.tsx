@@ -94,10 +94,12 @@ test('shows the types it holds at once when the list opens again, while it reads
 	const names = await listedNames()
 	await leaveStale(router, client, typesQueryKey)
 	const again = gate()
+	let reading = false
 	server.use(
 		http.get('/api/types', async () => {
+			reading = true
 			await again.held
-			return HttpResponse.json({ items: [POST_TYPE, PAGE_TYPE, GUIDE_TYPE] })
+			return HttpResponse.json({ items: [POST_TYPE, PAGE_TYPE, { ...GUIDE_TYPE, plural_label: 'Handbooks' }] })
 		}),
 	)
 
@@ -107,7 +109,9 @@ test('shows the types it holds at once when the list opens again, while it reads
 
 	expect(await listedNames()).toEqual(names)
 	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
 	again.release()
+	expect(await (await typesList()).findByText('Handbooks', { exact: true })).toBeInTheDocument()
 })
 
 test('says under the title what the screen holds', async () => {

@@ -202,10 +202,16 @@ test('shows the rows it holds at once when the list opens again, while it reads 
 	await screen.findByText('Welcome to Gophenberg')
 	await leaveStale(router, client, ['posts'])
 	const again = gate()
+	let reading = false
 	server.use(
 		http.get('/api/content', async () => {
+			reading = true
 			await again.held
-			return HttpResponse.json({ items: [PUBLISHED, DRAFT], total: 2, per_page: 20 })
+			return HttpResponse.json({
+				items: [PUBLISHED, { ...DRAFT, title: 'Notes on the Final Release' }],
+				total: 2,
+				per_page: 20,
+			})
 		}),
 	)
 
@@ -215,7 +221,9 @@ test('shows the rows it holds at once when the list opens again, while it reads 
 
 	expect(await screen.findByText('Welcome to Gophenberg')).toBeInTheDocument()
 	expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
 	again.release()
+	expect(await screen.findByText('Notes on the Final Release')).toBeInTheDocument()
 })
 
 test('never shows the rows of one type while the list of another loads', async () => {

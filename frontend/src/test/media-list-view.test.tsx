@@ -445,10 +445,16 @@ test('shows the cards it holds at once when the library opens again, while it re
 	await screen.findByText('Harbor at dawn')
 	await leaveStale(router, client, mediaQueryKey)
 	const again = gate()
+	let reading = false
 	server.use(
 		http.get('/api/media', async () => {
+			reading = true
 			await again.held
-			return HttpResponse.json({ items: [HARBOR, MANUAL], total: 2, per_page: siteSettings.list_page_size })
+			return HttpResponse.json({
+				items: [HARBOR, { ...MANUAL, title: 'Field manual' }],
+				total: 2,
+				per_page: siteSettings.list_page_size,
+			})
 		}),
 	)
 
@@ -458,7 +464,9 @@ test('shows the cards it holds at once when the library opens again, while it re
 
 	expect(await screen.findByText('Harbor at dawn')).toBeInTheDocument()
 	expect(document.querySelector('.dataviews-view-grid')).toHaveAttribute('aria-busy', 'false')
+	await waitFor(() => expect(reading).toBe(true))
 	again.release()
+	expect(await screen.findByText('Field manual')).toBeInTheDocument()
 })
 
 test('opens Edit from a tap on a phone row of the page on show while the next page loads', async () => {
