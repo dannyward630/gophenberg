@@ -10,6 +10,7 @@ Type=oneshot
 User=gophenberg
 Group=gophenberg
 WorkingDirectory={{.Root}}
+ExecCondition=+{{.Systemctl}} is-failed --quiet gophenberg.service
 ExecStart={{.Root}}/previous/gophenberg update:rollback -after-failure
 ExecStartPost=+{{.Systemctl}} reset-failed gophenberg.service
 ExecStartPost=+{{.Systemctl}} start gophenberg.service

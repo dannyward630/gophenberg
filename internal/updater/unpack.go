@@ -31,43 +31,59 @@ var knownFiles = map[string]fs.FileMode{
 	"NOTICE":       0o644,
 }
 
-// unpacker writes the entries of one release archive into its build folder.
+// unpacker writes the entries of one release archive into its build folder dir of tree.
 type unpacker struct {
 	reader *tar.Reader
+	tree   *os.Root
 	dir    string
 }
 
-// Unpack writes the known files of the release archive into dir, a folder it makes, deleting dir when any entry fails.
-func Unpack(archive io.Reader, dir string) error {
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		return fmt.Errorf("updater: make the build folder: %w", err)
+// UnpackIn writes the known files of the release archive into dir, a folder it makes in tree, deleting it on a failure.
+func UnpackIn(tree *os.Root, archive io.Reader, dir string) error {
+	if err := tree.Mkdir(dir, 0o755); err != nil {
+		return folderNotMade(err)
 	}
-	if err := unpackInto(archive, dir); err != nil {
-		_ = os.RemoveAll(dir)
+	if err := unpackInto(tree, archive, dir); err != nil {
+		_ = tree.RemoveAll(dir)
 		return err
 	}
 	return nil
 }
 
-// unpackInto saves the new build folder dir to disk, then writes the entries of the gzip archive and saves them.
-func unpackInto(archive io.Reader, dir string) error {
-	if err := saveFolders(filepath.Dir(dir)); err != nil {
+// Unpack writes the known files of the release archive into dir, a folder it makes, deleting dir when any entry fails.
+func Unpack(archive io.Reader, dir string) error {
+	tree, err := os.OpenRoot(filepath.Dir(dir))
+	if err != nil {
+		return folderNotMade(err)
+	}
+	defer func() { _ = tree.Close() }()
+	return UnpackIn(tree, archive, filepath.Base(dir))
+}
+
+// folderNotMade says the build folder could not be made, and why.
+func folderNotMade(err error) error {
+	return fmt.Errorf("updater: make the build folder: %w", err)
+}
+
+// unpackInto saves the new build folder dir of tree to disk, then writes the entries of the archive and saves them.
+func unpackInto(tree *os.Root, archive io.Reader, dir string) error {
+	if err := saveFolders(tree, filepath.Dir(dir)); err != nil {
 		return err
 	}
 	unzipped, err := gzip.NewReader(archive)
 	if err != nil {
 		return fmt.Errorf("updater: refused the archive, which is not gzip: %w", err)
 	}
-	if err := (unpacker{reader: tar.NewReader(unzipped), dir: dir}).entries(); err != nil {
+	if err := (unpacker{reader: tar.NewReader(unzipped), tree: tree, dir: dir}).entries(); err != nil {
 		return err
 	}
-	return saveFolders(filepath.Join(dir, licensesFolder), dir)
+	return saveFolders(tree, filepath.Join(dir, licensesFolder), dir)
 }
 
-// saveFolders flushes the entries of each folder to disk, so a power cut leaves no build half written.
-func saveFolders(folders ...string) error {
+// saveFolders flushes the entries of each folder of tree to disk, so a power cut leaves no build half written.
+func saveFolders(tree *os.Root, folders ...string) error {
 	for _, folder := range folders {
-		if err := syncFolder(folder); err != nil {
+		if err := syncIn(tree, folder); err != nil {
 			return fmt.Errorf("updater: save the build to disk: %w", err)
 		}
 	}
@@ -76,7 +92,16 @@ func saveFolders(folders ...string) error {
 
 // syncFolder flushes the entries of the folder at name to disk, doing nothing for a folder that is not there.
 func syncFolder(name string) error {
-	folder, err := os.Open(name)
+	return syncOpened(os.Open(name))
+}
+
+// syncIn flushes the entries of the folder at name in tree to disk, doing nothing for a folder that is not there.
+func syncIn(tree *os.Root, name string) error {
+	return syncOpened(tree.Open(name))
+}
+
+// syncOpened flushes the entries of the folder an open gave, or returns its error, taking a folder not there as done.
+func syncOpened(folder *os.File, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -150,8 +175,8 @@ func isLicensesFolder(header *tar.Header) bool {
 func (u unpacker) write(header *tar.Header, mode fs.FileMode) error {
 	name := path.Clean(header.Name)
 	target := filepath.Join(u.dir, filepath.FromSlash(name))
-	_ = os.MkdirAll(filepath.Dir(target), 0o755)
-	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	_ = u.tree.MkdirAll(filepath.Dir(target), 0o755)
+	out, err := u.tree.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return fmt.Errorf("updater: unpack: %w", err)
 	}

@@ -127,16 +127,16 @@ func (s site) unitFiles() []file {
 		"caddy-gophenberg.conf"))
 }
 
-// caddyFiles returns the maintenance page, Gophenberg's Caddy site and, until the Caddy step ended, the Caddyfile.
+// caddyFiles returns the maintenance page, Gophenberg's Caddy site and, until the record holds its sum, the Caddyfile.
 func (s site) caddyFiles() []file {
 	files := []file{
 		s.rootFile(maintenanceFolder+"/index.html", 0o644, "maintenance.html"),
 		s.rootFile(caddySitePath, 0o644, "gophenberg.caddy"),
 	}
-	if s.record.ended(stepCaddy) {
+	if s.record.Caddyfile != "" {
 		return files
 	}
-	return append(files, s.rootFile("/etc/caddy/Caddyfile", 0o644, "Caddyfile"))
+	return append(files, s.rootFile(caddyfilePath, 0o644, "Caddyfile"))
 }
 
 // commandFile returns the gophenberg command on the path.

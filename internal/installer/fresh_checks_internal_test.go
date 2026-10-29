@@ -301,6 +301,65 @@ func TestTheMachineChecksStopOnAParentOfTheInstallRootThatIsNotARealFolder(t *te
 	}
 }
 
+// installerFolderOpen is the stop of a run whose installer folder another user could change.
+const installerFolderOpen = "/var/lib/gophenberg-installer, which holds the install record, must be a real folder " +
+	"owned by root and writable by root alone, so nothing was changed"
+
+func TestInstallStopsAtAnInstallerFolderThatIsALinkAFileOrThatAnotherUserOwnsOrMayWrite(t *testing.T) {
+	t.Parallel()
+
+	link := newFakeServer(t)
+	link.folder("/var/lib/other")
+	link.link(installerFolder, "/var/lib/other")
+	file := newFakeServer(t)
+	file.write(installerFolder, "")
+	owned := newFakeServer(t)
+	owned.folder(installerFolder)
+	owned.owners[installerFolder] = 1000
+	group := newFakeServer(t)
+	group.folder(installerFolder)
+	group.chmod(installerFolder, 0o720)
+	others := newFakeServer(t)
+	others.folder(installerFolder)
+	others.chmod(installerFolder, 0o702)
+
+	for _, server := range []*fakeServer{link, file, owned, group, others} {
+		_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: true})
+
+		wantRefused(t, err, installerFolderOpen)
+		if len(server.ran) != 0 {
+			t.Errorf("the run ran %q, want the installer folder checked right after root", server.ran)
+		}
+	}
+}
+
+func TestInstallStopsAtAnInstallerFolderAnotherUserOwnsBeforeItReadsTheRecord(t *testing.T) {
+	t.Parallel()
+
+	for _, dryRun := range []bool{false, true} {
+		server := newFakeServer(t)
+		server.write(recordPath, "{")
+		server.owners[installerFolder] = 1000
+		before := server.snapshot()
+
+		_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: dryRun})
+
+		wantRefused(t, err, installerFolderOpen)
+		wantUnchanged(t, server, before)
+	}
+}
+
+func TestInstallRefusesAnInstallerFolderItCannotDescribe(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.broken[installerFolder] = syscall.EIO
+
+	_, _, err := runInstall(server, Request{Domain: "example.com", DryRun: true})
+
+	wantRefused(t, err, "installer: input/output error")
+}
+
 func TestTheMachineChecksTakeAnInstallRootWhoseParentsAreStillMissing(t *testing.T) {
 	t.Parallel()
 
@@ -357,6 +416,109 @@ func TestTheMachineChecksStopOnAnInstallRootThatHoldsFilesTheyDidNotPutThere(t *
 		wantRefused(t, err, "the install root "+root+" already holds files that server:install did not put there, "+
 			"and GOPHENBERG_INSTALL_ROOT must name an empty or a new folder, so nothing was changed")
 	}
+}
+
+func TestTheMachineChecksFindNoCurrentBuildOnAFreshServer(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	check := server.check()
+
+	err := check.run(t.Context())
+
+	server.wantPassed(err, "")
+	if check.found.current != "" {
+		t.Errorf("the checks found the current build %q on a fresh server, want none", check.found.current)
+	}
+}
+
+// ownedRootCheck returns the machine check of server for a later run whose record owns the install root.
+func ownedRootCheck(server *fakeServer) *machineCheck {
+	check := server.check()
+	check.record.Installed = []string{"/opt/gophenberg"}
+	return check
+}
+
+func TestTheMachineChecksReadTheBuildTheCurrentLinkNames(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.pointCurrent()
+	check := ownedRootCheck(server)
+
+	err := check.run(t.Context())
+
+	server.wantPassed(err, "")
+	if check.found.current != earlierBuild {
+		t.Errorf("the checks found the current build %q, want %s", check.found.current, earlierBuild)
+	}
+}
+
+func TestTheMachineChecksStopAtACurrentLinkThatNamesNoBuild(t *testing.T) {
+	t.Parallel()
+
+	full := newFakeServer(t)
+	full.folder("/opt/gophenberg/versions/0.19.0")
+	if err := os.Symlink(full.at("/opt/gophenberg/versions/0.19.0"), full.at("/opt/gophenberg/current")); err != nil {
+		t.Fatalf("linking current by its full path: %v", err)
+	}
+	folder := newFakeServer(t)
+	folder.folder("/opt/gophenberg/current")
+
+	for server, why := range map[*fakeServer]string{
+		full: "updater: the current link names " + full.at("/opt/gophenberg/versions/0.19.0") + ", not a build in " +
+			"versions",
+		folder: "updater: read the current link: readlink " + folder.at("/opt/gophenberg/current") + ": invalid " +
+			"argument",
+	} {
+		err := ownedRootCheck(server).run(t.Context())
+
+		wantRefused(t, err, "cannot tell which build /opt/gophenberg/current names: "+why+", so nothing was changed")
+	}
+}
+
+// currentProgram is the program of the build an earlier run left current, from the top of the server.
+const currentProgram = "/opt/gophenberg/versions/" + earlierBuild + "/gophenberg"
+
+func TestTheMachineChecksStopAtACurrentLinkWhoseBuildHasNoProgram(t *testing.T) {
+	t.Parallel()
+
+	for what, lost := range map[string]struct {
+		take func(*fakeServer)
+		why  string
+	}{
+		"the build folder deleted": {func(s *fakeServer) { s.remove(filepath.Dir(currentProgram)) }, "is not there"},
+		"the program deleted":      {func(s *fakeServer) { s.remove(currentProgram) }, "is not there"},
+		"a folder in the program's place": {func(s *fakeServer) {
+			s.remove(currentProgram)
+			s.folder(currentProgram)
+		}, "is not a file"},
+		"the program's execute bits taken": {func(s *fakeServer) { s.chmod(currentProgram, 0o644) }, "is not executable"},
+	} {
+		server := newFakeServer(t)
+		server.pointCurrent()
+		lost.take(server)
+
+		err := ownedRootCheck(server).run(t.Context())
+
+		want := "cannot tell which build /opt/gophenberg/current names: " + currentProgram + " " + lost.why +
+			", so nothing was changed"
+		if err == nil || err.Error() != want {
+			t.Errorf("the checks with %s = %v, want %q", what, err, want)
+		}
+	}
+}
+
+func TestTheMachineChecksRefuseTheProgramOfTheCurrentBuildTheyCannotDescribe(t *testing.T) {
+	t.Parallel()
+
+	server := newFakeServer(t)
+	server.pointCurrent()
+	server.broken[currentProgram] = syscall.EIO
+
+	err := ownedRootCheck(server).run(t.Context())
+
+	wantRefused(t, err, "installer: input/output error")
 }
 
 func TestTheMachineChecksStopOnAnInstallRootThatIsOrHoldsAFolderRootTrusts(t *testing.T) {

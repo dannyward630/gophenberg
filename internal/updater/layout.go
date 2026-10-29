@@ -71,20 +71,30 @@ func (l Layout) Named(link string) (string, error) {
 	return name, nil
 }
 
-// Point points the link called link at the build called name, renaming a new link over the old one.
-func (l Layout) Point(link, name string) error {
-	staged := filepath.Join(l.Root, "."+link+partialSuffix)
-	_ = os.Remove(staged)
-	err := os.Symlink(filepath.Join(versionsFolder, name), staged)
+// PointIn points the link called link of tree at the build called name, renaming a new link over the old one.
+func PointIn(tree *os.Root, link, name string) error {
+	staged := "." + link + partialSuffix
+	_ = tree.Remove(staged)
+	err := tree.Symlink(filepath.Join(versionsFolder, name), staged)
 	if err == nil {
-		err = os.Rename(staged, filepath.Join(l.Root, link))
+		err = tree.Rename(staged, link)
 	}
 	if err == nil {
-		err = syncFolder(l.Root)
+		err = syncIn(tree, ".")
 	}
 	if err != nil {
-		_ = os.Remove(staged)
+		_ = tree.Remove(staged)
 		return fmt.Errorf("updater: point %s at %s: %w", link, name, err)
 	}
 	return nil
+}
+
+// Point points the link called link at the build called name, renaming a new link over the old one.
+func (l Layout) Point(link, name string) error {
+	tree, err := os.OpenRoot(l.Root)
+	if err != nil {
+		return fmt.Errorf("updater: point %s at %s: %w", link, name, err)
+	}
+	defer func() { _ = tree.Close() }()
+	return PointIn(tree, link, name)
 }

@@ -70,6 +70,26 @@ GOPHENBERG_THEME=starter
 	wantFiles(t, []file{got}, []file{{"/srv/gophenberg/.env", "gophenberg", 0o600, want}})
 }
 
+func TestTheStepsHideTheValueOfEachLineThePersonAddedToTheSiteEnvAndOfNoLineTheServerDecides(t *testing.T) {
+	t.Parallel()
+
+	running := firstSite(t, "example.com", 255)
+	running.dotEnv = map[string]string{
+		"GOPHENBERG_INSTALL_ROOT": "/etc", "GOPHENBERG_DATABASE_WAIT": "10s", "GOPHENBERG_THEME": "starter",
+		"GOPHENBERG_SMTP_PASSWORD": "Maria's mail password",
+	}
+
+	for _, planned := range running.steps() {
+		var want []string
+		if planned.id == "site-env" {
+			want = []string{"GOPHENBERG_SMTP_PASSWORD", "GOPHENBERG_THEME"}
+		}
+		if !slices.Equal(planned.hides, want) {
+			t.Errorf("the step %s hides the values of %q, want %q", planned.id, planned.hides, want)
+		}
+	}
+}
+
 func TestStopGracesReadTheFiveGracesServeStopsWithinInTheOrderItWaitsThroughThem(t *testing.T) {
 	t.Parallel()
 

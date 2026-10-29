@@ -6,13 +6,16 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -83,6 +86,110 @@ func TestServerInstallOffersEveryFlagOfTheInstallLine(t *testing.T) {
 	}
 }
 
+func TestServerUninstallOffersDeleteDataAndYes(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, Program(testkit.Getenv(nil), noPlugins), "", "help", "server:uninstall")
+
+	want := strings.Join([]string{
+		"remove what server:install set up on this server, keeping the site's data unless -delete-data",
+		"",
+		"Usage:",
+		"  gophenberg server:uninstall [flags]",
+		"",
+		"Flags:",
+		"  -delete-data",
+		"    \talso drop the database and its role, and remove the install root, /etc/gophenberg/server.env and the " +
+			"system user gophenberg",
+		"  -yes",
+		"    \tapply the change, a dry run without it",
+		"",
+	}, "\n")
+	if got.Code != gonsole.ExitDone || got.Stdout != want {
+		t.Errorf("help server:uninstall = %d, stdout %q, want 0 and\n%s", got.Code, got.Stdout, want)
+	}
+	if got.Stderr != "" {
+		t.Errorf("help server:uninstall noted %q, want nothing", got.Stderr)
+	}
+}
+
+// rootOwned describes a file as root's, whatever user the test runs as.
+type rootOwned struct{ fs.FileInfo }
+
+// Sys returns the system description of the file with root as its owner.
+func (i rootOwned) Sys() any {
+	stat := *i.FileInfo.Sys().(*syscall.Stat_t)
+	stat.Uid = 0
+	return &stat
+}
+
+// lstatAsRoot describes the file at path as os.Lstat does, with root as its owner.
+func lstatAsRoot(path string) (fs.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	return rootOwned{info}, nil
+}
+
+// recordedMachine returns a server root runs on whose install record names the PostgreSQL it installed and the user.
+func recordedMachine(t *testing.T) installer.Machine {
+	t.Helper()
+	root := t.TempDir()
+	folder := filepath.Join(root, "var/lib/gophenberg-installer")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatalf("making the installer's folder: %v", err)
+	}
+	record := []byte(`{"installer": "0.19.0", "installed": ["postgresql"]}` + "\n")
+	if err := os.WriteFile(filepath.Join(folder, "install.json"), record, 0o600); err != nil {
+		t.Fatalf("writing the install record: %v", err)
+	}
+	return installer.Machine{
+		Root: root, Lstat: lstatAsRoot, Euid: func() int { return 0 },
+		LookupUser: func(name string) (*user.User, error) { return &user.User{Username: name}, nil },
+	}
+}
+
+func TestServerUninstallListsWhatItKeepsAndEndsWithTheDryRunLineWithoutYes(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, onMachine(nil, recordedMachine(t)), "", "server:uninstall")
+
+	want := "server:uninstall finds nothing left to remove.\nserver:uninstall keeps:\n  the system user gophenberg\n" +
+		"  /var/lib/gophenberg-installer/install.json, so a later install picks up what is kept\n" +
+		"  the packages server:install installed, which sudo apt-get purge postgresql removes\n"
+	if got.Code != gonsole.ExitDone || got.Stdout != want {
+		t.Errorf("server:uninstall = %d, stdout %q, stderr %q, want 0 and\n%s", got.Code, got.Stdout, got.Stderr, want)
+	}
+	if line := "gophenberg: dry run, nothing changed, pass -yes to apply\n"; got.Stderr != line {
+		t.Errorf("server:uninstall noted %q, want gonsole's dry run line %q", got.Stderr, line)
+	}
+}
+
+func TestServerUninstallHandsDeleteDataToTheUninstall(t *testing.T) {
+	t.Parallel()
+
+	got := testkit.Run(t, onMachine(nil, recordedMachine(t)), "", "server:uninstall", "-delete-data")
+
+	want := "server:uninstall removes:\n  the system user gophenberg\nserver:uninstall keeps:\n"
+	if got.Code != gonsole.ExitDone || !strings.HasPrefix(got.Stdout, want) {
+		t.Errorf("server:uninstall -delete-data = %d, stdout %q, stderr %q, want 0 and the user removed", got.Code,
+			got.Stdout, got.Stderr)
+	}
+}
+
+func TestServerUninstallRefusesAPlainUser(t *testing.T) {
+	t.Parallel()
+
+	machine := recordedMachine(t)
+	machine.Euid = func() int { return 1000 }
+
+	got := testkit.Run(t, onMachine(nil, machine), "", "server:uninstall", "-yes")
+
+	wantAnswer(t, got, gonsole.ExitFailed,
+		"gophenberg: server:uninstall must run as root, such as with sudo, so nothing was changed")
+}
+
 func TestServerInstallHandsTheInstallerEveryFlagTheLineSets(t *testing.T) {
 	t.Parallel()
 
@@ -124,9 +231,9 @@ func TestServerInstallRefusesAnInstallRootThatIsNotAbsolute(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{"GOPHENBERG_INSTALL_ROOT": "planted/root"}
+	machine := installer.Machine{Root: t.TempDir(), Lstat: lstatAsRoot, Euid: func() int { return 0 }}
 
-	got := testkit.Run(t, onMachine(env, installer.Machine{Root: t.TempDir()}), "", "server:install", "-dry-run",
-		"-domain", "example.com")
+	got := testkit.Run(t, onMachine(env, machine), "", "server:install", "-dry-run", "-domain", "example.com")
 
 	wantAnswer(t, got, gonsole.ExitFailed,
 		`gophenberg: GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "planted/root"`)
@@ -230,6 +337,9 @@ func TestOnlyTheServerCommandsLeaveTheDotEnvFileUnread(t *testing.T) {
 
 func TestMainBinaryLeavesTheDotEnvFileUnreadForTheServerCommands(t *testing.T) {
 	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, which takes server:install past its root check onto the real server")
+	}
 
 	binary, env := testkit.CoverBinary(t, "GOPHENBERG_", "gophenberg")
 	folder := t.TempDir()
@@ -238,14 +348,13 @@ func TestMainBinaryLeavesTheDotEnvFileUnreadForTheServerCommands(t *testing.T) {
 		t.Fatalf("writing the .env file: %v", err)
 	}
 
-	install, code := stderrOf(t, binary, append(slices.Clone(env), "GOPHENBERG_INSTALL_MEMORY_FLOOR_MB=0"), folder,
-		"server:install", "-dry-run", "-domain", "example.com")
+	install, code := stderrOf(t, binary, env, folder, "server:install", "-dry-run", "-domain", "example.com")
 	status, _ := stderrOf(t, binary, env, folder, "update:status")
 
-	want := "gophenberg: GOPHENBERG_INSTALL_MEMORY_FLOOR_MB: must stand above zero, got \"0\"\n"
+	want := "gophenberg: server:install must run as root, such as with sudo, so nothing was changed\n"
 	if install != want || code != gonsole.ExitFailed {
-		t.Errorf("server:install = %d, printing %q, want %d and only the memory floor of its environment %q, the "+
-			".env file never read", code, install, gonsole.ExitFailed, want)
+		t.Errorf("server:install = %d, printing %q, want %d and only the root line %q, nothing of the .env file",
+			code, install, gonsole.ExitFailed, want)
 	}
 	if want := `GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "planted/root"`; !strings.Contains(status, want) {
 		t.Errorf("update:status printed %q, want the .env file read and %q", status, want)

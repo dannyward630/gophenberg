@@ -5,6 +5,8 @@ package installer
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,6 +14,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"os/user"
 	"path/filepath"
 	"syscall"
 )
@@ -35,9 +38,12 @@ type Machine struct {
 	Listen       func(network, address string) (net.Listener, error)
 	ListenPacket func(network, address string) (net.PacketConn, error)
 	Fetch        func(request *http.Request) (*http.Response, error)
+	FetchHTTPS   func(request *http.Request, roots *x509.CertPool) (*http.Response, error)
 	Resolve      func(ctx context.Context, network, host string) ([]netip.Addr, error)
 	Addresses    func() ([]net.Addr, error)
-	Terminal     func() (*os.File, error)
+	Terminal     func() (Prompt, error)
+	Executable   func() (string, error)
+	LookupUser   func(name string) (*user.User, error)
 	Euid         func() int
 }
 
@@ -46,9 +52,18 @@ func RealMachine() Machine {
 	fetch := &http.Client{Transport: &http.Transport{}, CheckRedirect: answerAsIs}
 	return Machine{
 		Run: run, Root: "/", Lstat: os.Lstat, Free: free, Listen: net.Listen, ListenPacket: net.ListenPacket,
-		Fetch: fetch.Do, Resolve: net.DefaultResolver.LookupNetIP, Addresses: net.InterfaceAddrs, Terminal: terminal,
+		Fetch: fetch.Do, FetchHTTPS: fetchHTTPS, Resolve: net.DefaultResolver.LookupNetIP,
+		Addresses: net.InterfaceAddrs, Terminal: openTerminal, Executable: os.Executable, LookupUser: user.Lookup,
 		Euid: os.Geteuid,
 	}
+}
+
+// fetchHTTPS fetches request over TLS 1.2 or newer trusting roots, the system's when nil, answering a redirect as is.
+func fetchHTTPS(request *http.Request, roots *x509.CertPool) (*http.Response, error) {
+	client := &http.Client{CheckRedirect: answerAsIs, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, DisableKeepAlives: true,
+	}}
+	return client.Do(request)
 }
 
 // answerAsIs makes a fetch answer a redirect as it is, so a page comes from the address asked for and no other.
@@ -119,7 +134,7 @@ func free(path string) (uint64, error) {
 	return stat.Bavail * uint64(stat.Bsize), nil
 }
 
-// terminal opens the terminal of the session that started the installer, still there when standard input is a pipe.
-func terminal() (*os.File, error) {
-	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
+// openTerminal opens the terminal of the session that started the installer, still there when standard input is a pipe.
+func openTerminal() (Prompt, error) {
+	return promptOn(os.OpenFile("/dev/tty", os.O_RDWR, 0))
 }

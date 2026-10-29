@@ -3,14 +3,17 @@
 package installer_test
 
 import (
+	"crypto/x509"
 	"errors"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"sync/atomic"
@@ -207,11 +210,118 @@ func TestTheRealMachineOpensTheTerminalOfTheSessionForQuestions(t *testing.T) {
 	var missing *fs.PathError
 	switch {
 	case err == nil:
-		defer func() { _ = terminal.Close() }()
-		if terminal.Name() != "/dev/tty" {
-			t.Errorf("the terminal is %s, want /dev/tty", terminal.Name())
+		if err := terminal.Close(); err != nil {
+			t.Errorf("closing the terminal: %v", err)
 		}
+	case terminal != nil:
+		t.Errorf("opening the terminal outside a session gave %v beside %v, want no terminal", terminal, err)
 	case !errors.As(err, &missing) || missing.Path != "/dev/tty":
 		t.Errorf("opening the terminal outside a session = %v, want /dev/tty named", err)
+	}
+}
+
+func TestTheRealMachineNamesTheInstallerItRuns(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.Executable()
+	if err != nil {
+		t.Fatalf("naming the test binary: %v", err)
+	}
+
+	got, err := installer.RealMachine().Executable()
+
+	if err != nil || got != want {
+		t.Errorf("the running installer = %q, %v, want %q", got, err, want)
+	}
+}
+
+func TestTheRealMachineLooksUpRoot(t *testing.T) {
+	t.Parallel()
+
+	root, err := installer.RealMachine().LookupUser("root")
+
+	if err != nil || [2]string{root.Uid, root.Gid} != [2]string{"0", "0"} {
+		t.Errorf("looking up root = %+v, %v, want the user and group id 0", root, err)
+	}
+}
+
+func TestTheRealMachineCannotLookUpAUserThatIsNotThere(t *testing.T) {
+	t.Parallel()
+
+	_, err := installer.RealMachine().LookupUser("gophenberg-missing")
+
+	if !errors.As(err, new(user.UnknownUserError)) {
+		t.Errorf("looking up a user that is not there = %v, want the user unknown", err)
+	}
+}
+
+// rootsOf returns a pool that trusts the root certificate server signs its answers with.
+func rootsOf(server *httptest.Server) *x509.CertPool {
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	return roots
+}
+
+// fetchedHTTPS asks server for path through the real machine trusting roots, returning the answer it read.
+func fetchedHTTPS(t *testing.T, server *httptest.Server, path string, roots *x509.CertPool) (*http.Response, error) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("making the request: %v", err)
+	}
+	return installer.RealMachine().FetchHTTPS(request, roots)
+}
+
+func TestTheRealMachineFetchesHTTPSTrustingTheRootsItIsHanded(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "signed in")
+	}))
+	defer server.Close()
+
+	response, err := fetchedHTTPS(t, server, "/admin/", rootsOf(server))
+	if err != nil {
+		t.Fatalf("fetching the page: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+
+	if err != nil || [2]any{response.StatusCode, string(body)} != [2]any{http.StatusOK, "signed in"} {
+		t.Errorf("the HTTPS fetch answered %s with %q and %v, want 200 and the page", response.Status, body, err)
+	}
+}
+
+func TestTheRealMachineRefusesAnHTTPSAnswerSignedByARootItWasNotHanded(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewUnstartedServer(http.NotFoundHandler())
+	server.Config.ErrorLog = log.New(io.Discard, "", 0)
+	server.StartTLS()
+	defer server.Close()
+
+	response, err := fetchedHTTPS(t, server, "/admin/", nil)
+
+	var unknown x509.UnknownAuthorityError
+	if response != nil || !errors.As(err, &unknown) {
+		t.Errorf("fetching under the system's roots = %v, %v, want the signer unknown", response, err)
+	}
+}
+
+func TestTheRealMachineFetchesAnHTTPSRedirectAsItIs(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewTLSServer(http.RedirectHandler("/elsewhere", http.StatusFound))
+	defer server.Close()
+
+	response, err := fetchedHTTPS(t, server, "/admin/", rootsOf(server))
+	if err != nil {
+		t.Fatalf("fetching the page: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusFound || response.Header.Get("Location") != "/elsewhere" {
+		t.Errorf("the HTTPS fetch answered %s to %q, want the redirect itself", response.Status,
+			response.Header.Get("Location"))
 	}
 }

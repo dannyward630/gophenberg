@@ -13,6 +13,8 @@ import (
 
 	"github.com/gopherium/framework/gonsole"
 	"github.com/gopherium/framework/gonsole/testkit"
+
+	"github.com/gopherium/gophenberg/internal/updater"
 )
 
 // firstServerEnv is the server.env a first run on example.com writes with every default.
@@ -91,12 +93,54 @@ func TestSettingsOnAFirstRunTakeEveryDefaultAndWriteItIntoServerEnv(t *testing.T
 		},
 		Checks: Checks{
 			MemoryFloorMB: 900, DiskFloorMB: 1024, AptLockWait: 5 * time.Minute, DomainCheckTimeout: 10 * time.Second,
-			HTTPSWait: 2 * time.Minute, PollInterval: time.Second,
+			HTTPSWait: 2 * time.Minute, PollInterval: time.Second, StartWait: time.Minute,
 		},
 	}
 	if settings != want {
 		t.Errorf("settingsOn() = %+v, want %+v", settings, want)
 	}
+}
+
+func TestSettingsOnWaitForTheFirstStartAsLongAsServeChecksANewBuild(t *testing.T) {
+	t.Parallel()
+
+	for _, values := range []map[string]string{
+		{"GOPHENBERG_INSTALL_ROOT": "/opt/gophenberg"},
+		{"GOPHENBERG_INSTALL_ROOT": "/opt/gophenberg", "GOPHENBERG_UPDATE_VERIFY_TIMEOUT": "90s"},
+	} {
+		served, err := updater.SettingsFrom(envOf(values))
+		if err != nil {
+			t.Fatalf("updater.SettingsFrom() = %v, want the update settings", err)
+		}
+
+		settings, err := settingsOn(serverWith(t, nil), envOf(values), firstRun)
+
+		if err != nil || settings.Checks.StartWait != served.VerifyTimeout {
+			t.Errorf("settingsOn() waits %s for the first start with %v, want the %s serve checks a build within",
+				settings.Checks.StartWait, err, served.VerifyTimeout)
+		}
+	}
+}
+
+func TestSettingsOnRefuseAStartWaitServeCannotRead(t *testing.T) {
+	t.Parallel()
+
+	env := envOf(map[string]string{"GOPHENBERG_UPDATE_VERIFY_TIMEOUT": "soon"})
+
+	_, err := settingsOn(serverWith(t, nil), env, firstRun)
+
+	wantRefused(t, err, `GOPHENBERG_UPDATE_VERIFY_TIMEOUT: must be a duration like 30s, got "soon"`)
+}
+
+func TestSettingsOnRefuseAPasswordFileThatIsNotAnAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	request := firstRun
+	request.AdminPasswordFile = "root/admin-password"
+
+	_, err := settingsOn(Machine{}, envOf(nil), request)
+
+	wantRefused(t, err, `-admin-password-file: must be an absolute path, got "root/admin-password"`)
 }
 
 func TestSettingsOnAFirstRunTakeTheFlagThenTheEnvironmentThenTheDefault(t *testing.T) {
@@ -250,6 +294,43 @@ func TestSettingsOnRefuseALaterRunThatAsksForTheOtherWebServer(t *testing.T) {
 		wantRefused(t, byFlag, fmt.Sprintf(webServerMove, kept, asked))
 		wantRefused(t, byEnv, fmt.Sprintf(webServerMove, kept, asked))
 	}
+}
+
+func TestSettingsOnRefuseALaterRunThatAsksForAnotherInstallRoot(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "/srv/gophenberg/"})
+
+	_, err := settingsOn(machine, env, Request{})
+
+	wantRefused(t, err, "GOPHENBERG_INSTALL_ROOT: this server was set up with /opt/gophenberg, and a later run cannot "+
+		"move it to /srv/gophenberg, so run sudo gophenberg server:uninstall first, then change the line in "+
+		"/etc/gophenberg/server.env")
+}
+
+func TestSettingsOnALaterRunTakeTheInstallRootServerEnvKeepsWrittenWithATrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "/opt/gophenberg/"})
+
+	settings, err := settingsOn(machine, env, Request{})
+
+	if err != nil || settings.Root != "/opt/gophenberg" {
+		t.Errorf("settingsOn() = %q, %v, want the install root /opt/gophenberg of server.env", settings.Root, err)
+	}
+}
+
+func TestSettingsOnALaterRunRefuseAnInstallRootTheEnvironmentNamesByItsRuleBeforeAnyMove(t *testing.T) {
+	t.Parallel()
+
+	machine := serverWith(t, map[string]string{serverEnvPath: firstServerEnv})
+	env := envOf(map[string]string{"GOPHENBERG_INSTALL_ROOT": "srv/gophenberg"})
+
+	_, err := settingsOn(machine, env, Request{})
+
+	wantRefused(t, err, `GOPHENBERG_INSTALL_ROOT: must be an absolute path, got "srv/gophenberg"`)
 }
 
 func TestSettingsOnALaterRunRefuseAWebServerTheEnvironmentNamesThatIsNeitherCaddyNorNone(t *testing.T) {

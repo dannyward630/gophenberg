@@ -127,7 +127,7 @@ Feature: Operators and administrators update the core and see where it stands
     And the database refuses every connection
     And serve waits "0" for the database
     And the site failed to start 3 times
-    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "start-limit-hit"
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "exit-code"
     Then the command succeeds
     And the current build is "0.18.0"
     And the update status lists this version as refused
@@ -156,21 +156,35 @@ Feature: Operators and administrators update the core and see where it stands
 
   Scenario Outline: The service manager takes the site back after <failure>
     Given an install root where an update switched from this version to "99.0.0"
-    When the service manager runs "update:rollback -after-failure" with <variable> set to "<value>"
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "<result>"
     Then the command succeeds
     And the current build is this version
     And the update status lists version "99.0.0" as refused
 
     Examples:
-      | failure                           | variable               | value           |
-      | the new build failed its check    | MONITOR_EXIT_STATUS    | 76              |
-      | the new build hit the start limit | MONITOR_SERVICE_RESULT | start-limit-hit |
+      | failure                                         | result    |
+      | the new build failed its check or kept crashing | exit-code |
+      | a signal stopped the new build                  | signal    |
 
   Scenario: The service manager leaves an update that passed its check alone
     Given an install root where an update switched from this version to "99.0.0"
     And the new build passed its check
-    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "start-limit-hit"
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "exit-code"
     Then the command exits with code 1
+    And the current build is still "99.0.0"
+
+  Scenario: The service manager leaves the update alone when it says the site did not fail
+    Given an install root where an update switched from this version to "99.0.0"
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "success"
+    Then the command exits with code 1
+    And the error says "not a failed start"
+    And the current build is still "99.0.0"
+
+  Scenario: update:rollback -after-failure run by hand leaves the update alone
+    Given an install root where an update switched from this version to "99.0.0"
+    When the operator runs "update:rollback -after-failure"
+    Then the command exits with code 1
+    And the error says "not a failed start"
     And the current build is still "99.0.0"
 
   Scenario Outline: The service manager does not take back a long jump that reached the database after <failure>
@@ -178,7 +192,7 @@ Feature: Operators and administrators update the core and see where it stands
     And the update raised the minimum version, with a backup taken before the switch
     And the new build already tried to start 3 times
     And the new build reached the database
-    When the service manager runs "update:rollback -after-failure" with <variable> set to "<value>"
+    When the service manager runs "update:rollback -after-failure" with MONITOR_SERVICE_RESULT set to "<result>"
     Then the command exits with code 1
     And the current build is still "99.0.0"
     And the error names the backup taken before the switch
@@ -186,9 +200,9 @@ Feature: Operators and administrators update the core and see where it stands
     And the update status names the backup taken before the switch
 
     Examples:
-      | failure                           | variable               | value           |
-      | the new build failed its check    | MONITOR_EXIT_STATUS    | 76              |
-      | the new build hit the start limit | MONITOR_SERVICE_RESULT | start-limit-hit |
+      | failure                                         | result    |
+      | the new build failed its check or kept crashing | exit-code |
+      | a signal stopped the new build                  | signal    |
 
   Scenario: An update that fails at a step leaves when, where and why
     Given an install root running this version as an official build

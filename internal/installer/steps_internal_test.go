@@ -3,6 +3,7 @@
 package installer
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strconv"
@@ -97,7 +98,8 @@ func TestTheStepsOfALaterRunKeepTheBuildReloadCaddyRestartTheSiteAndCreateNoAdmi
 
 	running := firstSite(t, "example.com", 255)
 	running.current = true
-	running.record.Steps = map[string]string{stepCaddy: stepEnded, stepStart: stepEnded, stepAdmin: stepEnded}
+	running.record.Steps = map[string]string{stepAdmin: stepEnded, stepCaddy: stepEnded}
+	running.record.Caddyfile, running.record.Installed = caddyfileSum(wantedCaddyfile), []string{pieceService}
 
 	does, ids := doneOf(running.steps())
 
@@ -112,6 +114,24 @@ func TestTheStepsOfALaterRunKeepTheBuildReloadCaddyRestartTheSiteAndCreateNoAdmi
 	}
 	if wantIDs := slices.Delete(slices.Clone(stepIDs), 12, 13); !slices.Equal(ids, wantIDs) {
 		t.Errorf("the record keeps the steps under %q, want %q", ids, wantIDs)
+	}
+}
+
+func TestTheStepsStartTheSiteUntilTheRecordOwnsItsUnitAndRestartItAfter(t *testing.T) {
+	t.Parallel()
+
+	for installed, verb := range map[string]string{"": "start", pieceService: "restart"} {
+		running := firstSite(t, "example.com", 255)
+		running.record.Steps = map[string]string{stepStart: stepEnded}
+		if installed != "" {
+			running.record.Steps, running.record.Installed = map[string]string{stepStart: stepStarted}, []string{installed}
+		}
+
+		does, _ := doneOf(running.steps())
+
+		if want := verb + " " + strings.TrimPrefix(firstSteps[11], "start "); does[11] != want {
+			t.Errorf("the start step of a record that owns %q does %q, want %q", installed, does[11], want)
+		}
 	}
 }
 
@@ -179,6 +199,35 @@ Step 2: write the units
 	}
 }
 
+func TestPrintStepsPrintsEachLineAStepKeepsByItsKeyAloneAndLeavesTheFileWhole(t *testing.T) {
+	t.Parallel()
+
+	var answer strings.Builder
+	dotEnv := "# Written by gophenberg server:install.\nGOPHENBERG_ADDR=127.0.0.1:8081\n" +
+		"GOPHENBERG_SMTP_PASSWORD=\"Maria's mail password\"\nGOPHENBERG_SMTP_USER=maria=perez\nGOPHENBERG_THEME=starter\n"
+	planned := step{id: "site-env", does: "write the site's settings", hides: []string{
+		"GOPHENBERG_SMTP_PASSWORD", "GOPHENBERG_SMTP_USER",
+	}, files: []file{{"/opt/gophenberg/.env", "gophenberg", 0o600, dotEnv}}}
+
+	err := printSteps(&answer, []step{planned})
+
+	want := wantedLead + `
+Step 1: write the site's settings
+  writes /opt/gophenberg/.env, owned by gophenberg with mode 0600:
+    # Written by gophenberg server:install.
+    GOPHENBERG_ADDR=127.0.0.1:8081
+    GOPHENBERG_SMTP_PASSWORD=(kept as it is)
+    GOPHENBERG_SMTP_USER=(kept as it is)
+    GOPHENBERG_THEME=starter
+`
+	if err != nil || answer.String() != want {
+		t.Errorf("printSteps() = %v, printing\n%s\nwant\n%s", err, answer.String(), want)
+	}
+	if planned.files[0].text != dotEnv {
+		t.Errorf("printSteps() left the file holding\n%s\nwant it whole\n%s", planned.files[0].text, dotEnv)
+	}
+}
+
 func TestPrintStepsPrintsTheTextAStepPrintsUnderItsFiles(t *testing.T) {
 	t.Parallel()
 
@@ -215,7 +264,7 @@ func TestInstallPrintsTheLinesForTheirOwnWebServerWithTheUploadCapOfTheSitesEnv(
 	server := installedServer(t, wantedSiteEnv+"GOPHENBERG_MEDIA_UPLOAD_CAP_MB=512\n")
 	server.write(serverEnvPath, strings.Replace(firstServerEnv, "WEB_SERVER=caddy", "WEB_SERVER=none", 1))
 
-	stdout, stderr, err := dryRun(server, Request{DryRun: true})
+	stdout, stderr, err := runInstall(server, Request{DryRun: true})
 
 	if err != nil || stderr != "" {
 		t.Fatalf("Install() = %v, noting %q, want nil and no note", err, stderr)
@@ -233,7 +282,7 @@ func TestInstallRefusesASiteEnvWithAnUploadCapServeCannotReadForTheirOwnWebServe
 	server := installedServer(t, "GOPHENBERG_MEDIA_UPLOAD_CAP_MB=big\n")
 	server.write(serverEnvPath, strings.Replace(firstServerEnv, "WEB_SERVER=caddy", "WEB_SERVER=none", 1))
 
-	stdout, _, err := dryRun(server, Request{DryRun: true})
+	stdout, _, err := runInstall(server, Request{DryRun: true})
 
 	wantRefused(t, err, `/opt/gophenberg/.env: GOPHENBERG_MEDIA_UPLOAD_CAP_MB: must be a whole number, got "big"`)
 	if stdout != "" {
@@ -246,7 +295,7 @@ func TestInstallLeavesTheUploadCapOfTheSitesEnvUnreadWithCaddy(t *testing.T) {
 
 	server := installedServer(t, "GOPHENBERG_MEDIA_UPLOAD_CAP_MB=big\n")
 
-	stdout, _, err := dryRun(server, Request{DryRun: true})
+	stdout, _, err := runInstall(server, Request{DryRun: true})
 
 	if err != nil || !strings.HasPrefix(stdout, wantedLead) {
 		t.Errorf("Install() = %v, printing\n%s\nwant every step, the upload cap left unread", err, stdout)
@@ -261,16 +310,22 @@ func TestPrintStepsReturnsWhatStopsTheAnswer(t *testing.T) {
 	wantRefused(t, err, "the terminal is gone")
 }
 
-// dryRun runs server:install as request asks on server, returning its answer, its notes and its error.
-func dryRun(server *fakeServer, request Request) (stdout, stderr string, err error) {
-	return dryRunUnder(server, nil, request)
+// runInstall runs server:install on server as request asks, with -dry-run or not, returning answer, notes and error.
+func runInstall(server *fakeServer, request Request) (stdout, stderr string, err error) {
+	return runInstallUnder(server, nil, request)
 }
 
-// dryRunUnder runs server:install as request asks on server under the settings env holds, as dryRun returns.
-func dryRunUnder(server *fakeServer, env map[string]string, request Request) (stdout, stderr string, err error) {
+// runInstallUnder runs server:install as request asks on server under the settings env holds, as runInstall returns.
+func runInstallUnder(server *fakeServer, env map[string]string, request Request) (stdout, stderr string, err error) {
+	return installUnder(server.t.Context(), server, env, request)
+}
+
+// installUnder runs server:install within ctx as request asks on server under env, as runInstall returns.
+func installUnder(
+	ctx context.Context, server *fakeServer, env map[string]string, request Request,
+) (stdout, stderr string, err error) {
 	var answer, notes strings.Builder
-	err = Install(server.t.Context(), server.machine(), gonsole.Call{Env: envOf(env), Stdout: &answer, Stderr: &notes},
-		request)
+	err = Install(ctx, server.machine(), gonsole.Call{Env: envOf(env), Stdout: &answer, Stderr: &notes}, request)
 	return answer.String(), notes.String(), err
 }
 
@@ -279,7 +334,7 @@ func TestInstallPrintsEveryStepOfADryRunOnceEveryCheckPasses(t *testing.T) {
 
 	server := newFakeServer(t)
 
-	stdout, stderr, err := dryRun(server, firstRun)
+	stdout, stderr, err := runInstall(server, firstRun)
 
 	if err != nil || stderr != wantedFirewallNote {
 		t.Fatalf("Install() = %v, noting %q, want nil and the firewall note", err, stderr)
@@ -309,20 +364,6 @@ func indentedText(text string) string {
 	return printed.String()
 }
 
-func TestInstallStopsARunWithoutDryRunOnceEveryCheckPasses(t *testing.T) {
-	t.Parallel()
-
-	server := newFakeServer(t)
-
-	stdout, _, err := dryRun(server, Request{Domain: "example.com", AdminEmail: "admin@example.com"})
-
-	wantRefused(t, err, "this build of server:install only checks the server, and -dry-run prints the steps it "+
-		"would take, so nothing was changed")
-	if stdout != "" {
-		t.Errorf("Install() printed %q without -dry-run, want nothing", stdout)
-	}
-}
-
 func TestInstallRefusesAServerWhereTheRunnerFindsNoSystemctlOrNoRunuser(t *testing.T) {
 	t.Parallel()
 
@@ -330,7 +371,7 @@ func TestInstallRefusesAServerWhereTheRunnerFindsNoSystemctlOrNoRunuser(t *testi
 		server := newFakeServer(t)
 		server.chmod(missing, 0o644)
 
-		_, _, err := dryRun(server, firstRun)
+		_, _, err := runInstall(server, firstRun)
 
 		wantRefused(t, err, "installer: no program "+missing[strings.LastIndex(missing, "/")+1:]+
 			" in /usr/sbin:/usr/bin:/sbin:/bin")
@@ -352,7 +393,7 @@ func TestInstallRefusesASiteEnvWithAStopGraceServeCannotRead(t *testing.T) {
 
 	server := installedServer(t, "GOPHENBERG_SHUTDOWN_GRACE=soon\n")
 
-	stdout, _, err := dryRun(server, Request{DryRun: true})
+	stdout, _, err := runInstall(server, Request{DryRun: true})
 
 	wantRefused(t, err, `/opt/gophenberg/.env: GOPHENBERG_SHUTDOWN_GRACE: must be a duration like 30s, got "soon"`)
 	if stdout != "" {
@@ -365,7 +406,7 @@ func TestInstallRefusesASiteEnvItCannotParse(t *testing.T) {
 
 	server := installedServer(t, "not a setting line\n")
 
-	_, _, err := dryRun(server, Request{DryRun: true})
+	_, _, err := runInstall(server, Request{DryRun: true})
 
 	wantRefused(t, err, `installer: /opt/gophenberg/.env: unexpected character "\n" in variable name near `+
 		`"not a setting line\n"`)
@@ -377,7 +418,7 @@ func TestInstallWritesTheUnattendedUpgradesLineWhereThatPackageIsInstalled(t *te
 	server := newFakeServer(t)
 	server.program("/usr/bin/unattended-upgrade")
 
-	stdout, _, err := dryRun(server, firstRun)
+	stdout, _, err := runInstall(server, firstRun)
 
 	header := "  writes /etc/apt/apt.conf.d/52gophenberg-caddy, owned by root with mode 0644:\n"
 	if err != nil || !strings.Contains(stdout, header+indentedText(wantedCaddyUpgrades)) {

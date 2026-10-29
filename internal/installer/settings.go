@@ -103,6 +103,7 @@ type Checks struct {
 	DomainCheckTimeout time.Duration
 	HTTPSWait          time.Duration
 	PollInterval       time.Duration
+	StartWait          time.Duration
 }
 
 // withCaddy reports whether the run sets up Caddy in front of the site, not the person's own web server.
@@ -112,7 +113,8 @@ func (s Settings) withCaddy() bool {
 
 // settingsOn reads one run's settings from the flags, env, server.env then the defaults, refusing a bad flag first.
 func settingsOn(machine Machine, env gonsole.Env, request Request) (Settings, error) {
-	flagged := errors.Join(domainFlag(request.Domain), archiveFlag(request.Archive), webServerFlag(request.WebServer))
+	flagged := errors.Join(domainFlag(request.Domain), archiveFlag(request.Archive), webServerFlag(request.WebServer),
+		passwordFileFlag(request.AdminPasswordFile))
 	if flagged != nil {
 		return Settings{}, flagged
 	}
@@ -121,7 +123,7 @@ func settingsOn(machine Machine, env gonsole.Env, request Request) (Settings, er
 		return Settings{}, err
 	}
 	asked := layered(lookup(flagLines(env, request)), env.Getenv)
-	if err := keptWebServer(env, asked, file); err != nil {
+	if err := errors.Join(keptWebServer(env, asked, file), keptInstallRoot(env, asked, file)); err != nil {
 		return Settings{}, err
 	}
 	given := layered(asked, lookup(file))
@@ -149,6 +151,14 @@ func archiveFlag(archive string) error {
 	}
 	return fmt.Errorf("-archive: must be a file inside %s, the folder install.sh downloads it into, got %q",
 		installerFolder, archive)
+}
+
+// passwordFileFlag refuses an -admin-password-file that is given and is not an absolute path.
+func passwordFileFlag(path string) error {
+	if path == "" || filepath.IsAbs(path) {
+		return nil
+	}
+	return fmt.Errorf("-admin-password-file: must be an absolute path, got %q", path)
 }
 
 // webServerFlag refuses a -web-server that is given and is neither caddy nor none.
@@ -180,14 +190,27 @@ func keptWebServer(env gonsole.Env, asked func(string) string, file map[string]s
 	if wanted == kept {
 		return nil
 	}
-	return webServerMoved(env, kept, wanted)
+	return settingMoved(env, "INSTALL_WEB_SERVER", kept, wanted)
 }
 
-// webServerMoved refuses a later run that asks for the web server wanted on a server set up with kept.
-func webServerMoved(env gonsole.Env, kept, wanted string) error {
+// keptInstallRoot refuses a later run that asks for another install root than the one server.env file keeps.
+func keptInstallRoot(env gonsole.Env, asked func(string) string, file map[string]string) error {
+	key := env.Key("INSTALL_ROOT")
+	kept, keptErr := installRoot(layered(lookup(file))(key))
+	wanted, wantedErr := installRoot(asked(key))
+	if keptErr != nil || wantedErr != nil {
+		return nil
+	}
+	if wanted == kept {
+		return nil
+	}
+	return settingMoved(env, "INSTALL_ROOT", kept, wanted)
+}
+
+// settingMoved refuses a later run that asks for wanted as the setting called name on a server set up with kept.
+func settingMoved(env gonsole.Env, name, kept, wanted string) error {
 	return fmt.Errorf("%s: this server was set up with %s, and a later run cannot move it to %s, so run sudo "+
-		"gophenberg server:uninstall first, then change the line in %s", env.Key("INSTALL_WEB_SERVER"), kept, wanted,
-		serverEnvPath)
+		"gophenberg server:uninstall first, then change the line in %s", env.Key(name), kept, wanted, serverEnvPath)
 }
 
 // readServerEnv returns the settings server.env on machine holds, none before a first run wrote it.
@@ -290,11 +313,12 @@ func checksFrom(env gonsole.Env) (Checks, error) {
 	domain, domainErr := env.Duration("INSTALL_DOMAIN_CHECK_TIMEOUT", 10*time.Second)
 	https, httpsErr := env.Duration("INSTALL_HTTPS_WAIT", 2*time.Minute)
 	poll, pollErr := env.Duration("INSTALL_POLL_INTERVAL", time.Second)
+	start, startErr := env.Duration("UPDATE_VERIFY_TIMEOUT", time.Minute)
 	checks := Checks{
 		MemoryFloorMB: memory, DiskFloorMB: disk, AptLockWait: apt, DomainCheckTimeout: domain, HTTPSWait: https,
-		PollInterval: poll,
+		PollInterval: poll, StartWait: start,
 	}
-	return checks, errors.Join(memoryErr, diskErr, aptErr, domainErr, httpsErr, pollErr)
+	return checks, errors.Join(memoryErr, diskErr, aptErr, domainErr, httpsErr, pollErr, startErr)
 }
 
 // seconds returns the duration setting called name, refusing one that is not a whole number of seconds.

@@ -12,11 +12,8 @@ import (
 	"github.com/gopherium/gophenberg/internal/updater"
 )
 
-// failedCheck is what the service manager hands its rollback unit after a start that failed its start check.
-var failedCheck = updater.Failure{ServiceResult: "exit-code", ExitStatus: "76"}
-
-// startLimitHit is what the service manager hands its rollback unit once the starts of a build hit the start limit.
-var startLimitHit = updater.Failure{ServiceResult: "start-limit-hit", ExitStatus: "1"}
+// exited is what the service manager hands its rollback unit once it gave up on a build that exits with an error code.
+var exited = updater.Failure{ServiceResult: "exit-code"}
 
 // takenBack is the state an update from 0.20.0 to 0.21.0 ends at once update:rollback takes it back.
 var takenBack = updater.State{
@@ -83,7 +80,7 @@ func TestRollbackRefusesAnInstallWithNoRoot(t *testing.T) {
 	for name, rollback := range map[string]func(updater.Settings) (updater.State, error){
 		"update:rollback": updater.Rollback,
 		"update:rollback -after-failure": func(settings updater.Settings) (updater.State, error) {
-			return updater.RollbackAfterFailure(settings, failedCheck)
+			return updater.RollbackAfterFailure(settings, exited)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -151,7 +148,7 @@ func TestRollbackTakesBackAnUpdateThatRaisedTheMinimumVersionBeforeItsBuildReach
 	for name, rollback := range map[string]func(updater.Settings) (updater.State, error){
 		"update:rollback": updater.Rollback,
 		"update:rollback -after-failure": func(settings updater.Settings) (updater.State, error) {
-			return updater.RollbackAfterFailure(settings, startLimitHit)
+			return updater.RollbackAfterFailure(settings, exited)
 		},
 	} {
 		for attempts, started := range map[int]string{0: "never started", 3: "started three times"} {
@@ -222,8 +219,8 @@ func TestRollbackAfterFailureTakesBackAStartThatFailed(t *testing.T) {
 	t.Parallel()
 
 	for name, failure := range map[string]updater.Failure{
-		"a start that failed its check": failedCheck,
-		"starts that hit the limit":     startLimitHit,
+		"a build that failed its check or keeps crashing": exited,
+		"a build a signal stopped":                        {ServiceResult: "signal"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -247,7 +244,7 @@ func TestRollbackAfterFailureFinishesWhatTheBootGuardStarted(t *testing.T) {
 	f := newGuardFixture(t, wentBack)
 	pointLink(t, f.layout, updater.Current, running)
 
-	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), failedCheck)
+	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), exited)
 
 	f.wantTakenBack(state, err)
 }
@@ -258,12 +255,12 @@ func TestRollbackAfterFailureTakesBackEachUpdateOnce(t *testing.T) {
 	switched := switchedTo
 	switched.Attempts = 1
 	f := newGuardFixture(t, switched)
-	if _, err := updater.RollbackAfterFailure(settingsOf(t, f.env), failedCheck); err != nil {
+	if _, err := updater.RollbackAfterFailure(settingsOf(t, f.env), exited); err != nil {
 		t.Fatalf("the first rollback = %v, want the update taken back", err)
 	}
 	pointLink(t, f.layout, updater.Current, offered)
 
-	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), failedCheck)
+	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), exited)
 
 	f.wantLeftAlone(state, err, takenBack, "updater: the last update, from 0.20.0 to 0.21.0, stands at the step "+
 		"rolled-back, so update:rollback -after-failure has nothing to take back")
@@ -276,7 +273,7 @@ func TestRollbackAfterFailureLeavesAloneAnUpdateThatPassedItsCheck(t *testing.T)
 	kept.Step = updater.StepCommitted
 	f := newGuardFixture(t, kept)
 
-	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), startLimitHit)
+	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), exited)
 
 	f.wantLeftAlone(state, err, kept, "stands at the step committed, so update:rollback -after-failure has nothing "+
 		"to take back")
@@ -285,15 +282,18 @@ func TestRollbackAfterFailureLeavesAloneAnUpdateThatPassedItsCheck(t *testing.T)
 func TestRollbackAfterFailureLeavesAloneAStartTheServiceManagerSaysDidNotFail(t *testing.T) {
 	t.Parallel()
 
-	f := newGuardFixture(t, switchedTo)
+	for name, result := range map[string]string{"a start that succeeded": "success", "a run by hand": ""} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), updater.Failure{
-		ServiceResult: "exit-code", ExitStatus: "1",
-	})
+			f := newGuardFixture(t, switchedTo)
 
-	f.wantLeftAlone(state, err, switchedTo, `updater: the service manager says the service result is "exit-code" `+
-		`and the exit status is "1", not a start that failed its check or hit the start limit, so `+
-		`update:rollback -after-failure leaves the update alone`)
+			state, err := updater.RollbackAfterFailure(settingsOf(t, f.env), updater.Failure{ServiceResult: result})
+
+			f.wantLeftAlone(state, err, switchedTo, `updater: the service manager says the service result is "`+
+				result+`", not a failed start, so update:rollback -after-failure leaves the update alone`)
+		})
+	}
 }
 
 func TestRollbackAfterFailureKeepsTheSiteDownAfterAnUpdateThatRaisedTheMinimumVersion(t *testing.T) {
@@ -303,9 +303,9 @@ func TestRollbackAfterFailureKeepsTheSiteDownAfterAnUpdateThatRaisedTheMinimumVe
 		state   updater.State
 		failure updater.Failure
 	}{
-		"starts that hit the limit before the guard gave up": {state: longJumped(updater.StepSwitched),
-			failure: startLimitHit},
-		"a start the guard kept down": {state: stayedDown(), failure: failedCheck},
+		"a build that kept crashing before the guard gave up": {state: longJumped(updater.StepSwitched),
+			failure: exited},
+		"a start the guard kept down": {state: stayedDown(), failure: exited},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -332,7 +332,7 @@ func TestRollbackAfterFailureSaysWhenItCannotWriteThatTheSiteStaysDown(t *testin
 	f := newGuardFixture(t, longJumped(updater.StepSwitched))
 	denied(t, filepath.Dir(f.layout.StateFile()), 0o500)
 
-	_, err := updater.RollbackAfterFailure(settingsOf(t, f.env), startLimitHit)
+	_, err := updater.RollbackAfterFailure(settingsOf(t, f.env), exited)
 
 	wantRefused(t, err, "updater: write the update state")
 	wantRefused(t, err, "updater: restore the backup taken before the update")

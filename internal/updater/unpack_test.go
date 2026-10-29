@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -286,23 +287,28 @@ func TestUnpackRefusesAnArchiveItCannotRead(t *testing.T) {
 	}
 }
 
-func TestUnpackRefusesABuildItCannotSaveToDisk(t *testing.T) {
+func TestUnpackRefusesABuildFolderWhoseParentItCannotOpen(t *testing.T) {
 	t.Parallel()
 
-	if os.Geteuid() == 0 {
-		t.Skip("running as root, which reads a folder whatever its mode says")
-	}
-	dir := buildFolder(t)
-	versions := filepath.Dir(dir)
-	if err := os.Chmod(versions, 0o300); err != nil {
-		t.Fatalf("denying read on %s: %v", versions, err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(versions, 0o755) })
+	for name, parent := range map[string]func(t *testing.T) string{
+		"a parent that is not there": func(t *testing.T) string { return filepath.Join(t.TempDir(), "versions") },
+		"a parent it may not read": func(t *testing.T) string {
+			versions := t.TempDir()
+			denied(t, versions, 0o300)
+			return versions
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	err := updater.Unpack(bytes.NewReader(packed(t, releaseEntries()...)), dir)
+			dir := filepath.Join(parent(t), "0.21.0")
 
-	wantRefused(t, err, "save the build to disk")
-	wantMissing(t, dir)
+			err := updater.Unpack(bytes.NewReader(packed(t, releaseEntries()...)), dir)
+
+			wantRefused(t, err, "updater: make the build folder")
+			wantMissing(t, dir)
+		})
+	}
 }
 
 func TestUnpackLeavesAFolderThatIsThereAlone(t *testing.T) {
@@ -321,4 +327,115 @@ func TestUnpackLeavesAFolderThatIsThereAlone(t *testing.T) {
 
 	wantRefused(t, err, "file exists")
 	wantFile(t, kept, "the running binary")
+}
+
+// openTree opens the folder at path as a tree that closes once t ends, failing t when it cannot.
+func openTree(t *testing.T, path string) *os.Root {
+	t.Helper()
+	tree, err := os.OpenRoot(path)
+	if err != nil {
+		t.Fatalf("opening %s as a tree: %v", path, err)
+	}
+	t.Cleanup(func() { _ = tree.Close() })
+	return tree
+}
+
+// installTree returns the path of a new install root holding an empty versions folder, and the tree open on it.
+func installTree(t *testing.T) (string, *os.Root) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "versions"), 0o755); err != nil {
+		t.Fatalf("making the versions folder: %v", err)
+	}
+	return root, openTree(t, root)
+}
+
+// wantEntries fails t unless the folder at path holds the entries called names, in order.
+func wantEntries(t *testing.T, path string, names ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	held := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		held = append(held, entry.Name())
+	}
+	if err != nil || !slices.Equal(held, names) {
+		t.Errorf("%s holds %v, %v, want %v", path, held, err, names)
+	}
+}
+
+func TestUnpackInWritesTheFilesOfAReleaseThroughTheTree(t *testing.T) {
+	t.Parallel()
+
+	root, tree := installTree(t)
+
+	if err := updater.UnpackIn(tree, bytes.NewReader(packed(t, releaseEntries()...)), "versions/0.21.0"); err != nil {
+		t.Fatalf("UnpackIn() = %v, want nil", err)
+	}
+
+	dir := filepath.Join(root, "versions", "0.21.0")
+	for _, e := range releaseEntries() {
+		if e.typeflag == tar.TypeReg {
+			wantFile(t, filepath.Join(dir, filepath.FromSlash(e.name)), e.body)
+		}
+	}
+	if !executable(t, filepath.Join(dir, "gophenberg")) {
+		t.Errorf("gophenberg is not executable, want it run as the next build")
+	}
+}
+
+func TestUnpackInRefusesABuildFolderWhoseParentIsALinkOutOfTheTree(t *testing.T) {
+	t.Parallel()
+
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "versions")); err != nil {
+		t.Fatalf("linking versions out of the tree: %v", err)
+	}
+
+	err := updater.UnpackIn(openTree(t, root), bytes.NewReader(packed(t, releaseEntries()...)), "versions/0.21.0")
+
+	wantRefused(t, err, "updater: make the build folder")
+	wantEntries(t, outside)
+}
+
+func TestUnpackInDeletesTheBuildFolderWhenAnEntryFails(t *testing.T) {
+	t.Parallel()
+
+	root, tree := installTree(t)
+
+	err := updater.UnpackIn(tree, bytes.NewReader(packed(t, file("LICENSE", "the license"), binary(), binary())),
+		"versions/0.21.0")
+
+	wantRefused(t, err, "file exists")
+	wantEntries(t, filepath.Join(root, "versions"))
+}
+
+func TestUnpackInLeavesAFolderThatIsThereAlone(t *testing.T) {
+	t.Parallel()
+
+	root, tree := installTree(t)
+	kept := filepath.Join(root, "versions", "0.21.0", "gophenberg")
+	if err := os.Mkdir(filepath.Dir(kept), 0o755); err != nil {
+		t.Fatalf("making the folder: %v", err)
+	}
+	if err := os.WriteFile(kept, []byte("the running binary"), 0o755); err != nil {
+		t.Fatalf("writing the running binary: %v", err)
+	}
+
+	err := updater.UnpackIn(tree, bytes.NewReader(packed(t, releaseEntries()...)), "versions/0.21.0")
+
+	wantRefused(t, err, "file exists")
+	wantFile(t, kept, "the running binary")
+}
+
+func TestUnpackInRefusesABuildItCannotSaveToDisk(t *testing.T) {
+	t.Parallel()
+
+	versions := t.TempDir()
+	tree := openTree(t, versions)
+	denied(t, versions, 0o300)
+
+	err := updater.UnpackIn(tree, bytes.NewReader(packed(t, releaseEntries()...)), "0.21.0")
+
+	wantRefused(t, err, "updater: save the build to disk")
+	wantMissing(t, filepath.Join(versions, "0.21.0"))
 }

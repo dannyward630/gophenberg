@@ -71,33 +71,47 @@ func StopGraces(env gonsole.Env) ([]time.Duration, error) {
 	return graces, nil
 }
 
+// envSetting is one line of the site's .env, by its key and its value.
+type envSetting struct {
+	key, value string
+}
+
 // siteEnvFile returns the site's .env: its header, the lines the server decides, then every other line the site holds.
 func (s site) siteEnvFile() file {
-	root := s.settings.Root
-	kept := maps.Clone(s.dotEnv)
 	lines := []string{siteEnvHeader}
-	for _, owned := range []struct{ name, value string }{
-		{"DATABASE_URL", DatabaseAddress},
-		{"SUPERUSER_POLICY", "refuse"},
-		{"INSTALL_ROOT", root},
-		{"ADDR", s.settings.Addr.String()},
-		{"PUBLIC_URL", "https://" + s.settings.Domain},
-		{"TRUSTED_PROXIES", "127.0.0.1/32,::1/128"},
-		{"THEMES_DIR", root + "/themes"},
-		{"MEDIA_DIR", root + "/media"},
-	} {
-		key := s.env.Key(owned.name)
-		lines = append(lines, envLine(key, owned.value))
-		delete(kept, key)
+	for _, decided := range s.decidedSettings() {
+		lines = append(lines, envLine(decided.key, decided.value))
 	}
-	wait := s.env.Key("DATABASE_WAIT")
-	lines = append(lines, envLine(wait, cmp.Or(kept[wait], DatabaseWait)))
-	delete(kept, wait)
-	for _, key := range slices.Sorted(maps.Keys(kept)) {
-		lines = append(lines, envLine(key, kept[key]))
+	for _, key := range s.keptKeys() {
+		lines = append(lines, envLine(key, s.dotEnv[key]))
 	}
 	text := strings.Join(lines, "\n") + "\n"
-	return file{path: filepath.Join(root, ".env"), owner: "gophenberg", mode: 0o600, text: text}
+	return file{path: filepath.Join(s.settings.Root, ".env"), owner: "gophenberg", mode: 0o600, text: text}
+}
+
+// decidedSettings returns the lines of the site's .env the server decides, in order, keeping a database wait it sets.
+func (s site) decidedSettings() []envSetting {
+	root, wait := s.settings.Root, s.env.Key("DATABASE_WAIT")
+	return []envSetting{
+		{s.env.Key("DATABASE_URL"), DatabaseAddress},
+		{s.env.Key("SUPERUSER_POLICY"), "refuse"},
+		{s.env.Key("INSTALL_ROOT"), root},
+		{s.env.Key("ADDR"), s.settings.Addr.String()},
+		{s.env.Key("PUBLIC_URL"), "https://" + s.settings.Domain},
+		{s.env.Key("TRUSTED_PROXIES"), "127.0.0.1/32,::1/128"},
+		{s.env.Key("THEMES_DIR"), root + "/themes"},
+		{s.env.Key("MEDIA_DIR"), root + "/media"},
+		{wait, cmp.Or(s.dotEnv[wait], DatabaseWait)},
+	}
+}
+
+// keptKeys returns the sorted keys of the lines the person added to the site's .env, which a run keeps as they are.
+func (s site) keptKeys() []string {
+	kept := maps.Clone(s.dotEnv)
+	for _, decided := range s.decidedSettings() {
+		delete(kept, decided.key)
+	}
+	return slices.Sorted(maps.Keys(kept))
 }
 
 // siteEnv returns the settings of the site's .env under root, read through root itself, none before one is there.

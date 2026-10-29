@@ -60,6 +60,7 @@ Type=oneshot
 User=gophenberg
 Group=gophenberg
 WorkingDirectory=/opt/gophenberg
+ExecCondition=+/usr/bin/systemctl is-failed --quiet gophenberg.service
 ExecStart=/opt/gophenberg/previous/gophenberg update:rollback -after-failure
 ExecStartPost=+/usr/bin/systemctl reset-failed gophenberg.service
 ExecStartPost=+/usr/bin/systemctl start gophenberg.service
@@ -400,10 +401,46 @@ func TestTheCaddyFilesOfALaterRunLeaveTheCaddyfileAlone(t *testing.T) {
 
 	running := firstSite(t, "example.com", 255)
 	running.record.Steps = map[string]string{stepCaddy: stepEnded}
+	running.record.Caddyfile = caddyfileSum(wantedCaddyfile)
 
 	got := running.caddyFiles()
 
 	wantFiles(t, got, caddyFilesOf(wantedCaddySite, wantedCaddyfile)[:2])
+}
+
+func TestTheCaddyFilesLeaveTheCaddyfileAloneOnceTheRecordHoldsItsSumWhateverTheCaddyMark(t *testing.T) {
+	t.Parallel()
+
+	running := firstSite(t, "example.com", 255)
+	running.record.Steps = map[string]string{stepCaddy: stepStarted}
+	running.record.Caddyfile = caddyfileSum(wantedCaddyfile)
+
+	got := running.caddyFiles()
+
+	wantFiles(t, got, caddyFilesOf(wantedCaddySite, wantedCaddyfile)[:2])
+}
+
+func TestTheCaddyStepRestartsCaddyUntilTheRecordEndsItAndKeepsTheCaddyfileOnceTheRecordHoldsItsSum(t *testing.T) {
+	t.Parallel()
+
+	restart := "write Caddy's files, keep the package's Caddyfile as /etc/caddy/Caddyfile.before-gophenberg, check " +
+		"them with caddy validate and restart Caddy"
+	keptRestart := "write Caddy's files, check them with caddy validate and restart Caddy"
+	reload := "write Caddy's files, check them with caddy validate and reload Caddy"
+	for _, earlier := range []struct {
+		mark, sum, want string
+	}{
+		{"", "", restart}, {stepStarted, "", restart}, {stepStarted, abcSum, keptRestart}, {stepEnded, abcSum, reload},
+	} {
+		running := firstSite(t, "example.com", 255)
+		running.record.Steps = map[string]string{stepCaddy: earlier.mark}
+		running.record.Caddyfile = earlier.sum
+
+		if got := running.caddyStep().does; got != earlier.want {
+			t.Errorf("the Caddy step of a run whose record marks it %q with the checksum %q does %q, want %q",
+				earlier.mark, earlier.sum, got, earlier.want)
+		}
+	}
 }
 
 func TestTheCaddyFilesOfARunCutOffBeforeItsCaddyStepEndedWriteTheCaddyfile(t *testing.T) {

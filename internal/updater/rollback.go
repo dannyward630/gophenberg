@@ -6,11 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 )
 
-// startLimitHit is the service result the service manager reports once the starts of a service hit their limit.
-const startLimitHit = "start-limit-hit"
+// succeeded is the service result the service manager reports for a service that did not fail.
+const succeeded = "success"
 
 // takenBackSteps are the steps of an update that switched builds, the ones update:rollback takes back.
 var takenBackSteps = []Step{StepSwitched, StepCommitted, StepFailed}
@@ -21,12 +20,11 @@ var failedSteps = []Step{StepSwitched, StepFailed}
 // Failure is what the service manager says about the start that failed, as it hands it to its rollback unit.
 type Failure struct {
 	ServiceResult string
-	ExitStatus    string
 }
 
-// failedStart reports whether the service manager says a start failed its start check or the starts hit the limit.
+// failedStart reports whether the service manager names a service result other than success.
 func (f Failure) failedStart() bool {
-	return f.ServiceResult == startLimitHit || f.ExitStatus == strconv.Itoa(ExitFailedCheck)
+	return f.ServiceResult != "" && f.ServiceResult != succeeded
 }
 
 // Rollback takes back the last update that switched builds, pointing current at the build before it.
@@ -46,9 +44,8 @@ func RollbackAfterFailure(settings Settings, failure Failure) (State, error) {
 			return State{}, nothingToTakeBack("update:rollback -after-failure", state)
 		}
 		if !failure.failedStart() {
-			return State{}, fmt.Errorf("updater: the service manager says the service result is %q and the exit "+
-				"status is %q, not a start that failed its check or hit the start limit, so update:rollback "+
-				"-after-failure leaves the update alone", failure.ServiceResult, failure.ExitStatus)
+			return State{}, fmt.Errorf("updater: the service manager says the service result is %q, not a failed "+
+				"start, so update:rollback -after-failure leaves the update alone", failure.ServiceResult)
 		}
 		if mayHaveMigrated(state) {
 			return State{}, layout.stayDown(state)

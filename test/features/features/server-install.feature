@@ -1,23 +1,42 @@
-Feature: Check a Linux server before installing Gophenberg
+Feature: Install Gophenberg on a Linux server
   sudo gophenberg server:install sets up Gophenberg on a fresh Ubuntu
   24.04, Debian 12 or Debian 13 server. Before it changes anything it
-  reads its settings, reads its install record and checks the server:
-  root, the system, systemd and the sandbox of the site's service, memory,
-  disk, the ports, any PostgreSQL or Caddy it did not install, the folders
-  above the install root, and that the domain points at this server. A
-  check that fails stops the run with a line that says why and that
-  nothing was changed. A later run skips the ports and the pieces the
-  install record says an earlier run installed. With -dry-run the run then
-  prints each step it would take and the full text of every file it would
-  write, and still changes nothing. Root never takes a setting from the
-  site's .env, since the site's own user can write it. It reads only the
-  five stop graces from it, as plain numbers, for the time systemd gives
-  the site to stop, and on a server that keeps its own web server the
-  upload cap. With -web-server none the server keeps a web server of its
-  own: the run leaves out Caddy, the ports Caddy answers on and the
-  domain check, and its last step prints the lines that web server needs
-  to send the domain to the site. A later run never moves a server from
-  one web server to the other.
+  checks that root runs it and that its installer folder is a real folder
+  root alone may write, then reads its settings, reads its install record
+  and checks the server: the system, systemd and the sandbox of the site's
+  service, memory, disk, the ports, any PostgreSQL or Caddy it did not
+  install, the folders above the install root, and that the domain points
+  at this server. A check that fails stops the run with a line that says
+  why and that nothing was changed. A later run skips the ports and the
+  pieces the install record says an earlier run installed. With -dry-run
+  the run then prints each step it would take and the full text of every
+  file it would write, and still changes nothing. A line the person added
+  to the site's .env prints by its key alone, its value hidden, and the
+  file keeps that value. Without -dry-run it then opens the release
+  archive -archive names and checks that its release.json names this
+  installer's version and this server's platform. While the first
+  administrator is still to be made, it asks on the terminal for what the
+  flags leave out: the email, the name and the password, typed twice and
+  never shown. A typed answer the account rules refuse is asked again.
+  Then it takes the steps its dry run prints, in order, and writes each
+  file its dry run prints. The install record marks each step started
+  before it and ended after it, so a run cut off part way picks up where
+  it stopped, and a step an earlier run ended never opens again. A later
+  run leaves the running build alone, asks nothing, keeps the person's
+  Caddyfile, reloads Caddy and restarts the site. A site that never
+  answers stops the run, and an HTTPS check that gets no answer only warns
+  and checks again on the next run. The checks also stop at a gophenberg
+  command on the path that the installer did not write, at a Caddyfile
+  that lost a line an earlier run wrote, and at a current link that names
+  no build. Root never takes a setting from the site's .env, since the
+  site's own user can write it. It reads only the five stop graces from
+  it, as plain numbers, for the time systemd gives the site to stop, and
+  on a server that keeps its own web server the upload cap. With
+  -web-server none the server keeps a web server of its own: the run
+  leaves out Caddy, the ports Caddy answers on and the domain check, and
+  its last step prints the lines that web server needs to send the domain
+  to the site. A later run never moves a server from one web server to
+  the other.
 
   Background:
     Given a fresh Ubuntu 24.04 server run by systemd 255
@@ -97,6 +116,13 @@ Feature: Check a Linux server before installing Gophenberg
     Then the run stops with "GOPHENBERG_INSTALL_WEB_SERVER: this server was set up with caddy, and a later run cannot move it to none, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env"
     And nothing on the server changed
 
+  Scenario: A later run that asks for another install root is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the environment sets GOPHENBERG_INSTALL_ROOT to /srv/gophenberg
+    When the operator runs "server:install"
+    Then the run stops with "GOPHENBERG_INSTALL_ROOT: this server was set up with /opt/gophenberg, and a later run cannot move it to /srv/gophenberg, so run sudo gophenberg server:uninstall first, then change the line in /etc/gophenberg/server.env"
+    And nothing on the server changed
+
   Scenario: A domain with no address is refused
     Given example.com has no A or AAAA record
     When the operator runs "server:install -dry-run -domain example.com"
@@ -155,6 +181,21 @@ Feature: Check a Linux server before installing Gophenberg
     Then the run stops with "/opt, a parent of the install root /opt/gophenberg, must be owned by root and writable by root alone, so nothing was changed"
     And nothing on the server changed
 
+  Scenario: An installer folder another user can write is refused
+    Given another user can write /var/lib/gophenberg-installer
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A plain file where the installer folder belongs is refused before the run reads the install record
+    Given a plain file sits at /var/lib/gophenberg-installer
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+    When the operator runs "server:install -domain example.com"
+    Then the run stops with "/var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was changed"
+    And nothing on the server changed
+
   Scenario: An install root that would hand the site's user a folder root trusts is refused
     Given the environment sets GOPHENBERG_INSTALL_ROOT to /usr/local
     When the operator runs "server:install -dry-run -domain example.com"
@@ -166,6 +207,15 @@ Feature: Check a Linux server before installing Gophenberg
     When the operator runs "server:install -dry-run -domain example.com"
     Then the run stops because this installer is older than the 1000.0.0 installer
     And nothing on the server changed
+
+  Scenario: A run while another run is going is refused, and a dry run still goes through
+    Given an earlier run installed Gophenberg for example.com on the server
+    And another server:install is running on the server
+    When the operator runs "server:install"
+    Then the run stops with "another server:install or server:uninstall is running on this server, so nothing was changed"
+    And nothing on the server changed
+    When the operator runs "server:install -dry-run"
+    Then the run succeeds
 
   Scenario: A later run skips the ports and the pieces an earlier run installed
     Given an earlier run installed Gophenberg for example.com on the server
@@ -211,12 +261,37 @@ Feature: Check a Linux server before installing Gophenberg
       GOPHENBERG_THEMES_DIR=/opt/gophenberg/themes
       GOPHENBERG_MEDIA_DIR=/opt/gophenberg/media
       GOPHENBERG_DATABASE_WAIT=60s
-      GOPHENBERG_SHUTDOWN_GRACE=4m
-      GOPHENBERG_SITE_TITLE="Maria Perez's site"
+      GOPHENBERG_SHUTDOWN_GRACE=(kept as it is)
+      GOPHENBERG_SITE_TITLE=(kept as it is)
       """
     And the site's unit holds the line "WorkingDirectory=/opt/gophenberg"
     And the site's unit holds the line "ReadWritePaths=/opt/gophenberg"
     And the site's unit holds the line "TimeoutStopSec=260s"
+
+  Scenario: A dry run hides the value of a password line the person added to the site's .env, and the run keeps it
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the site's .env holds the line "GOPHENBERG_SMTP_PASSWORD=Maria's mail password"
+    When the operator runs "server:install -dry-run"
+    Then the run succeeds
+    And nothing the run printed holds "Maria's mail password"
+    And the dry run writes "/opt/gophenberg/.env", owned by gophenberg with mode 0600:
+      """
+      # Written by gophenberg server:install.
+      GOPHENBERG_DATABASE_URL=postgres:///gophenberg?host=/var/run/postgresql&user=gophenberg
+      GOPHENBERG_SUPERUSER_POLICY=refuse
+      GOPHENBERG_INSTALL_ROOT=/opt/gophenberg
+      GOPHENBERG_ADDR=127.0.0.1:8081
+      GOPHENBERG_PUBLIC_URL=https://example.com
+      GOPHENBERG_TRUSTED_PROXIES=127.0.0.1/32,::1/128
+      GOPHENBERG_THEMES_DIR=/opt/gophenberg/themes
+      GOPHENBERG_MEDIA_DIR=/opt/gophenberg/media
+      GOPHENBERG_DATABASE_WAIT=60s
+      GOPHENBERG_SMTP_PASSWORD=(kept as it is)
+      """
+    When the operator runs "server:install"
+    Then the run succeeds
+    And nothing the run printed holds "Maria's mail password"
+    And the server holds every file the dry run printed, with its owner and mode
 
   Scenario: A line of the site's .env that holds a terminal control sequence is refused
     Given an earlier run installed Gophenberg for example.com on the server
@@ -365,6 +440,7 @@ Feature: Check a Linux server before installing Gophenberg
       User=gophenberg
       Group=gophenberg
       WorkingDirectory=/opt/gophenberg
+      ExecCondition=+/usr/bin/systemctl is-failed --quiet gophenberg.service
       ExecStart=/opt/gophenberg/previous/gophenberg update:rollback -after-failure
       ExecStartPost=+/usr/bin/systemctl reset-failed gophenberg.service
       ExecStartPost=+/usr/bin/systemctl start gophenberg.service
@@ -645,3 +721,533 @@ Feature: Check a Linux server before installing Gophenberg
       ProxyPass / http://127.0.0.1:8081/
       ProxyPassReverse / http://127.0.0.1:8081/
       """
+
+  Scenario: A dry run asks no question and opens no archive
+    Given the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -dry-run -domain example.com -archive /var/lib/gophenberg-installer/missing.tar.gz"
+    Then the run succeeds
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A first run without -archive is refused before anything changes
+    Given the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -domain example.com"
+    Then the run stops with "-archive is required while /opt/gophenberg/current names no build, such as the archive install.sh downloads into /var/lib/gophenberg-installer, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: An archive of another version than this installer is refused
+    Given a release archive of Gophenberg 0.0.1 is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops because the archive /var/lib/gophenberg-installer/release.tar.gz holds Gophenberg 0.0.1
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: An archive built for another platform is refused
+    Given a release archive of this installer built for windows/arm64 is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops because the archive /var/lib/gophenberg-installer/release.tar.gz is built for windows/arm64
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A password file that is not an absolute path is refused before the server is read
+    When the operator runs "server:install -domain example.com -admin-password-file admin-password"
+    Then the run stops with "-admin-password-file: must be an absolute path, got "admin-password""
+    And the checks listened on no port
+    And nothing on the server changed
+
+  Scenario: A password file whose first line ends in a carriage return is refused
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple" ending in a carriage return
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "-admin-password-file: the first line of /root/admin-password ends in a carriage return, as a file saved with Windows line endings does, and a password never holds one, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A password shorter than 12 characters is refused before anything changes
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "too short"
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "-admin-password-file: password shorter than 12 characters, so nothing was changed"
+    And the run asked nothing on the terminal
+    And nothing on the server changed
+
+  Scenario: A first run takes each step's programs in order and creates the first administrator from the flags
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run asked nothing on the terminal
+    And the run ran these programs, the checks' own left out:
+      """
+      dpkg-query -W -f ${db:Status-Abbrev}\n postgresql caddy
+      apt-get -o DPkg::Lock::Timeout=300 update
+      apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends postgresql caddy
+      useradd --system --user-group --home-dir /opt/gophenberg --no-create-home --shell /usr/sbin/nologin gophenberg
+      runuser -u postgres -- createuser --no-superuser --no-createdb --no-createrole gophenberg
+      runuser -u postgres -- createdb --owner=gophenberg --encoding=UTF8 --template=template0 --locale-provider=icu --icu-locale=und gophenberg
+      runuser -u gophenberg -- /opt/gophenberg/current/gophenberg check
+      systemctl daemon-reload
+      systemctl enable gophenberg.service
+      runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      systemctl restart caddy.service
+      systemctl reset-failed gophenberg.service
+      systemctl start gophenberg.service
+      runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name Maria -role admin
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg check" in /opt/gophenberg
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name Maria -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+    And the run ran "runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile" with HOME=/var/lib/caddy in its environment
+    And the run checked https://example.com/admin/ trusting the system's root certificates
+    And the server holds /etc/caddy/Caddyfile.before-gophenberg as the caddy package wrote it
+    And the install record holds the SHA-256 of the Caddyfile the run wrote
+    And the install record marks every step it took ended
+    And the run ends with:
+      """
+      Step 15: print the summary and end the install record
+
+      Gophenberg 0.19.0 runs at https://example.com. Sign in at https://example.com/admin/ as admin@example.com.
+      The hosting provider's firewall must let TCP 80, TCP 443 and UDP 443 in for visitors to reach the site.
+      Commands to know:
+        sudo gophenberg update:status     shows the build that runs and the update on offer
+        sudo gophenberg update:apply      installs the update on offer
+        sudo journalctl -u gophenberg     shows what the site logged
+        sudo gophenberg server:uninstall  removes Gophenberg and keeps its data
+      """
+
+  Scenario: A first run asks on the terminal for the first administrator the flags leave out, the password unseen and twice
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      Maria Perez
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name Maria Perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+
+  Scenario: An empty name takes the part of the email before @
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And the operator's terminal answers:
+      """
+      maria.perez@example.com
+
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      Name of the first administrator [maria.perez]:
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email maria.perez@example.com -name maria.perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+
+  Scenario: A first run for localhost checks HTTPS against Caddy's own root certificate
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -domain localhost -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run notes nothing
+    And the run checked https://localhost/admin/ trusting Caddy's own root certificate
+
+  Scenario: A first run with -web-server none installs everything but Caddy and prints the lines for the person's web server
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -dry-run -domain example.com -admin-email admin@example.com -web-server none"
+    And the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password -web-server none"
+    Then the run succeeds
+    And the run notes nothing
+    And the server holds every file the dry run printed, with its owner and mode
+    And the run ran these programs, the checks' own left out:
+      """
+      dpkg-query -W -f ${db:Status-Abbrev}\n postgresql
+      apt-get -o DPkg::Lock::Timeout=300 update
+      apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends postgresql
+      useradd --system --user-group --home-dir /opt/gophenberg --no-create-home --shell /usr/sbin/nologin gophenberg
+      runuser -u postgres -- createuser --no-superuser --no-createdb --no-createrole gophenberg
+      runuser -u postgres -- createdb --owner=gophenberg --encoding=UTF8 --template=template0 --locale-provider=icu --icu-locale=und gophenberg
+      runuser -u gophenberg -- /opt/gophenberg/current/gophenberg check
+      systemctl daemon-reload
+      systemctl enable gophenberg.service
+      systemctl reset-failed gophenberg.service
+      systemctl start gophenberg.service
+      runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name Maria -role admin
+      """
+    And the server holds nothing at /etc/caddy
+    And the run checked no page over HTTPS
+    And the run prints:
+      """
+      Step 13: print the summary and end the install record
+
+      Gophenberg 0.19.0 answers on 127.0.0.1:8081, the GOPHENBERG_ADDR the site listens on.
+      Once your own web server sends example.com there, sign in at https://example.com/admin/ as admin@example.com.
+      Commands to know:
+        sudo gophenberg update:status     shows the build that runs and the update on offer
+        sudo gophenberg update:apply      installs the update on offer
+        sudo journalctl -u gophenberg     shows what the site logged
+        sudo gophenberg server:uninstall  removes Gophenberg and keeps its data
+      Step 14: print the lines for nginx, Caddy, Traefik and Apache that send example.com to the site at 127.0.0.1:8081
+      """
+    And the run ends with the lines for the person's web server that the dry run printed
+
+  Scenario: Two typed passwords that differ are asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      Maria Perez
+      correct horse battery staple
+      correct horse battery stable
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      Password again: (unseen)
+      the two passwords differ, so type them again
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name Maria Perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+
+  Scenario: A typed answer the account rules refuse is asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      maria
+      admin@example.com
+
+      too short
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      invalid email, so type it again
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      password shorter than 12 characters, so type it again
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email admin@example.com -name admin -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+
+  Scenario: A typed email that cannot become the certificate email is asked again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      maria{perez}@example.com
+      admin@example.com
+
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      the email also becomes GOPHENBERG_INSTALL_CERTIFICATE_EMAIL, which must be one plain email address such as admin@example.com, got "maria{perez}@example.com", so type it again
+      Email of the first administrator:
+      Name of the first administrator [admin]:
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the server holds /etc/caddy/Caddyfile with the certificate email admin@example.com
+
+  Scenario: A run that must ask for the first administrator without a terminal is refused, naming the flags
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com"
+    Then the run stops with "this run has no terminal to ask the first administrator's name and password on, so give -admin-name and -admin-password-file: open /dev/tty: no such device or address, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A terminal that ends before every answer is given stops the run
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz"
+    Then the run stops with "asking for the first administrator's name ended: the terminal gave no more input, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario: A later run leaves the running build alone, asks nothing, restarts the site and reloads Caddy
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the run asked nothing on the terminal
+    And the run ran these programs, the checks' own left out:
+      """
+      dpkg-query -W -f ${db:Status-Abbrev}\n postgresql caddy
+      runuser -u gophenberg -- /opt/gophenberg/current/gophenberg check
+      systemctl daemon-reload
+      systemctl enable gophenberg.service
+      runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      systemctl reload caddy.service
+      systemctl reset-failed gophenberg.service
+      systemctl restart gophenberg.service
+      """
+    And the current link still names the earlier build 0.19.0
+    And /etc/caddy/Caddyfile is as the earlier run left it
+    And the run ends with:
+      """
+      Step 14: print the summary and end the install record
+
+      Gophenberg 0.19.0 runs at https://example.com. Sign in at https://example.com/admin/.
+      The hosting provider's firewall must let TCP 80, TCP 443 and UDP 443 in for visitors to reach the site.
+      Commands to know:
+        sudo gophenberg update:status     shows the build that runs and the update on offer
+        sudo gophenberg update:apply      installs the update on offer
+        sudo journalctl -u gophenberg     shows what the site logged
+        sudo gophenberg server:uninstall  removes Gophenberg and keeps its data
+      """
+
+  Scenario: A gophenberg command on the path that the installer did not write is refused
+    Given another package put a gophenberg command at /usr/local/bin/gophenberg
+    When the operator runs "server:install -dry-run -domain example.com"
+    Then the run stops with "this server already has a /usr/local/bin/gophenberg that server:install did not write, and server:install puts the gophenberg command there, so nothing was changed"
+    And nothing on the server changed
+
+  Scenario Outline: A later run whose Caddyfile lost a line an earlier run wrote is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the line "<line>" was taken out of /etc/caddy/Caddyfile
+    When the operator runs "server:install -dry-run"
+    Then the run stops with "/etc/caddy/Caddyfile lacks the line "<line>" that an earlier run wrote, <why>, and it must go back in before server:install runs again, so nothing was changed"
+    And nothing on the server changed
+
+    Examples:
+      | line                               | why                                                                               |
+      | import /etc/caddy/gophenberg.caddy | which has Caddy serve the site                                                    |
+      | admin unix//run/caddy/admin.sock   | which keeps Caddy's admin address off the loopback port any local user can reach |
+
+  Scenario Outline: A current link that names no build is refused
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the current link of the install root <names>
+    When the operator runs "server:install -dry-run"
+    Then the run stops with "cannot tell which build /opt/gophenberg/current names: <why>, so nothing was changed"
+    And nothing on the server changed
+
+    Examples:
+      | names                                                  | why                                                                                      |
+      | names /opt/gophenberg/versions/0.19.0 by its full path | updater: the current link names /opt/gophenberg/versions/0.19.0, not a build in versions |
+      | names versions/0.19.0, a build folder deleted by hand  | /opt/gophenberg/versions/0.19.0/gophenberg is not there                                  |
+      | names versions/0.19.0, whose program nobody may run    | /opt/gophenberg/versions/0.19.0/gophenberg is not executable                             |
+
+  Scenario: A first run installs Gophenberg and writes every file its dry run prints, with its owner and mode
+    Given unattended-upgrades is installed on the server
+    And the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -dry-run -domain example.com -admin-email admin@example.com"
+    And the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the server holds every file the dry run printed, with its owner and mode
+    And the server holds these folders:
+      | folder                        | owner      | mode |
+      | /var/lib/gophenberg-installer | root       | 0700 |
+      | /etc/gophenberg               | root       | 0755 |
+      | /opt/gophenberg               | gophenberg | 0750 |
+      | /opt/gophenberg/versions      | gophenberg | 0755 |
+      | /opt/gophenberg/downloads     | gophenberg | 0755 |
+      | /opt/gophenberg/state         | gophenberg | 0700 |
+      | /opt/gophenberg/backups       | gophenberg | 0700 |
+      | /opt/gophenberg/media         | gophenberg | 0750 |
+      | /opt/gophenberg/themes        | gophenberg | 0750 |
+    And the server holds the install record, owned by root with mode 0600
+    And the server holds the installer's own copy, owned by root with mode 0755
+    And the build folder of this installer holds only the files of its archive, owned by gophenberg
+    And the current link names the build of this installer, owned by gophenberg
+
+  Scenario: A run cut off while it installed the packages runs dpkg --configure -a first
+    Given a first run for example.com was cut off while apt-get installed PostgreSQL
+    And the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run ran "dpkg --configure -a" before "apt-get -o DPkg::Lock::Timeout=300 update"
+    And the run ran "apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends postgresql caddy" after "apt-get -o DPkg::Lock::Timeout=300 update"
+    And the install record marks the step packages ended
+
+  Scenario: A run cut off after createuser takes the role that already exists as made
+    Given a first run for example.com was cut off after createuser made the database role gophenberg
+    And the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run ran "runuser -u postgres -- createdb --owner=gophenberg --encoding=UTF8 --template=template0 --locale-provider=icu --icu-locale=und gophenberg" after "runuser -u postgres -- createuser --no-superuser --no-createdb --no-createrole gophenberg"
+    And the install record marks the step database ended
+
+  Scenario: A run cut off after the unpack removes the leftover build folder
+    Given a first run for example.com was cut off after it unpacked part of the build of this installer
+    And the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    When the operator runs "server:install -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the build folder of this installer holds only the files of its archive, owned by gophenberg
+    And the current link names the build of this installer, owned by gophenberg
+    And the install record marks the step build ended
+
+  Scenario: A run cut off after account:create-admin asks nothing on the next run
+    Given an earlier run for example.com was cut off after account:create-admin made the first administrator admin@example.com
+    And the operator's terminal answers:
+      """
+      admin@example.com
+      """
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the run asked nothing on the terminal
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:list -json" in /opt/gophenberg
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:list -json" before "systemctl daemon-reload"
+    And the run created no administrator
+    And the install record marks the step admin ended
+    And the install record marks the step summary ended
+
+  Scenario: An administrator email an account under another role holds stops the run, and the next run asks again
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And an account a person made by hand holds admin@example.com under the role editor
+    And the operator's terminal answers:
+      """
+      maria.perez@example.com
+      Maria Perez
+      correct horse battery staple
+      correct horse battery staple
+      """
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "admin@example.com already belongs to an account that is not an administrator, so run sudo gophenberg server:install again and give the first administrator another email"
+    And the install record marks the step admin started
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the terminal showed:
+      """
+      Email of the first administrator:
+      Name of the first administrator [maria.perez]:
+      Password: (unseen)
+      Password again: (unseen)
+      """
+    And the run ran "runuser -u gophenberg -- /opt/gophenberg/current/gophenberg account:create-admin -email maria.perez@example.com -name Maria Perez -role admin" in /opt/gophenberg, the line "correct horse battery staple" on its standard input
+    And the install record marks the step admin ended
+
+  Scenario: An administrator email an account under another role holds stops the run while another email is under admin
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And an account a person made by hand holds owner@example.com under the role admin
+    And an account a person made by hand holds admin@example.com under the role editor
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "admin@example.com already belongs to an account that is not an administrator, so run sudo gophenberg server:install again and give the first administrator another email"
+    And the install record marks the step admin started
+
+  Scenario: A later run keeps the person's .env lines and writes a changed restart delay from server.env
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the site's .env holds the line "GOPHENBERG_SITE_TITLE=Maria Perez's site"
+    And the server settings set GOPHENBERG_SERVICE_RESTART_DELAY to 3s
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the server holds "/opt/gophenberg/.env", owned by gophenberg with mode 0600:
+      """
+      # Written by gophenberg server:install.
+      GOPHENBERG_DATABASE_URL=postgres:///gophenberg?host=/var/run/postgresql&user=gophenberg
+      GOPHENBERG_SUPERUSER_POLICY=refuse
+      GOPHENBERG_INSTALL_ROOT=/opt/gophenberg
+      GOPHENBERG_ADDR=127.0.0.1:8081
+      GOPHENBERG_PUBLIC_URL=https://example.com
+      GOPHENBERG_TRUSTED_PROXIES=127.0.0.1/32,::1/128
+      GOPHENBERG_THEMES_DIR=/opt/gophenberg/themes
+      GOPHENBERG_MEDIA_DIR=/opt/gophenberg/media
+      GOPHENBERG_DATABASE_WAIT=60s
+      GOPHENBERG_SITE_TITLE="Maria Perez's site"
+      """
+    And the site's unit on the server holds the line "RestartSec=3s"
+    And the run ran "systemctl daemon-reload" before "systemctl restart gophenberg.service"
+
+  Scenario: A run whose HTTPS check gets no answer warns, ends with exit 0 and checks again on the next run
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And the hosting provider's firewall keeps TCP port 443 closed
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run notes "warning: https://example.com/admin/ did not answer 200 within 2m0s, the time GOPHENBERG_INSTALL_HTTPS_WAIT allows, as at the last try it could not be reached: dial tcp 203.0.113.7:443: i/o timeout. The site runs, so check that the hosting provider's firewall lets TCP 80, TCP 443 and UDP 443 in, then read sudo journalctl -u caddy, and the next sudo gophenberg server:install checks again"
+    And the install record marks the step https started
+    And the install record marks the step summary ended
+    When the hosting provider's firewall lets TCP port 443 in
+    And the operator runs "server:install"
+    Then the run succeeds
+    And the run notes nothing
+    And the run checked https://example.com/admin/ trusting the system's root certificates
+    And the install record marks the step https ended
+
+  Scenario: A run whose site never answers stops, names the journal and leaves the start step open
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And the site never answers on 127.0.0.1:8081
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "gophenberg.service did not pass its start check within 1m0s, the time GOPHENBERG_UPDATE_VERIFY_TIMEOUT allows, as at the last try it could not ask for /admin/: dial tcp 127.0.0.1:8081: connect: connection refused, so read why with sudo journalctl -u gophenberg"
+    And the install record marks the step start started
+    And the run created no administrator
+
+  Scenario: A run from the installer's own copy leaves the copy alone
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the operator runs the installer's own copy
+    When the operator runs "server:install"
+    Then the run succeeds
+    And the installer's own copy is the file the run ran, left as it was
+
+  Scenario: A later run whose caddy validate fails keeps the person's Caddyfile on the next run
+    Given an earlier run installed Gophenberg for example.com on the server
+    And the person added a site to /etc/caddy/Caddyfile whose directive respnd caddy validate does not know
+    When the operator runs "server:install"
+    Then the run stops with "caddy validate refused Caddy's files, so Caddy runs on with the settings it has: installer: run caddy: exit status 1", followed by what the program printed
+    And /etc/caddy/Caddyfile still holds the person's site
+    And the install record marks the step caddy ended
+    When the person fixes the typo in /etc/caddy/Caddyfile
+    And the operator runs "server:install"
+    Then the run succeeds
+    And /etc/caddy/Caddyfile still holds the person's site
+    And the run ran "systemctl reload caddy.service"
+    And the run never ran "systemctl restart caddy.service"
+
+  Scenario: A first run whose Caddy restart fails keeps the site the person adds to the Caddyfile on the next run
+    Given the release archive of this installer is at /var/lib/gophenberg-installer/release.tar.gz
+    And the file /root/admin-password holds the line "correct horse battery staple"
+    And Caddy fails to restart on the server
+    When the operator runs "server:install -domain example.com -archive /var/lib/gophenberg-installer/release.tar.gz -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run stops with "installer: run systemctl: exit status 1", followed by what the program printed
+    And the install record marks the step caddy started
+    When Caddy restarts again on the server
+    And the person adds the site example.org to /etc/caddy/Caddyfile
+    And the operator runs "server:install -admin-email admin@example.com -admin-name Maria -admin-password-file /root/admin-password"
+    Then the run succeeds
+    And the run prints:
+      """
+      Step 11: write Caddy's files, check them with caddy validate and restart Caddy
+      """
+    And /etc/caddy/Caddyfile still holds the person's site
+    And the run ran "systemctl restart caddy.service"
+    And the run never ran "systemctl reload caddy.service"
+    And the install record marks the step caddy ended

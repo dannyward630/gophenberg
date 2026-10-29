@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/gopherium/gophenberg/internal/updater"
 )
 
 // port is one port a check listens on briefly, what it is for, and the piece of the install record that holds it.
@@ -208,10 +210,62 @@ func (c *machineCheck) checkParent(parent string) error {
 	return nil
 }
 
+// checkInstallerFolder stops when the folder of the install record is a link, a file or others may write it.
+func checkInstallerFolder(machine Machine) error {
+	info, err := machine.lstat(installerFolder)
+	if err != nil || info == nil {
+		return err
+	}
+	if info.IsDir() && rootAloneWrites(info) {
+		return nil
+	}
+	return stop("%s, which holds the install record, must be a real folder owned by root and writable by root alone",
+		installerFolder)
+}
+
+// rootAloneWrites reports whether root owns the file info describes and no other user may write it.
+func rootAloneWrites(info fs.FileInfo) bool {
+	return ownedByRoot(info) && info.Mode().Perm()&0o022 == 0
+}
+
 // ownedByRoot reports whether root owns the file info describes.
 func ownedByRoot(info fs.FileInfo) bool {
 	stat, described := info.Sys().(*syscall.Stat_t)
 	return described && stat.Uid == 0
+}
+
+// checkCurrent finds the build the current link of the install root names, stopping at a link that names none.
+func checkCurrent(_ context.Context, c *machineCheck) error {
+	layout := updater.Layout{Root: filepath.Join(c.machine.Root, c.settings.Root)}
+	current, err := layout.Named(updater.Current)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return stop("cannot tell which build %s/current names: %v", c.settings.Root, err)
+	}
+	if err := c.checkProgram(current); err != nil {
+		return err
+	}
+	c.found.current = current
+	return nil
+}
+
+// checkProgram stops when the build called current has no program anyone may run, as after a delete by hand.
+func (c *machineCheck) checkProgram(current string) error {
+	program := updater.Layout{Root: c.settings.Root}.Binary(current)
+	info, err := c.machine.lstat(program)
+	switch {
+	case err != nil:
+		return err
+	case info == nil:
+		return stop("cannot tell which build %s/current names: %s is not there", c.settings.Root, program)
+	case !info.Mode().IsRegular():
+		return stop("cannot tell which build %s/current names: %s is not a file", c.settings.Root, program)
+	case info.Mode().Perm()&0o111 == 0:
+		return stop("cannot tell which build %s/current names: %s is not executable", c.settings.Root, program)
+	}
+	return nil
 }
 
 // checkRootFolder stops when the install root is a link, a file or a folder holding files the record does not own.
