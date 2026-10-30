@@ -35,6 +35,20 @@ func avatarUsersServer(t *testing.T, options avatar.Options) http.Handler {
 	return authedServerWithStores(t, cfg)
 }
 
+// listedAccounts returns the accounts GET /api/users answers, failing unless both accounts are listed.
+func listedAccounts(t *testing.T, handler http.Handler) []listedAccount {
+	t.Helper()
+	recorder := doRequest(t, handler, http.MethodGet, "/api/users", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
+	}
+	listed := decodeBody[[]listedAccount](t, recorder)
+	if len(listed) != 2 {
+		t.Fatalf("listed %+v, want the administrator and Maria Perez", listed)
+	}
+	return listed
+}
+
 // sentAvatar returns the avatar the account carries, quoted, or "no avatar" when the key is missing.
 func sentAvatar(account listedAccount) string {
 	if account.Avatar == nil {
@@ -60,15 +74,8 @@ func TestUserListSendsEachAccountsAvatarAtTwiceThePhoneCell(t *testing.T) {
 
 			handler := avatarUsersServer(t, options)
 
-			recorder := doRequest(t, handler, http.MethodGet, "/api/users", "")
+			listed := listedAccounts(t, handler)
 
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body)
-			}
-			listed := decodeBody[[]listedAccount](t, recorder)
-			if len(listed) != 2 {
-				t.Fatalf("listed %+v, want the administrator and Maria Perez", listed)
-			}
 			for _, account := range listed {
 				if got, want := sentAvatar(account), wantedAccountAvatar(account, options); got != want {
 					t.Errorf("avatar of %s = %s, want %s", account.Email, got, want)
