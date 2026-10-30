@@ -19,6 +19,7 @@ site="$work/update-site"
 cases="$site/install-cases"
 install_site="$work/install-site"
 install_copy="$work/install-test.sh"
+scripts="$work/deploy"
 keys="$work/keys"
 records="$work/records"
 tool="$work/releasetool"
@@ -572,9 +573,26 @@ script_record() {
 	"$tool" sign -key "$keys/release.pem" "$records/$1.script.json"
 }
 
+# public_body prints the one base64 line of the PEM that holds the public half of the throwaway release key.
+public_body() {
+	openssl pkey -in "$keys/release.pem" -pubout | sed -n 2p
+}
+
+# trusting_scripts copies publish-install.sh and install.sh into the work folder, install.sh naming the throwaway key.
+trusting_scripts() {
+	local key
+	key="$(public_body)"
+	mkdir -p "$scripts"
+	cp "$repo/deploy/publish-install.sh" "$scripts/publish-install.sh"
+	sed -e "s|^release_key=.*|release_key=$key|" -e "s|^standby_key=.*|standby_key=$key|" "$repo/deploy/install.sh" \
+		> "$scripts/install.sh"
+	has_line "$scripts/install.sh" "release_key=$key"
+	has_line "$scripts/install.sh" "standby_key=$key"
+}
+
 # publish_install_script runs publish-install.sh with the version's record and the throwaway key over the install site.
 publish_install_script() {
-	logged "$1" sh "$repo/deploy/publish-install.sh" "$tool" "$records/$2.script.json" "$install_site" \
+	logged "$1" sh "$scripts/publish-install.sh" "$tool" "$records/$2.script.json" "$install_site" \
 		"$keys/release.pem" "$(multikey release)" || fail "publish-install.sh did not end with exit 0 for $2"
 }
 
@@ -589,7 +607,7 @@ printed() {
 test_copy() {
 	local copy="$2" key line
 	local -a lines
-	key="$(openssl pkey -in "$keys/release.pem" -pubout | sed -n 2p)"
+	key="$(public_body)"
 	lines=("downloads=$1" "protocols='=http,https'" "release_key=$key" "standby_key=$key")
 	if [ "$#" -gt 2 ]; then
 		lines+=("sha256_amd64=$3")
@@ -629,6 +647,7 @@ stop_case() {
 scenario_publish_install() {
 	local sum signed published line
 	begin "publishing install.sh"
+	trusting_scripts
 	script_record "$base"
 	script_record "$a"
 	publish_install_script publish-base "$base"
