@@ -74,6 +74,7 @@ var staffRoutes = []route{
 var adminRoutes = []route{
 	{http.MethodGet, "/api/users"},
 	{http.MethodPost, "/api/users"},
+	{http.MethodGet, "/api/users/post-counts"},
 	{http.MethodPatch, "/api/users/{id}"},
 	{http.MethodPut, "/api/users/{id}/role"},
 	{http.MethodPost, "/api/types"},

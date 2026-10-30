@@ -194,7 +194,7 @@ func NewServer(cfg Config) http.Handler {
 	})
 	router.Group(func(privileged chi.Router) {
 		privileged.Use(readerOnly, auth.RequireSession, auth.RequirePrivilege)
-		mountAccounts(privileged, admin)
+		s.mountAccounts(privileged, admin)
 	})
 	router.Group(func(gated chi.Router) {
 		gated.Use(readerOnly, auth.RequireSession)
@@ -279,9 +279,10 @@ func (s *server) mountAdmin(r chi.Router, auth *authkit.Handlers, cfg Config) {
 }
 
 // mountAccounts registers the account routes only a privileged role reaches.
-func mountAccounts(r chi.Router, admin *authkit.AdminHandlers) {
+func (s *server) mountAccounts(r chi.Router, admin *authkit.AdminHandlers) {
 	r.Get("/api/users", admin.List)
 	r.Post("/api/users", admin.Create)
+	r.Get("/api/users/post-counts", s.handleUserPostCounts())
 	r.Patch("/api/users/{id}", admin.SetDisabled)
 	r.Put("/api/users/{id}/role", admin.SetRole)
 }

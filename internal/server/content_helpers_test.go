@@ -41,6 +41,7 @@ type fakePostStore struct {
 	deleteErr    error
 	emptyErr     error
 	countsErr    error
+	authoredErr  error
 	childrenErr  error
 	depthErr     error
 	targetsErr   error
@@ -392,6 +393,20 @@ func (s *fakePostStore) Counts(_ context.Context, typeKey string) (map[content.S
 	for _, p := range s.posts {
 		if p.Type == typeKey {
 			counts[p.Status]++
+		}
+	}
+	return counts, nil
+}
+
+// CountsByAuthor returns how many published and private posts of the type each author wrote.
+func (s *fakePostStore) CountsByAuthor(_ context.Context, typeKey string) (map[uuid.UUID]int, error) {
+	if s.authoredErr != nil {
+		return nil, s.authoredErr
+	}
+	counts := map[uuid.UUID]int{}
+	for _, p := range s.posts {
+		if p.Type == typeKey && (p.Status == content.StatusPublished || p.Status == content.StatusPrivate) {
+			counts[p.AuthorID]++
 		}
 	}
 	return counts, nil
