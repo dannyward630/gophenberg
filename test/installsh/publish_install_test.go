@@ -53,13 +53,14 @@ type releaseRecord struct {
 	} `json:"artifacts"`
 }
 
-// publishSite is one publish test: its test root, the release key and the standby, and the dash that runs the script.
+// publishSite is one publish test: its test root, its keys, the dash that runs the script and the install.sh beside it.
 type publishSite struct {
 	t       *testing.T
 	dash    string
 	root    string
 	keys    map[string]ed25519.PrivateKey
 	publics map[string]ed25519.PublicKey
+	script  string
 }
 
 // publishRun is how one run of publish-install.sh ended and what it printed.
@@ -90,6 +91,28 @@ func TestPublishInstallSignsANewerReleaseOverAnOlderCopy(t *testing.T) {
 	before := p.siteFiles()
 	p.publish(p.writeRecord(releaseVersion, "release", nil)).published(t, releaseVersion)
 	p.checkPublished(releaseVersion, before)
+}
+
+func TestPublishInstallTakesASignerInstallShNamesAsItsStandby(t *testing.T) {
+	t.Parallel()
+
+	p := newPublishSite(t)
+	p.script = p.trustingScript("other", "release")
+	before := p.siteFiles()
+	p.publish(p.writeRecord(releaseVersion, "release", nil)).published(t, releaseVersion)
+	p.checkPublished(releaseVersion, before)
+}
+
+func TestPublishInstallRefusesASignerInstallShDoesNotName(t *testing.T) {
+	t.Parallel()
+
+	p := newPublishSite(t)
+	p.publishedCopy("0.19.0")
+	p.script = p.trustingScript("standby", "other")
+	before := p.siteFiles()
+	p.publish(p.writeRecord(releaseVersion, "release", nil)).refused(t, "neither the release key nor the standby that "+
+		p.path("deploy", "install.sh")+" names signed the release record"+siteStays)
+	p.unchanged(before)
 }
 
 func TestPublishInstallLeavesTheSiteAloneForAnOlderOrTheSameRelease(t *testing.T) {
@@ -217,7 +240,7 @@ func TestPublishInstallRefusesASiteCopyThatNamesNoRelease(t *testing.T) {
 			line: "the update site's install.sh names unstamped" + notStable,
 		},
 		"a copy naming a prerelease": {
-			text: func(t *testing.T) []byte { return stampedScript(t, "0.21.0-rc.1") },
+			text: func(t *testing.T) []byte { return stampedScript(t, repositoryScript(t), "0.21.0-rc.1") },
 			line: "the update site's install.sh names 0.21.0-rc.1" + notStable,
 		},
 	}
@@ -340,7 +363,8 @@ func needPublishTools(t *testing.T) string {
 	return dash
 }
 
-// newPublishSite makes a test root whose update site holds an unrelated file, and the release key and the standby.
+// newPublishSite makes a test root whose update site holds an unrelated file, the release key, the standby and
+// another key, and an install.sh naming the release key and the standby.
 func newPublishSite(t *testing.T) *publishSite {
 	t.Helper()
 	p := &publishSite{
@@ -351,7 +375,7 @@ func newPublishSite(t *testing.T) *publishSite {
 		t.Fatalf("making the temporary folder: %v", err)
 	}
 	p.write(p.path("site", unrelatedFile), []byte("{}\n"))
-	for _, name := range []string{"release", "standby"} {
+	for _, name := range []string{"release", "standby", "other"} {
 		public, private, err := ed25519.GenerateKey(nil)
 		if err != nil {
 			t.Fatalf("making the %s key: %v", name, err)
@@ -363,7 +387,22 @@ func newPublishSite(t *testing.T) *publishSite {
 		p.write(p.path("keys", name+".pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 		p.keys[name], p.publics[name] = private, public
 	}
+	p.script = p.trustingScript("release", "standby")
 	return p
+}
+
+// trustingScript returns deploy/install.sh with its release_key and standby_key lines naming the two keys given.
+func (p *publishSite) trustingScript(release, standby string) string {
+	p.t.Helper()
+	text := string(repositoryScript(p.t))
+	for name, key := range map[string]string{"release_key": release, "standby_key": standby} {
+		body, err := pemBody(p.keys[key])
+		if err != nil {
+			p.t.Fatalf("writing the %s key as PEM: %v", key, err)
+		}
+		text = strings.Replace(text, name+"="+scriptValue(p.t, text, name)+"\n", name+"="+body+"\n", 1)
+	}
+	return text
 }
 
 // path joins the parts under the test root.
@@ -495,19 +534,19 @@ func repositoryScript(t *testing.T) []byte {
 	return source
 }
 
-// stampedScript returns deploy/install.sh with its three unstamped lines naming the version and its two checksums.
-func stampedScript(t *testing.T, version string) []byte {
+// stampedScript returns the install.sh source with its three unstamped lines naming the version and its two checksums.
+func stampedScript(t *testing.T, source []byte, version string) []byte {
 	t.Helper()
 	stamps := map[string]string{
 		"version=unstamped\n":      "version=" + version + "\n",
 		"sha256_amd64=unstamped\n": "sha256_amd64=" + checksumOf(version, "amd64") + "\n",
 		"sha256_arm64=unstamped\n": "sha256_arm64=" + checksumOf(version, "arm64") + "\n",
 	}
-	lines := strings.SplitAfter(string(repositoryScript(t)), "\n")
+	lines := strings.SplitAfter(string(source), "\n")
 	seen := stampLines(lines, stamps)
 	for line := range stamps {
 		if seen[line] != 1 {
-			t.Fatalf("deploy/install.sh holds %q on %d lines, want 1", line, seen[line])
+			t.Fatalf("install.sh holds %q on %d lines, want 1", line, seen[line])
 		}
 	}
 	return []byte(strings.Join(lines, ""))
@@ -528,7 +567,7 @@ func stampLines(lines []string, stamps map[string]string) map[string]int {
 // publishedCopy puts install.sh stamped for the version into the update site, with a .sig the release key made.
 func (p *publishSite) publishedCopy(version string) {
 	p.t.Helper()
-	p.siteCopy(stampedScript(p.t, version))
+	p.siteCopy(stampedScript(p.t, repositoryScript(p.t), version))
 }
 
 // siteCopy puts the text into the update site as install.sh, with a .sig the release key made.
@@ -564,10 +603,10 @@ func (p *publishSite) arguments(record, signer string) []string {
 	return []string{releasetoolBinary, record, p.path("site"), p.path("keys", signer+".pem"), multikey}
 }
 
-// publish runs publish-install.sh on the record, signing with the release key and checking under its Multikey.
+// publish runs publish-install.sh beside the site's install.sh on the record, signing with the release key.
 func (p *publishSite) publish(record string) publishRun {
 	p.t.Helper()
-	return p.run(publishScriptPath, p.arguments(record, "release"))
+	return p.run(p.besideScript(p.script), p.arguments(record, "release"))
 }
 
 // run runs the script under dash with the arguments and checks that its temporary folder is empty again.
@@ -650,15 +689,16 @@ func (p *publishSite) unchanged(before map[string]string) {
 	}
 }
 
-// checkPublished checks that only install.sh, stamped for the version, and its .sig under the release key changed.
+// checkPublished checks that only install.sh, the site's stamped for the version, and its .sig under the release key
+// changed.
 func (p *publishSite) checkPublished(version string, before map[string]string) {
 	p.t.Helper()
 	after := p.siteFiles()
 	if changed := changedPaths(before, after); !slices.Equal(changed, []string{"install.sh", "install.sh.sig"}) {
 		p.t.Errorf("the run changed %q in the update site, want install.sh and install.sh.sig", changed)
 	}
-	if want := string(stampedScript(p.t, version)); after["install.sh"] != want {
-		p.t.Errorf("the update site's install.sh is not deploy/install.sh stamped for %s: %s", version,
+	if want := string(stampedScript(p.t, []byte(p.script), version)); after["install.sh"] != want {
+		p.t.Errorf("the update site's install.sh is not the install.sh beside the script stamped for %s: %s", version,
 			firstDifference(after["install.sh"], want))
 	}
 	digest, err := signature.Digest(strings.NewReader(after["install.sh"]))

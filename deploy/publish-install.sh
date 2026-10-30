@@ -74,12 +74,24 @@ sign() {
 			"so the update site stays as it is"
 }
 
+# trusted stops unless the release key or the standby that the script names signed the release record.
+trusted() {
+	for name in release_key standby_key; do
+		printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$(sed -n "s/^$name=//p" "$1")" '-----END PUBLIC KEY-----' \
+			> "$work/$name.pem"
+		"$tool" verify -public "$work/$name.pem" "$record" > /dev/null 2>&1 && return 0
+	done
+	stop "neither the release key nor the standby that $1 names signed the release record," \
+		"so the update site stays as it is"
+}
+
 # publish stamps and signs install.sh in a work folder outside the update site, then moves both files into the site.
 publish() {
 	work=$(mktemp -d)
 	trap 'rm -rf "$work"' EXIT
 	stamp "$(dirname "$0")/install.sh"
 	sign
+	trusted "$(dirname "$0")/install.sh"
 	mv "$work/install.sh.sig" "$site/install.sh.sig"
 	mv "$work/install.sh" "$site/install.sh"
 	say "install.sh now names Gophenberg $version"
