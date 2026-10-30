@@ -27,9 +27,9 @@ const wantedRemoves = `server:uninstall removes:
   /etc/caddy/Caddyfile, putting back /etc/caddy/Caddyfile.before-gophenberg, the one the caddy package wrote
   /etc/systemd/system/caddy.service.d/gophenberg.conf
   /etc/caddy/gophenberg.caddy
-  /usr/local/share/gophenberg/maintenance
+  /usr/local/share/gophenberg
   /usr/local/bin/gophenberg
-  /usr/local/lib/gophenberg/gophenberg
+  /usr/local/lib/gophenberg
   /opt/gophenberg/versions
   /opt/gophenberg/downloads
   /opt/gophenberg/current
@@ -648,7 +648,7 @@ func TestUninstallWithDeleteDataDropsTheDatabaseAndRemovesTheRootServerEnvAndThe
 		t.Errorf("Uninstall() left the record %+v, want %+v", got, want)
 	}
 	listed := "  /opt/gophenberg/current\n  the database gophenberg and its role gophenberg\n  the install root " +
-		"/opt/gophenberg and everything in it\n  /etc/gophenberg/server.env\n  the system user gophenberg\n" +
+		"/opt/gophenberg and everything in it\n  /etc/gophenberg\n  the system user gophenberg\n" +
 		"server:uninstall keeps:\n  /var/lib/gophenberg-installer/install.json, holding the packages server:install " +
 		"installed, so a later install takes them as its own\n" + wantedPackagesKept + removedLine
 	if !strings.HasSuffix(stdout, listed) {

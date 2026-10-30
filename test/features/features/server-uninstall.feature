@@ -21,7 +21,11 @@ Feature: Remove Gophenberg from a Linux server
   it reloads. With -delete-data it also drops the
   database and its role and removes the install root, server.env and the
   user, and it removes an install root only when the install record shows
-  that server:install made it. The record keeps the domain, since the
+  that server:install made it. Each folder the run empties goes too,
+  /usr/local/lib/gophenberg, /usr/local/share/gophenberg and with
+  -delete-data /etc/gophenberg, and the list names the folder in place of
+  its last entry. A folder that holds anything else stays, with what it
+  holds. The record keeps the domain, since the
   kept Caddy still holds port 80, so a later install for that domain
   skips the domain check. A unit systemd already let go of once the site
   stopped counts as cleared. Each piece already gone is skipped, so a
@@ -92,9 +96,9 @@ Feature: Remove Gophenberg from a Linux server
         /etc/caddy/Caddyfile, putting back /etc/caddy/Caddyfile.before-gophenberg, the one the caddy package wrote
         /etc/systemd/system/caddy.service.d/gophenberg.conf
         /etc/caddy/gophenberg.caddy
-        /usr/local/share/gophenberg/maintenance
+        /usr/local/share/gophenberg
         /usr/local/bin/gophenberg
-        /usr/local/lib/gophenberg/gophenberg
+        /usr/local/lib/gophenberg
         /opt/gophenberg/versions
         /opt/gophenberg/downloads
         /opt/gophenberg/current
@@ -134,8 +138,10 @@ Feature: Remove Gophenberg from a Linux server
       /etc/caddy/Caddyfile.before-gophenberg
       /etc/caddy/gophenberg.caddy
       /usr/local/share/gophenberg/maintenance
+      /usr/local/share/gophenberg
       /usr/local/bin/gophenberg
       /usr/local/lib/gophenberg/gophenberg
+      /usr/local/lib/gophenberg
       /opt/gophenberg/versions
       /opt/gophenberg/downloads
       /opt/gophenberg/current
@@ -261,7 +267,7 @@ Feature: Remove Gophenberg from a Linux server
         /opt/gophenberg/current
         the database gophenberg and its role gophenberg
         the install root /opt/gophenberg and everything in it
-        /etc/gophenberg/server.env
+        /etc/gophenberg
         the system user gophenberg
       server:uninstall keeps:
         /var/lib/gophenberg-installer/install.json, holding the packages server:install installed, so a later install takes them as its own
@@ -271,10 +277,43 @@ Feature: Remove Gophenberg from a Linux server
       """
       /opt/gophenberg
       /etc/gophenberg/server.env
+      /etc/gophenberg
       """
     And the server has no system user gophenberg
     And the install record marks no step
     And the install record owns only these pieces: postgresql, caddy
+
+  Scenario: A folder holding a file the person put there stays, with its file
+    Given server:install installed Gophenberg for example.com on the server
+    And the file /usr/local/lib/gophenberg/notes.txt holds the line "Maria Perez's notes"
+    And the file /usr/local/share/gophenberg/notes.txt holds the line "Maria Perez's notes"
+    And the file /etc/gophenberg/notes.txt holds the line "Maria Perez's notes"
+    When the operator runs "server:uninstall -delete-data -yes"
+    Then the run succeeds
+    And the run prints:
+      """
+        /etc/caddy/gophenberg.caddy
+        /usr/local/share/gophenberg/maintenance
+        /usr/local/bin/gophenberg
+        /usr/local/lib/gophenberg/gophenberg
+      """
+    And the run prints:
+      """
+        the install root /opt/gophenberg and everything in it
+        /etc/gophenberg/server.env
+      """
+    And the server holds nothing at these paths:
+      """
+      /usr/local/share/gophenberg/maintenance
+      /usr/local/lib/gophenberg/gophenberg
+      /etc/gophenberg/server.env
+      """
+    And the server still holds these paths:
+      """
+      /usr/local/lib/gophenberg/notes.txt
+      /usr/local/share/gophenberg/notes.txt
+      /etc/gophenberg/notes.txt
+      """
 
   Scenario: On a server that keeps its own web server it leaves Caddy alone
     Given Caddy is installed on the server
