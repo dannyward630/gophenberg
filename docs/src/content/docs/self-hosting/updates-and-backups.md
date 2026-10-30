@@ -251,6 +251,14 @@ Some things work differently after this update:
   plugin screen that called `toaster.name` now breaks, so put the
   whole name in its message instead. See
   [the admin lists](/self-hosting/configuration/#the-admin-lists).
+- The users API refuses an account write in WordPress's two ways. A
+  write on an account whose role carries a capability the reader's
+  role lacks answers `user_not_editable`. Giving a role the reader may
+  not give, or enabling an account whose role nothing declares,
+  answers `role_not_grantable`. The release before this one answered
+  `role_beyond_reach` for both. Each account `/api/users` lists now
+  carries `editable`, true when the reader may change it. A program
+  that reads those codes needs updating.
 
 Updating from further back also runs the migrations of every release
 you skip, so read each of their notes. Coming from five releases back

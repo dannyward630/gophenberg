@@ -120,14 +120,21 @@ Feature: A role decides which routes an account reaches
 
   Scenario: A role carrying only the account capability cannot make an administrator
     Given the plugin "teams" declaring the role "team_lead" with the capability "manage_users"
+    And the account "member@example.com" holding the role "member"
+    And a signed in "team_lead"
+    When the account gives "member@example.com" the role "admin"
+    Then the request is refused with the code "role_not_grantable"
+
+  Scenario: A role carrying only the account capability cannot change an author
+    Given the plugin "teams" declaring the role "team_lead" with the capability "manage_users"
     And the account "author@example.com" holding the role "author"
     And a signed in "team_lead"
-    When the account gives "author@example.com" the role "admin"
-    Then the request is refused with the code "role_beyond_reach"
+    When the account gives "author@example.com" the role "member"
+    Then the request is refused with the code "user_not_editable"
 
   Scenario: A role carrying only the account capability cannot disable an administrator
     Given the plugin "teams" declaring the role "team_lead" with the capability "manage_users"
     And the account "owner@example.com" holding the role "admin"
     And a signed in "team_lead"
     When the account disables "owner@example.com"
-    Then the request is refused with the code "role_beyond_reach"
+    Then the request is refused with the code "user_not_editable"
