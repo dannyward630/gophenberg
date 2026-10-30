@@ -191,7 +191,8 @@ func (u *removing) plan() error {
 	if err := u.planCaddy(); err != nil {
 		return err
 	}
-	u.removesPaths(u.present([]string{caddySitePath, maintenanceFolder})...)
+	u.removesPaths(u.present([]string{caddySitePath})...)
+	u.removesEmptied(maintenanceFolder)
 	u.planCommand()
 	if err := u.planRoot(); err != nil {
 		return err
@@ -454,7 +455,7 @@ func (u *removing) planCommand() {
 	default:
 		u.kept = append(u.kept, commandPath+", which server:install did not write")
 	}
-	u.removesPaths(u.present([]string{installerCopy})...)
+	u.removesEmptied(installerCopy)
 }
 
 // wroteCommand reports whether info shows a regular file at commandPath that begins as server:install writes it.
@@ -559,10 +560,7 @@ func (u *removing) data() ([]datum, error) {
 			remove: u.removeRoot,
 		})
 	}
-	if u.machine.there(serverEnvPath) {
-		settings := u.systemSpot(serverEnvPath)
-		held = append(held, datum{kept: serverEnvPath, removed: serverEnvPath, remove: settings.remove})
-	}
+	held = append(held, u.settingsData()...)
 	_, err := u.machine.LookupUser(siteUser)
 	if errors.As(err, new(user.UnknownUserError)) {
 		return held, nil
@@ -572,6 +570,19 @@ func (u *removing) data() ([]datum, error) {
 	}
 	userdel := u.runs(Program{Name: "userdel", Args: []string{siteUser}})
 	return append(held, datum{kept: siteUserLine, removed: siteUserLine, remove: userdel}), nil
+}
+
+// settingsData returns server.env as a piece of the data, or the folder a cut-off run emptied of it, when there.
+func (u *removing) settingsData() []datum {
+	removed, remove := u.emptying(u.systemSpot(serverEnvPath))
+	kept := serverEnvPath
+	if !u.machine.there(kept) {
+		kept = removed
+	}
+	if !u.machine.there(kept) {
+		return nil
+	}
+	return []datum{{kept: kept, removed: removed, remove: remove}}
 }
 
 // dropDatabase drops the database gophenberg and its role as postgres, taking one that does not exist as dropped.
@@ -718,6 +729,43 @@ func (u *removing) removesPaths(paths ...string) {
 	}
 }
 
+// removesEmptied lists path, or its folder once that holds nothing else, as removed when there, removing it with -yes.
+func (u *removing) removesEmptied(path string) {
+	if listed, remove := u.emptying(u.systemSpot(path)); u.machine.there(listed) {
+		u.removed = append(u.removed, listed)
+		u.then(remove)
+	}
+}
+
+// emptying returns what the run lists to remove entry, its folder once that holds nothing else, and the change.
+func (u *removing) emptying(entry spot) (string, func(context.Context) error) {
+	listed := u.machine.emptied(entry.path)
+	if listed == entry.path {
+		return listed, entry.remove
+	}
+	folder := u.systemSpot(listed)
+	return listed, func(ctx context.Context) error {
+		if err := entry.remove(ctx); err != nil {
+			return err
+		}
+		return folder.removeEmptied()
+	}
+}
+
+// emptied returns the folder of path when it is a real folder holding nothing but path, else path itself.
+func (m Machine) emptied(path string) string {
+	folder := filepath.Dir(path)
+	if !m.isFolder(folder) {
+		return path
+	}
+	other := func(entry fs.DirEntry) bool { return entry.Name() != filepath.Base(path) }
+	entries, err := os.ReadDir(filepath.Join(m.Root, folder))
+	if err != nil || slices.ContainsFunc(entries, other) {
+		return path
+	}
+	return folder
+}
+
 // systemSpot returns the spot of path, named from the top of the server, in the system tree.
 func (u *removing) systemSpot(path string) spot {
 	return spot{tree: u.system, name: inSystemTree(path), path: path}
@@ -734,6 +782,21 @@ func (u *removing) runs(program Program) func(context.Context) error {
 // remove removes the spot and all it holds through its tree, following no link.
 func (s spot) remove(context.Context) error {
 	if err := s.tree.RemoveAll(s.name); err != nil {
+		return fmt.Errorf("installer: remove %s: %w", s.path, err)
+	}
+	return nil
+}
+
+// removeEmptied removes the spot, a folder, unless it holds anything or is a link, taking one already gone as removed.
+func (s spot) removeEmptied() error {
+	info, err := s.tree.Lstat(s.name)
+	if err == nil && info.IsDir() {
+		err = s.tree.Remove(s.name)
+	}
+	switch {
+	case errors.Is(err, syscall.ENOTEMPTY), errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
 		return fmt.Errorf("installer: remove %s: %w", s.path, err)
 	}
 	return nil

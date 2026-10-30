@@ -617,9 +617,10 @@ one, never half of each. The user Gophenberg runs as needs read and
 write access to the whole install root. Leave `state/update.json` to
 Gophenberg, since the next start reads it.
 
-To set up an install root, unpack the archive of the release you run
-into its own folder and point `current` at it, after you
-[check the download](/self-hosting/install/#check-a-download):
+[Install on a Linux server](/self-hosting/server-install/) sets up
+the install root for you. To set one up by hand, unpack the archive of
+the release you run into its own folder and point `current` at it,
+after you [check the download](/self-hosting/install/#check-a-download):
 
 ```sh
 mkdir -p /opt/gophenberg/versions/%VERSION%
@@ -632,11 +633,19 @@ settings.
 
 ### Running an update
 
-Run `update:apply` with the binary `current` names, as the user
-Gophenberg runs as, while the site keeps serving:
+On a server that `install.sh` set up, run `update:apply` through the
+`gophenberg` command while the site keeps serving:
 
 ```sh
-/opt/gophenberg/current/gophenberg update:apply
+sudo gophenberg update:apply
+```
+
+On an install root you set up by hand, run the binary `current` names
+from the install root, as the user Gophenberg runs as, since a command
+reads the `.env` of the folder it runs in:
+
+```sh
+cd /opt/gophenberg && ./current/gophenberg update:apply
 ```
 
 It takes the newest version the update site offers this site, or the
@@ -674,8 +683,10 @@ It then asks for a restart and exits with code 75:
 gophenberg: restart Gophenberg to start 1.4.1
 ```
 
-The server still runs the old build until you restart it, such as
-with `systemctl restart gophenberg`. When a step fails, `update:apply`
+The server still runs the old build until it restarts. On a server
+that `install.sh` set up, the `gophenberg` command restarts it for
+you. Otherwise restart it yourself, such as with
+`systemctl restart gophenberg`. When a step fails, `update:apply`
 deletes what it wrote, leaves `current` as it was and exits with code
 1, so nothing changed for the site. It writes which update failed,
 when, at which step and why into `state/update.json`, and
@@ -705,10 +716,13 @@ gophenberg: restart Gophenberg to start 1.4.1
 ```
 
 So an install root needs a service manager that starts Gophenberg
-again when it exits, such as a systemd service with `Restart=always`.
-The next start runs the new build, and [the boot guard](#the-boot-guard)
-checks it as it does after `update:apply`. Without a service manager,
-the site stays down after the switch until you start it again.
+again when it exits. A server that `install.sh` set up has one, see
+[the site's unit](/self-hosting/server-install/#the-sites-unit). A
+systemd unit of your own needs that unit's `Restart`, `OnFailure` and
+exit code 75 and 76 lines, and the rollback unit beside it. The next
+start runs the new build, and [the boot guard](#the-boot-guard) checks
+it as it does after `update:apply`. Without a service manager, the
+site stays down after the switch until you start it again.
 
 When a step fails, the server deletes what it wrote, leaves `current`
 as it was and keeps serving the build that runs. It writes which update
@@ -833,16 +847,26 @@ stops and names the command that tries the refused one again. Once you
 have fixed what failed, run:
 
 ```sh
-/opt/gophenberg/current/gophenberg update:apply -to 1.4.1 -retry
+sudo gophenberg update:apply -to 1.4.1 -retry
 ```
 
-Under systemd, once systemd gave up restarting the site, a rollback
-unit runs `update:rollback -after-failure` and then starts the
-service again. A start that failed its check with exit code 76 and a
-build that keeps crashing both count, see
+On an install root you set up by hand, run it from the install root:
+
+```sh
+cd /opt/gophenberg && ./current/gophenberg update:apply -to 1.4.1 -retry
+```
+
+Once systemd gave up restarting the site,
+[the rollback unit](/self-hosting/server-install/#the-rollback-unit)
+runs `update:rollback -after-failure` and then starts the site again.
+Any result but success counts, such as a start that failed its check
+with exit code 76 or a build that keeps crashing, see
 [update:rollback](/self-hosting/commands/#updaterollback). To take
-back an update that passed its check, run `update:rollback` and
-restart Gophenberg. It refuses that version from then on too.
+back an update that passed its check, run
+`sudo gophenberg update:rollback`, which also restarts the site. On an
+install root you set up by hand, run `./current/gophenberg update:rollback`
+from the install root and restart Gophenberg yourself. That version is
+refused from then on too.
 
 ### An update that raised the minimum version
 
@@ -863,9 +887,9 @@ gophenberg: updater: restore the backup taken before the update, /opt/gophenberg
 ```
 
 A build that stops before its check, such as on a migration that
-fails, ends the same way. Under systemd, the starts hit the start
-limit, and the rollback unit writes that the update failed instead of
-going back, so `update:status` shows the same steps.
+fails, ends the same way. Once systemd gave up restarting it, the
+rollback unit writes that the update failed instead of going back, so
+`update:status` shows the same steps.
 
 A build that never reached the database cannot have migrated it, so it
 goes back like any other update, see
@@ -921,7 +945,13 @@ shows, and its version joins the refused versions. Once the database
 answers again, take the update again:
 
 ```sh
-/opt/gophenberg/current/gophenberg update:apply -to 1.4.1 -retry
+sudo gophenberg update:apply -to 1.4.1 -retry
+```
+
+On an install root you set up by hand, run it from the install root:
+
+```sh
+cd /opt/gophenberg && ./current/gophenberg update:apply -to 1.4.1 -retry
 ```
 
 This holds for an update that raised the minimum version too. Its
@@ -1022,25 +1052,42 @@ the way until the restore is done.
 After an update that raised the minimum version failed its check, the
 backup `update:apply` took sits in the `backups` folder of the install
 root, and the error and `update:status` name it. Say the site went
-from 1.4.0 to 1.4.1, and `GOPHENBERG_DATABASE_URL` connects as the
-role `gophenberg`. With Gophenberg stopped, restore that backup into a
-new empty database that this role owns, as the PostgreSQL superuser:
+from 1.4.0 to 1.4.1. On a server that `install.sh` set up, stop the
+site and put the backup in place of the database the new build
+migrated:
 
 ```sh
-createdb -O gophenberg gophenberg_restored
-pg_restore -d gophenberg_restored /opt/gophenberg/backups/1.4.0-20261020T120000Z.dump
+sudo systemctl stop gophenberg
+sudo -u postgres dropdb gophenberg
+sudo -u postgres createdb --owner=gophenberg --encoding=UTF8 --template=template0 --locale-provider=icu --icu-locale=und gophenberg
+sudo -u gophenberg pg_restore -d gophenberg /opt/gophenberg/backups/1.4.0-20261020T120000Z.dump
 ```
 
-The `-O` matters. On PostgreSQL 15 and newer, only the owner of a
-database may create tables in it, and the next release that adds a
-migration has to.
+- `dropdb` deletes the database the new build migrated, for good.
+- The database keeps its name, `gophenberg`, since every
+  `sudo gophenberg server:install` writes `GOPHENBERG_DATABASE_URL`
+  back to it.
+- `createdb` makes it as the install did. The owner matters. On
+  PostgreSQL 15 and newer, only the owner of a database may create
+  tables in it, and the next release that adds a migration has to.
+- `pg_restore` runs as `gophenberg`, which owns the database and can
+  read the backup.
 
-Point `GOPHENBERG_DATABASE_URL` at `gophenberg_restored`, point
-`current` back at the build before the update, and start Gophenberg:
+Then point `current` back at the build before the update, and start
+the site:
 
 ```sh
-ln -sfn versions/1.4.0 /opt/gophenberg/current
+sudo -u gophenberg ln -sfn versions/1.4.0 /opt/gophenberg/current
+sudo systemctl reset-failed gophenberg
+sudo systemctl start gophenberg
 ```
+
+On an install root you set up by hand, restore into a new empty
+database the site's role owns instead, such as with
+`createdb -O gophenberg gophenberg_restored` as the PostgreSQL
+superuser and then `pg_restore -d gophenberg_restored` with the
+backup. Point `GOPHENBERG_DATABASE_URL` at it, point `current` back,
+and start Gophenberg.
 
 Once 1.4.0 passes its start check, `update:status` says the update was
 taken back. Everything written between the backup and the failed start

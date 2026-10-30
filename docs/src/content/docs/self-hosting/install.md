@@ -3,6 +3,9 @@ title: Install with Docker Compose
 description: From an empty server to a running Gophenberg with a login.
 ---
 
+To install on a Linux server with one command instead, see
+[Install on a Linux server](/self-hosting/server-install/).
+
 This page takes you from an empty server to a running Gophenberg.
 You need Docker with Compose, and a reverse proxy in front holding
 your HTTPS certificate, such as Caddy, Traefik, or nginx.

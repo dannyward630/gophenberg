@@ -320,7 +320,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: shellcheck test/installer/scenarios.sh
-      - name: Install, update, roll back, uninstall and install Gophenberg again on this runner
+      - run: shellcheck -s sh deploy/install.sh deploy/publish-install.sh
+      - name: Publish install.sh, install through it, update, roll back, uninstall and install again on this runner
         run: bash test/installer/scenarios.sh run
       - name: Gather the journals, the update state and the install record
         if: failure() || cancelled()

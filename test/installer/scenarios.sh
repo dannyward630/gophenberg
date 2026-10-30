@@ -16,6 +16,10 @@ out="$work/out"
 front_file="$out/front.txt"
 back_file="$out/back.txt"
 site="$work/update-site"
+cases="$site/install-cases"
+install_site="$work/install-site"
+install_copy="$work/install-test.sh"
+scripts="$work/deploy"
 keys="$work/keys"
 records="$work/records"
 tool="$work/releasetool"
@@ -27,7 +31,6 @@ admin_name="Maria Perez"
 domain=localhost
 install_root=/opt/gophenberg
 installer_folder=/var/lib/gophenberg-installer
-ci_folder="$installer_folder/ci"
 record="$installer_folder/install.json"
 server_env=/etc/gophenberg/server.env
 command_path=/usr/local/bin/gophenberg
@@ -82,6 +85,15 @@ logged() {
 	local name="$1" code=0
 	shift
 	"$@" < /dev/null 2> "$out/$name.err" | tee "$out/$name.out" || code=$?
+	cat "$out/$name.err" >&2
+	return "$code"
+}
+
+# piped_install feeds the install.sh copy given to sudo sh -s -- as the docs do, keeping its output under the name.
+piped_install() {
+	local name="$1" copy="$2" code=0
+	shift 2
+	{ sudo sh -s -- "$@"; } < "$copy" 2> "$out/$name.err" | tee "$out/$name.out" || code=$?
 	cat "$out/$name.err" >&2
 	return "$code"
 }
@@ -286,6 +298,32 @@ kept() {
 	sudo test -e "$1" || fail "server:uninstall removed $1"
 }
 
+# not_made stops when the path given is there after the copy of install.sh named stopped, as a file, a folder or a link.
+not_made() {
+	if sudo test -e "$2" || sudo test -L "$2"; then
+		fail "the copy $1 of install.sh stopped and still made $2"
+	fi
+}
+
+# no_work_folder stops when install.sh left a download folder in the installer folder.
+no_work_folder() {
+	local left
+	left="$(sudo find "$installer_folder" -mindepth 1 -maxdepth 1 -type d -name 'download.*')"
+	[ -z "$left" ] || fail "install.sh left its download folder $left"
+}
+
+# has_line stops unless the file given, which the runner reads, holds the whole line given.
+has_line() {
+	grep -qxF -- "$2" "$1" || fail "$1 holds no line $2"
+}
+
+# checksum_of prints the SHA-256 of a file the runner reads, in hex alone.
+checksum_of() {
+	local line
+	line="$(sha256sum < "$1")"
+	echo "${line%% *}"
+}
+
 # probe asks the address every probe pause and adds when it asked, the status and how long the answer took to the file.
 probe() {
 	local file="$1" address="$2" asked answer
@@ -398,15 +436,16 @@ close_opt() {
 	sudo chmod 0755 /opt
 }
 
-# read_versions sets the versions of the archives A, B and D and of the stub C1, the four patches after the checkout's.
+# read_versions sets the checkout's version and the versions of A, B, D and the stub C1, the four patches after it.
 read_versions() {
 	local major minor patch
 	IFS=. read -r major minor patch < "$repo/internal/version/VERSION"
+	base="$major.$minor.$patch"
 	a="$major.$minor.$((patch + 1))"
 	b="$major.$minor.$((patch + 2))"
 	d="$major.$minor.$((patch + 3))"
 	c1="$major.$minor.$((patch + 4))"
-	echo "the archives are A $a, B $b and D $d, and the stub is C1 $c1"
+	echo "the checkout is $base, the archives are A $a, B $b and D $d, and the stub is C1 $c1"
 }
 
 # build_releasetool builds releasetool from the standard library alone, as the release workflow does.
@@ -427,8 +466,7 @@ archive() {
 
 # build_archives builds the official linux/amd64 archives A, B and D from the checkout, each under its own version.
 build_archives() {
-	local base version
-	base="$(cat "$repo/internal/version/VERSION")"
+	local version
 	for version in "$a" "$b" "$d"; do
 		printf '%s\n' "$version" > "$repo/internal/version/VERSION"
 		make -C "$repo" release-archives RELEASE_TARGETS=linux/amd64 RELEASE_STAMP=official \
@@ -523,18 +561,145 @@ stop_background() {
 	fi
 }
 
-# scenario_install installs A from the root-only folder with every flag of the first administrator.
-scenario_install() {
-	local name
+# script_record signs two copies of A's archive named for the version given, amd64 and arm64, then their signed record.
+script_record() {
+	local folder="$work/script-records/$1"
+	mkdir -p "$folder"
+	cp "$(archive "$a")" "$folder/gophenberg_$1_linux_amd64.tar.gz"
+	cp "$(archive "$a")" "$folder/gophenberg_$1_linux_arm64.tar.gz"
+	"$tool" sign -key "$keys/release.pem" "$folder"/*.tar.gz
+	"$tool" record -version "$1" -download-url "http://127.0.0.1:$update_port/releases/v$1" "$folder"/*.tar.gz \
+		> "$records/$1.script.json"
+	"$tool" sign -key "$keys/release.pem" "$records/$1.script.json"
+}
+
+# public_body prints the one base64 line of the PEM that holds the public half of the throwaway release key.
+public_body() {
+	openssl pkey -in "$keys/release.pem" -pubout | sed -n 2p
+}
+
+# trusting_scripts copies publish-install.sh and install.sh into the work folder, install.sh naming the throwaway key.
+trusting_scripts() {
+	local key
+	key="$(public_body)"
+	mkdir -p "$scripts"
+	cp "$repo/deploy/publish-install.sh" "$scripts/publish-install.sh"
+	sed -e "s|^release_key=.*|release_key=$key|" -e "s|^standby_key=.*|standby_key=$key|" "$repo/deploy/install.sh" \
+		> "$scripts/install.sh"
+	has_line "$scripts/install.sh" "release_key=$key"
+	has_line "$scripts/install.sh" "standby_key=$key"
+}
+
+# publish_install_script runs publish-install.sh with the version's record and the throwaway key over the install site.
+publish_install_script() {
+	logged "$1" sh "$scripts/publish-install.sh" "$tool" "$records/$2.script.json" "$install_site" \
+		"$keys/release.pem" "$(multikey release)" || fail "publish-install.sh did not end with exit 0 for $2"
+}
+
+# printed stops unless the command kept under the name given printed the one line given on standard output.
+printed() {
+	local said
+	said="$(cat "$out/$1.out")"
+	[ "$said" = "$2" ] || fail "$1 printed $said, want $2"
+}
+
+# test_copy copies install.sh to take http, kept to loopback by the download address and http.server's 127.0.0.1 bind.
+test_copy() {
+	local copy="$2" key line
+	local -a lines
+	key="$(public_body)"
+	lines=("downloads=$1" "protocols='=http,https'" "release_key=$key" "standby_key=$key")
+	if [ "$#" -gt 2 ]; then
+		lines+=("sha256_amd64=$3")
+	fi
+	cp "$install_site/install.sh" "$copy"
+	for line in "${lines[@]}"; do
+		sed -i "s|^${line%%=*}=.*|$line|" "$copy"
+		has_line "$copy" "$line"
+	done
+	has_line "$copy" "version=$a"
+}
+
+# serve_case serves the archive and the .sig given under A's names in the case folder named on the local update site.
+serve_case() {
+	local folder="$cases/$1/v$a" name
 	name="$(archive_name "$a")"
+	mkdir -p "$folder"
+	cp "$2" "$folder/$name"
+	cp "$3" "$folder/$name.sig"
+}
+
+# stop_case runs the install.sh copy given as root, which must end with exit 1 on the line given and make nothing.
+stop_case() {
+	local copy="$1" line="$2" name code=0
+	shift 2
+	name="$(basename "$copy" .sh)"
+	piped_install "$name" "$copy" "$@" || code=$?
+	[ "$code" = 1 ] || fail "the copy $name of install.sh ended with $code, want 1"
+	[ "$(tail -n 1 "$out/$name.err")" = "install.sh: $line" ] ||
+		fail "the copy $name of install.sh did not stop on the line install.sh: $line"
+	not_made "$name" "$install_root"
+	not_made "$name" "$installer_copy"
+	no_work_folder
+}
+
+# scenario_publish_install publishes install.sh for the checkout's version, then A over it, then the older one again.
+scenario_publish_install() {
+	local sum signed published line
+	begin "publishing install.sh"
+	trusting_scripts
+	script_record "$base"
+	script_record "$a"
+	publish_install_script publish-base "$base"
+	printed publish-base "install.sh now names Gophenberg $base"
+	has_line "$install_site/install.sh" "version=$base"
+	signed="$(checksum_of "$install_site/install.sh.sig")"
+	publish_install_script publish-a "$a"
+	printed publish-a "install.sh now names Gophenberg $a"
+	sum="$(checksum_of "$(archive "$a")")"
+	for line in "version=$a" "sha256_amd64=$sum" "sha256_arm64=$sum"; do
+		has_line "$install_site/install.sh" "$line"
+	done
+	[ "$(checksum_of "$install_site/install.sh.sig")" != "$signed" ] ||
+		fail "publish-install.sh kept the .sig of install.sh for $base when it published $a"
+	"$tool" verify -public "$(multikey release)" "$install_site/install.sh" ||
+		fail "install.sh for $a does not verify under the throwaway release key"
+	published="$(sha256sum "$install_site/install.sh" "$install_site/install.sh.sig")"
+	publish_install_script publish-base-again "$base"
+	printed publish-base-again \
+		"the update site's install.sh names $a, which is not older than $base, so it stays as it is"
+	[ "$(sha256sum "$install_site/install.sh" "$install_site/install.sh.sig")" = "$published" ] ||
+		fail "publish-install.sh changed install.sh or its .sig for the older $base"
+	finish
+}
+
+# scenario_install_script_stops runs install.sh on another archive, a tampered one and with -archive, and each stops.
+scenario_install_script_stops() {
+	local name tampered
+	name="$(archive_name "$a")"
+	tampered="$cases/tampered/v$a/$name"
+	begin "install.sh stops"
+	serve_case another-checksum "$(archive "$b")" "$site/releases/v$b/$(archive_name "$b").sig"
+	test_copy "http://127.0.0.1:$update_port/install-cases/another-checksum" "$work/another-checksum.sh"
+	stop_case "$work/another-checksum.sh" "the archive is not the one this install.sh names, so nothing was installed" \
+		--domain "$domain"
+	serve_case tampered "$(archive "$a")" "$site/releases/v$a/$name.sig"
+	printf 'x' >> "$tampered"
+	test_copy "http://127.0.0.1:$update_port/install-cases/tampered" "$work/tampered.sh" "$(checksum_of "$tampered")"
+	stop_case "$work/tampered.sh" \
+		"the archive's signature matches neither Gophenberg release key, so nothing was installed" --domain "$domain"
+	stop_case "$install_copy" "install.sh passes the archive it checked itself, so leave out -archive" \
+		--domain "$domain" --archive "$installer_folder/a.tar.gz"
+	finish
+}
+
+# scenario_install installs A through the test copy of install.sh with every flag of the first administrator.
+scenario_install() {
 	begin "install"
-	sudo install -d -m 0700 "$installer_folder" "$ci_folder"
-	sudo install -m 0600 "$(archive "$a")" "$ci_folder/$name"
-	sudo tar -xzf "$ci_folder/$name" -C "$ci_folder" gophenberg
 	(umask 077 && openssl rand -base64 18 > "$password_file")
-	logged install sudo "$ci_folder/gophenberg" server:install -archive "$ci_folder/$name" -domain "$domain" \
-		-admin-email "$admin_email" -admin-name "$admin_name" -admin-password-file "$password_file" ||
-		fail "the first server:install did not end with exit 0"
+	piped_install install "$install_copy" --domain "$domain" --admin-email "$admin_email" --admin-name "$admin_name" \
+		--admin-password-file "$password_file" || fail "the first install through install.sh did not end with exit 0"
+	no_work_folder
 	no_https_warning install
 	grep -q "Gophenberg $a runs at https://$domain" "$out/install.out" ||
 		fail "the summary names no Gophenberg $a running at https://$domain"
@@ -696,8 +861,9 @@ scenario_uninstall() {
 	logged uninstall sudo gophenberg server:uninstall -yes || fail "server:uninstall -yes did not end with exit 0"
 	for path in "$units/gophenberg.service" "$units/gophenberg-rollback.service" \
 		"$units/caddy.service.d/gophenberg.conf" /etc/caddy/gophenberg.caddy /etc/caddy/Caddyfile.before-gophenberg \
-		/usr/local/share/gophenberg/maintenance "$command_path" "$installer_copy" "$install_root/versions" \
-		"$install_root/downloads" "$install_root/current" "$install_root/previous" "$install_root/state/update.json"; do
+		/usr/local/share/gophenberg/maintenance /usr/local/share/gophenberg "$command_path" "$installer_copy" \
+		/usr/local/lib/gophenberg "$install_root/versions" "$install_root/downloads" "$install_root/current" \
+		"$install_root/previous" "$install_root/state/update.json"; do
 		gone "$path"
 	done
 	[ "$(sum_of /etc/caddy/Caddyfile)" = "$(cat "$work/package-caddyfile.sum")" ] ||
@@ -709,13 +875,13 @@ scenario_uninstall() {
 	finish
 }
 
-# scenario_reinstall installs A again with no admin flag, then signs in and fetches the kept big.mp4 through Caddy.
+# scenario_reinstall installs A again through install.sh with no admin flag, then signs in and fetches the kept big.mp4.
 scenario_reinstall() {
-	local name fetched
-	name="$(archive_name "$a")"
+	local fetched
 	begin "a reinstall"
-	logged reinstall sudo "$ci_folder/gophenberg" server:install -archive "$ci_folder/$name" -domain "$domain" ||
-		fail "the reinstall did not end with exit 0"
+	piped_install reinstall "$install_copy" --domain "$domain" ||
+		fail "the reinstall through install.sh did not end with exit 0"
+	no_work_folder
 	no_https_warning reinstall
 	sign_in
 	wait_until serves "$a"
@@ -727,7 +893,7 @@ scenario_reinstall() {
 
 # run builds the archives and the local update site, then runs every scenario in order.
 run() {
-	mkdir -p "$out" "$site/v1/core" "$keys" "$records"
+	mkdir -p "$out" "$site/v1/core" "$keys" "$records" "$install_site"
 	trap stop_background EXIT
 	host_facts
 	purge_postgresql
@@ -740,6 +906,9 @@ run() {
 	serve_update_site
 	echo "=== the archives and the local update site took ${SECONDS}s"
 	cd / || fail "cannot change to /"
+	scenario_publish_install
+	test_copy "http://127.0.0.1:$update_port/releases" "$install_copy"
+	scenario_install_script_stops
 	scenario_install
 	scenario_update_site
 	scenario_update
