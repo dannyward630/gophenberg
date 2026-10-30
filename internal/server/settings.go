@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gopherium/gouncer/authkit"
+	"github.com/gopherium/gouncer/avatar"
 
 	"github.com/gopherium/gophenberg/internal/content"
 	"github.com/gopherium/gophenberg/internal/mediahost"
@@ -73,7 +74,7 @@ func listsOf(cfg Config) ListSettings {
 	return held
 }
 
-// settingsResponse names the values the site chose for itself and the list and screen settings it serves read only.
+// settingsResponse names the values the site chose for itself and the settings it serves read only.
 type settingsResponse struct {
 	LocaleDefault           string `json:"locale_default"`
 	ContentPerPage          int    `json:"content_per_page"`
@@ -86,6 +87,7 @@ type settingsResponse struct {
 	FormatLocale            string `json:"format_locale"`
 	UpdatesProgress         int64  `json:"updates_progress_milliseconds"`
 	UpdatesRestart          int64  `json:"updates_restart_wait_milliseconds"`
+	ShowAvatars             bool   `json:"show_avatars"`
 }
 
 // settingsRequest names the values a caller asks the site to choose.
@@ -161,6 +163,7 @@ func (s *server) chosenSettings(ctx context.Context) (settingsResponse, error) {
 		FormatLocale:            s.lists.FormatLocale,
 		UpdatesProgress:         s.updatesScreen.ProgressInterval.Milliseconds(),
 		UpdatesRestart:          s.updatesScreen.RestartWait.Milliseconds(),
+		ShowAvatars:             s.avatars.Mode != avatar.ModeOff,
 	}, nil
 }
 

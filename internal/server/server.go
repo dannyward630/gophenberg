@@ -96,7 +96,7 @@ type Config struct {
 	CronSecret string
 	// CronOnVisits lets each answered request start the cron jobs.
 	CronOnVisits bool
-	// Avatars is how the site draws the author avatars the admin shows. A zero value draws initials.
+	// Avatars is how the site draws the author and account avatars the admin shows. A zero value draws initials.
 	Avatars avatar.Options
 	// Updates answers the update routes. Nil leaves them unhandled.
 	Updates UpdateChecks
@@ -139,7 +139,9 @@ func NewServer(cfg Config) http.Handler {
 	auth := authkit.New(authkit.Config{
 		Store: cfg.Users, CookieName: sessionCookieName, Privileged: privileged, Capabilities: roles,
 	})
-	admin := authkit.NewAdmin(authkit.AdminConfig{Store: cfg.Users, Privileged: privileged, Roles: roles})
+	admin := authkit.NewAdmin(authkit.AdminConfig{
+		Store: cfg.Users, Privileged: privileged, Roles: roles, Avatars: &cfg.Avatars, AvatarSize: usersListAvatar,
+	})
 	s := &server{
 		auth: auth, users: cfg.Users, content: cfg.Content, themes: cfg.Themes,
 		media: cfg.Media, mediaStore: cfg.MediaStore, version: cfg.Version,
