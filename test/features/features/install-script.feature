@@ -66,11 +66,11 @@ Feature: Install Gophenberg with one command
       """
     And install.sh ended with exit code 0
 
-  Scenario: install.sh downloads over HTTPS alone
+  Scenario: install.sh downloads over HTTPS alone and gives up on a download that stalls for 60 seconds
     When the operator runs install.sh as root with "--domain example.com"
     Then curl downloaded each file with these arguments:
-      | -fsSL | --proto | =https | --proto-redir | =https | --tlsv1.2 | -o | <download folder>/gophenberg_0.20.0_linux_amd64.tar.gz     | https://github.com/gopherium/gophenberg/releases/download/v0.20.0/gophenberg_0.20.0_linux_amd64.tar.gz     |
-      | -fsSL | --proto | =https | --proto-redir | =https | --tlsv1.2 | -o | <download folder>/gophenberg_0.20.0_linux_amd64.tar.gz.sig | https://github.com/gopherium/gophenberg/releases/download/v0.20.0/gophenberg_0.20.0_linux_amd64.tar.gz.sig |
+      | -fsSL | --proto | =https | --proto-redir | =https | --tlsv1.2 | --speed-limit | 1 | --speed-time | 60 | -o | <download folder>/gophenberg_0.20.0_linux_amd64.tar.gz     | https://github.com/gopherium/gophenberg/releases/download/v0.20.0/gophenberg_0.20.0_linux_amd64.tar.gz     |
+      | -fsSL | --proto | =https | --proto-redir | =https | --tlsv1.2 | --speed-limit | 1 | --speed-time | 60 | -o | <download folder>/gophenberg_0.20.0_linux_amd64.tar.gz.sig | https://github.com/gopherium/gophenberg/releases/download/v0.20.0/gophenberg_0.20.0_linux_amd64.tar.gz.sig |
 
   Scenario: A copy of install.sh cut off right after the word main runs nothing
     Given the copy of install.sh ends right after the word main of its last line

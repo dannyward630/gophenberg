@@ -6,6 +6,7 @@ sha256_amd64=unstamped
 sha256_arm64=unstamped
 downloads=https://github.com/gopherium/gophenberg/releases/download
 protocols='=https'
+stall_seconds=60
 release_key=MCowBQYDK2VwAyEANLMkB0RToFiEfIMw2VdG5Ml636MuXEwm4C+hGbbd5Mw=
 standby_key=MCowBQYDK2VwAyEAWrchu9WREyEOuKPjK7hoKSyEClGejpYjcaISqSJ1CPM=
 installer_folder=/var/lib/gophenberg-installer
@@ -88,7 +89,8 @@ make_work() {
 fetch() {
 	address="$downloads/v$version/$1"
 	code=0
-	curl -fsSL --proto "$protocols" --proto-redir "$protocols" --tlsv1.2 -o "$work/$1" "$address" || code=$?
+	curl -fsSL --proto "$protocols" --proto-redir "$protocols" --tlsv1.2 --speed-limit 1 --speed-time "$stall_seconds" \
+		-o "$work/$1" "$address" || code=$?
 	[ "$code" != 0 ] || return 0
 	unreached="cannot download $address, so nothing was installed"
 	case "$code" in
