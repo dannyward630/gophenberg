@@ -36,6 +36,7 @@ func compose(cfg composeConfig, plugins func(sdk.Deps) ([]sdk.Plugin, error)) (s
 	}
 	built.lane, built.avatars = &pluginLane{sqlite: onSQLite(cfg.databaseURL)}, avatars
 	built.roles = cmp.Or(cfg.roles, goncierge.New())
+	built.defaultRole = valueOr(settingsEnv(cfg.getenv), defaultRoleSetting, role.Member)
 	accounts := accountbridge.New(built.users, accountbridge.Options{
 		Avatar: avatarOf(avatars), Timeout: lane.queryTimeout,
 	})
@@ -85,9 +86,12 @@ func avatarOf(options avatar.Options) func(name, email string, size int) string 
 	}
 }
 
-// ready declares the core's and the registered plugins' roles, then opens the plugins' share on the PostgreSQL handle.
+// ready declares the core's and the registered plugins' roles, checks the default role, then opens the plugins' share.
 func (s site) ready(lane laneSettings) error {
 	if err := declareRoles(s.roles, role.Core(), s.registered); err != nil {
+		return err
+	}
+	if err := checkDefaultRole(s.roles, s.defaultRole); err != nil {
 		return err
 	}
 	if s.pgHandle == nil {

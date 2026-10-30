@@ -5,13 +5,16 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gopherium/framework/goncierge"
+	"github.com/gopherium/framework/gonsole/testkit"
 
 	"github.com/gopherium/gophenberg/internal/role"
+	"github.com/gopherium/gophenberg/internal/server"
 	"github.com/gopherium/gophenberg/sdk"
 )
 
@@ -203,6 +206,64 @@ func TestComposeRefusesAPluginDeclarationTheRulesRefuse(t *testing.T) {
 
 	if !errors.Is(err, goncierge.ErrOutsidePrefix) || !strings.Contains(err.Error(), "plugin notes") {
 		t.Errorf("compose() = %v, want the prefix error naming the plugin", err)
+	}
+}
+
+// composedWithDefaultRole returns the server settings composed over the plugins while the setting names named.
+func composedWithDefaultRole(
+	t *testing.T, named string, plugins func(sdk.Deps) ([]sdk.Plugin, error),
+) (server.Config, error) {
+	t.Helper()
+	getenv := testkit.Getenv(map[string]string{
+		"GOPHENBERG_DATABASE_URL": unreachableDatabaseURL, "GOPHENBERG_DEFAULT_ROLE": named,
+	})
+	settings, err := loadRunConfig(getenv)
+	if err != nil {
+		t.Fatalf("loadRunConfig() error = %v, want nil", err)
+	}
+	built, err := compose(composeOf(settings, getenv), plugins)
+	if err != nil {
+		return server.Config{}, err
+	}
+	t.Cleanup(built.close)
+	return configOver(settings, built), nil
+}
+
+func TestComposeHandsTheServerTheDefaultRoleTheSettingNames(t *testing.T) {
+	t.Parallel()
+
+	notes := func(sdk.Deps) ([]sdk.Plugin, error) {
+		return []sdk.Plugin{declaringRole("notes", "archivist", "notes.manage")}, nil
+	}
+	for name, asked := range map[string]struct {
+		named   string
+		plugins func(sdk.Deps) ([]sdk.Plugin, error)
+		want    string
+	}{
+		"nothing set":     {named: "", plugins: noPlugins, want: role.Member},
+		"a core role":     {named: role.Author, plugins: noPlugins, want: role.Author},
+		"a plugin's role": {named: "archivist", plugins: notes, want: "archivist"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := composedWithDefaultRole(t, asked.named, asked.plugins)
+
+			if err != nil || cfg.DefaultRole != asked.want {
+				t.Errorf("compose() = %v with DefaultRole %q, want nil and %q", err, cfg.DefaultRole, asked.want)
+			}
+		})
+	}
+}
+
+func TestComposeStopsTheBootOnADefaultRoleNobodyDeclares(t *testing.T) {
+	t.Parallel()
+
+	_, err := composedWithDefaultRole(t, "archivist", noPlugins)
+
+	message := fmt.Sprint(err)
+	if !strings.Contains(message, "GOPHENBERG_DEFAULT_ROLE") || !strings.Contains(message, `"archivist"`) {
+		t.Errorf("compose() = %v, want an error naming GOPHENBERG_DEFAULT_ROLE and the role it names", err)
 	}
 }
 
