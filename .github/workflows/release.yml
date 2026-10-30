@@ -557,3 +557,86 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run timestamp.yml --ref main -R "$GITHUB_REPOSITORY"
+
+  install-script:
+    needs: index
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build releasetool from the standard library alone
+        run: |
+          GOMODCACHE="$RUNNER_TEMP/empty-module-cache" GOPROXY=off GOFLAGS=-mod=readonly GOWORK=off \
+            go build -o "$RUNNER_TEMP/releasetool" ./cmd/releasetool
+      - name: Download the release record and its signature
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --dir dist \
+            --pattern "gophenberg_${GITHUB_REF_NAME#v}_release-record.json*"
+      - name: Ask the update site's app for a token that writes to the update site alone
+        id: updates
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.UPDATES_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UPDATES_APP_PRIVATE_KEY }}
+          owner: gopherium
+          repositories: gophenberg-updates
+          permission-contents: write
+      - name: Publish install.sh for the release when it is the newest stable one
+        env:
+          RELEASE_SIGNING_ROLE: ${{ vars.RELEASE_SIGNING_ROLE }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_STANDBY_KEY: ${{ secrets.RELEASE_STANDBY_KEY }}
+          RELEASE_KEY_MULTIKEY: ${{ vars.RELEASE_KEY_MULTIKEY }}
+          RELEASE_STANDBY_MULTIKEY: ${{ vars.RELEASE_STANDBY_MULTIKEY }}
+          UPDATES_TOKEN: ${{ steps.updates.outputs.token }}
+        run: |
+          case "$RELEASE_SIGNING_ROLE" in
+            release)
+              key_name=RELEASE_SIGNING_KEY
+              multikey_name=RELEASE_KEY_MULTIKEY
+              ;;
+            standby)
+              key_name=RELEASE_STANDBY_KEY
+              multikey_name=RELEASE_STANDBY_MULTIKEY
+              ;;
+            *)
+              echo "refused RELEASE_SIGNING_ROLE \"$RELEASE_SIGNING_ROLE\", which names neither release nor standby" >&2
+              exit 1
+              ;;
+          esac
+          multikey="${!multikey_name}"
+          version="${GITHUB_REF_NAME#v}"
+          tool="$RUNNER_TEMP/releasetool"
+          key="$RUNNER_TEMP/release.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "${!key_name}" > "$key")
+          helper='!f() { echo username=x-access-token; echo "password=$UPDATES_TOKEN"; }; f'
+          for attempt in 1 2 3; do
+            rm -rf updates
+            git clone -q --depth 1 https://github.com/gopherium/gophenberg-updates.git updates
+            sh deploy/publish-install.sh "$tool" "dist/gophenberg_${version}_release-record.json" updates \
+              "$key" "$multikey"
+            if [ -z "$(git -C updates status --porcelain -- install.sh install.sh.sig)" ]; then
+              exit 0
+            fi
+            git -C updates add install.sh install.sh.sig
+            git -C updates -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "chore(install): publish install.sh for ${version}"
+            if git -C updates -c credential.helper= -c credential.helper="$helper" push -q origin HEAD:main; then
+              exit 0
+            fi
+            echo "attempt $attempt could not push, so install.sh is written again over the newer update site" >&2
+          done
+          exit 1
