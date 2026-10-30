@@ -88,6 +88,7 @@ type settingsResponse struct {
 	UpdatesProgress         int64  `json:"updates_progress_milliseconds"`
 	UpdatesRestart          int64  `json:"updates_restart_wait_milliseconds"`
 	ShowAvatars             bool   `json:"show_avatars"`
+	DefaultRole             string `json:"default_role"`
 }
 
 // settingsRequest names the values a caller asks the site to choose.
@@ -164,6 +165,7 @@ func (s *server) chosenSettings(ctx context.Context) (settingsResponse, error) {
 		UpdatesProgress:         s.updatesScreen.ProgressInterval.Milliseconds(),
 		UpdatesRestart:          s.updatesScreen.RestartWait.Milliseconds(),
 		ShowAvatars:             s.avatars.Mode != avatar.ModeOff,
+		DefaultRole:             s.defaultRole,
 	}, nil
 }
 

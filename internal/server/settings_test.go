@@ -14,6 +14,7 @@ import (
 
 	"github.com/gopherium/gophenberg/internal/content"
 	"github.com/gopherium/gophenberg/internal/mediahost"
+	"github.com/gopherium/gophenberg/internal/role"
 	"github.com/gopherium/gophenberg/internal/server"
 )
 
@@ -428,6 +429,48 @@ func TestSettingsGetTellsTheUpdatesScreenHowOftenToAskAndHowLongToWait(t *testin
 	if err != nil || held.Progress == nil || held.Wait == nil || *held.Progress != 1500 || *held.Wait != 120000 {
 		t.Errorf("GET /api/settings = %d %s, want 1500 and 120000 milliseconds for the Updates screen", recorder.Code,
 			recorder.Body.String())
+	}
+}
+
+// servedDefaultRole returns the default_role the settings answer carries when the configuration names configured.
+func servedDefaultRole(t *testing.T, configured, method, body string) string {
+	t.Helper()
+	users := newFakeUserStore()
+	addAda(t, users)
+	cfg := serverConfig(users, newFakePostStore())
+	cfg.Settings = newStoredSettings()
+	cfg.DefaultRole = configured
+	recorder := askLocale(authedServerWithStores(t, cfg), method, "/api/settings", body)
+	var held struct {
+		DefaultRole *string `json:"default_role"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &held); err != nil || held.DefaultRole == nil {
+		t.Fatalf("%s /api/settings = %d %s, want a default_role", method, recorder.Code, recorder.Body.String())
+	}
+	return *held.DefaultRole
+}
+
+func TestSettingsGetServesTheMemberRoleWhenTheEnvironmentNamesNoDefaultRole(t *testing.T) {
+	t.Parallel()
+
+	if got := servedDefaultRole(t, "", http.MethodGet, ""); got != role.Member {
+		t.Errorf("default_role = %q, want %q", got, role.Member)
+	}
+}
+
+func TestSettingsGetServesTheDefaultRoleTheEnvironmentNamed(t *testing.T) {
+	t.Parallel()
+
+	if got := servedDefaultRole(t, role.Author, http.MethodGet, ""); got != role.Author {
+		t.Errorf("default_role = %q, want %q", got, role.Author)
+	}
+}
+
+func TestSettingsPatchLeavesTheDefaultRoleAsTheEnvironmentNamedIt(t *testing.T) {
+	t.Parallel()
+
+	if got := servedDefaultRole(t, role.Author, http.MethodPatch, `{"default_role":"admin"}`); got != role.Author {
+		t.Errorf("default_role = %q, want the %q the environment named, whatever a write asks", got, role.Author)
 	}
 }
 

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"io/fs"
 	"log/slog"
@@ -90,6 +91,8 @@ type Config struct {
 	Lists ListSettings
 	// Roles holds the roles accounts take and the capabilities each carries. Nil holds the core's roles alone.
 	Roles *goncierge.Registry
+	// DefaultRole is the role Add User starts on, served with the settings. Empty serves the member role.
+	DefaultRole string
 	// Cron owns the cron runs that visits and the cron address start. Nil leaves both off.
 	Cron *CronRuns
 	// CronSecret is the bearer secret the cron address asks for. Empty leaves the address unserved.
@@ -112,6 +115,11 @@ func rolesOf(cfg Config) *goncierge.Registry {
 		return cfg.Roles
 	}
 	return role.Registry()
+}
+
+// defaultRoleOf returns the role the configuration names for Add User, or the member role when it names none.
+func defaultRoleOf(cfg Config) string {
+	return cmp.Or(cfg.DefaultRole, role.Member)
 }
 
 // registryOf returns the registry the configuration hands over, or one built over its type store.
@@ -153,6 +161,7 @@ func NewServer(cfg Config) http.Handler {
 		logger:         loggerOf(cfg),
 		lists:          listsOf(cfg),
 		avatars:        cfg.Avatars,
+		defaultRole:    defaultRoleOf(cfg),
 		updatesScreen:  cfg.UpdatesScreen,
 	}
 	s.addresses = content.NewResolver(cfg.Content, s.types)
@@ -330,5 +339,6 @@ type server struct {
 	logger         *slog.Logger
 	lists          ListSettings
 	avatars        avatar.Options
+	defaultRole    string
 	updatesScreen  UpdatesScreen
 }
