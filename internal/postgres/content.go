@@ -713,6 +713,19 @@ func (s *ContentStore) Counts(ctx context.Context, contentType string) (map[cont
 	return counts, nil
 }
 
+// CountsByAuthor returns how many published and private items of the type each author wrote.
+func (s *ContentStore) CountsByAuthor(ctx context.Context, contentType string) (map[uuid.UUID]int, error) {
+	rows, err := s.queries.CountContentByAuthor(ctx, contentType)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: count content by author: %w", err)
+	}
+	counts := make(map[uuid.UUID]int, len(rows))
+	for _, row := range rows {
+		counts[row.AuthorID] = int(row.Total)
+	}
+	return counts, nil
+}
+
 // Delete removes the content item, or reports [content.ErrNotFound].
 func (s *ContentStore) Delete(ctx context.Context, id uuid.UUID) error {
 	rows, err := s.queries.DeleteContent(ctx, id)

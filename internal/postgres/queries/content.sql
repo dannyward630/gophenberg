@@ -243,6 +243,12 @@ FROM core.content p
 WHERE p.type = @type
 GROUP BY p.status;
 
+-- name: CountContentByAuthor :many
+SELECT p.author_id, count(*) AS total
+FROM core.content p
+WHERE p.type = @type AND p.status IN ('published', 'private')
+GROUP BY p.author_id;
+
 -- name: CreateRevision :exec
 INSERT INTO core.content_revisions (
     id, content_id, kind, author_id, title, content, excerpt, fields, created_at

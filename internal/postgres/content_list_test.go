@@ -25,6 +25,19 @@ func TestContentStoreCountsReportsDatabaseFailures(t *testing.T) {
 	}
 }
 
+func TestContentStoreCountsByAuthorReportsDatabaseFailures(t *testing.T) {
+	t.Parallel()
+
+	store, _, pool := newContentStoreWithPool(t)
+	pool.Close()
+
+	_, err := store.CountsByAuthor(t.Context(), content.TypePost)
+
+	if err == nil {
+		t.Error("CountsByAuthor() on a closed pool error = nil, want a failure")
+	}
+}
+
 func TestContentStoreListReportsARejectedNestedQuery(t *testing.T) {
 	t.Parallel()
 
