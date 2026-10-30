@@ -36,6 +36,9 @@ var countedStatuses = []content.Status{
 // authorCellAvatar is the avatar size the admin's author cell asks for, twice the 16 pixels it draws.
 const authorCellAvatar = 32
 
+// usersListAvatar is the avatar size the users list asks for, twice the 48 pixels its phone cell draws.
+const usersListAvatar = 96
+
 type contentResponse struct {
 	ID           uuid.UUID  `json:"id"`
 	Type         string     `json:"type"`

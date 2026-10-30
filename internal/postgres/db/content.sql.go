@@ -129,6 +129,38 @@ func (q *Queries) CountContent(ctx context.Context, arg CountContentParams) (int
 	return count, err
 }
 
+const countContentByAuthor = `-- name: CountContentByAuthor :many
+SELECT p.author_id, count(*) AS total
+FROM core.content p
+WHERE p.type = $1 AND p.status IN ('published', 'private')
+GROUP BY p.author_id
+`
+
+type CountContentByAuthorRow struct {
+	AuthorID uuid.UUID
+	Total    int64
+}
+
+func (q *Queries) CountContentByAuthor(ctx context.Context, type_ string) ([]CountContentByAuthorRow, error) {
+	rows, err := q.db.Query(ctx, countContentByAuthor, type_)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountContentByAuthorRow
+	for rows.Next() {
+		var i CountContentByAuthorRow
+		if err := rows.Scan(&i.AuthorID, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countContentByStatus = `-- name: CountContentByStatus :many
 SELECT p.status, count(*) AS total
 FROM core.content p

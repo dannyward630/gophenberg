@@ -18,6 +18,11 @@ Feature: A role decides which routes an account reaches
     When the account asks for the user list
     Then the request is refused with the code "role_insufficient"
 
+  Scenario: An editor is refused the post counts
+    Given a signed in editor
+    When the account asks for the post counts
+    Then the request is refused with the code "role_insufficient"
+
   Scenario: An author is refused the themes
     Given a signed in author
     When the account asks for the theme list

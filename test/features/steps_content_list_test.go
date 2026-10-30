@@ -530,12 +530,14 @@ func initializeContentList(sc *godog.ScenarioContext) {
 	sc.Given(`^a running Gophenberg with the default content types$`, aRunningGophenbergWithTheDefaultContentTypes)
 	sc.Given(`^a signed in administrator$`, aSignedInAdministrator)
 	sc.Given(`^a signed in author$`, aSignedInAuthor)
+	sc.Given(`^a signed in editor$`, aSignedInEditor)
 	sc.Given(
 		`^the type "([^"]*)" labeled "([^"]*)" and "([^"]*)" under "([^"]*)" that nests$`,
 		theNestingTypeExists,
 	)
 	sc.Given(`^the post "([^"]*)"$`, thePostExists)
 	sc.Given(`^the published post "([^"]*)"$`, thePublishedPost)
+	sc.Given(`^the private post "([^"]*)"$`, thePrivatePost)
 	sc.Given(`^the page "([^"]*)"$`, thePageExists)
 	sc.Given(`^the page "([^"]*)" filed under "([^"]*)"$`, thePageFiledUnder)
 	sc.Given(`^"([^"]*)" was published on "([^"]*)"$`, theItemWasPublishedOn)
@@ -555,6 +557,7 @@ func initializeContentList(sc *godog.ScenarioContext) {
 		theAdministratorListsThePagesNested)
 	sc.When(`^the administrator lists the posts (\d+) at a time$`, theAdministratorListsThePostsAtATime)
 	sc.When(`^the account lists the authors$`, theAccountListsTheAuthors)
+	sc.When(`^the account asks for the post counts$`, theAccountAsksForThePostCounts)
 	sc.When(`^the administrator creates the post "([^"]*)" with the excerpt "([^"]*)" and the content "([^"]*)"$`,
 		theAdministratorCreatesThePostWith)
 	sc.When(`^the account empties the trash of "([^"]*)"$`, theAccountEmptiesTheTrashOf)
@@ -567,6 +570,7 @@ func initializeContentList(sc *godog.ScenarioContext) {
 	sc.Then(`^"([^"]*)" is listed under no parent$`, theItemIsListedUnderNoParent)
 	sc.Then(`^the list was paged (\d+) at a time$`, theListWasPagedAtATime)
 	sc.Then(`^the authors are ((?:"[^"]*"(?:, | and )?)+)$`, theAuthorsAre)
+	sc.Then(`^the post counts hold (\d+) for "([^"]*)" and (\d+) for "([^"]*)"$`, thePostCountsHold)
 	sc.Then(`^the post "([^"]*)" holds the excerpt "([^"]*)" and the content "([^"]*)"$`,
 		thePostHoldsTheExcerptAndTheContent)
 	sc.Then(`^the trash answer counts (\d+) deleted and (\d+) kept$`, theTrashAnswerCounts)

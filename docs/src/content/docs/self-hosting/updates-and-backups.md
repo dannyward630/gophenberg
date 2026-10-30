@@ -259,6 +259,13 @@ Some things work differently after this update:
   `role_beyond_reach` for both. Each account `/api/users` lists now
   carries `editable`, true when the reader may change it. A program
   that reads those codes needs updating.
+- `GOPHENBERG_DEFAULT_ROLE`, a new setting, `member` unless set, names
+  the role the Add User screen starts on, as WordPress's New User
+  Default Role does. A role neither the core nor a plugin declares
+  stops the server at start. Each account `/api/users` lists now
+  carries `avatar`, the same picture the author column draws, and none
+  while `GOPHENBERG_AVATARS` is `off`. See
+  [configuration](/self-hosting/configuration/).
 
 Updating from further back also runs the migrations of every release
 you skip, so read each of their notes. Coming from five releases back

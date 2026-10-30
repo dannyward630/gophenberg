@@ -197,6 +197,7 @@ func (b boot) serverConfig(walked definitions.Walked) server.Config {
 		Declarations:         walked,
 		Lists:                settings.lists,
 		Roles:                built.roles,
+		DefaultRole:          built.defaultRole,
 		Avatars:              built.avatars,
 		Updates:              b.updates(),
 		UpdatesCheckAge:      settings.updates.screenAge,

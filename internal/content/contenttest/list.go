@@ -24,6 +24,8 @@ var listCases = []Case{
 	{"ListPaginates", listPaginates},
 	{"ListReturnsAnEmptyPagePastTheEnd", listReturnsAnEmptyPagePastTheEnd},
 	{"CountsPerStatus", countsPerStatus},
+	{"CountsByAuthorKeepThePublishedAndPrivateItemsOfTheType", countsByAuthorKeepThePublishedAndPrivateItemsOfTheType},
+	{"CountsByAuthorAnswerAnEmptyMapWhenNothingCounts", countsByAuthorAnswerAnEmptyMapWhenNothingCounts},
 	{"ListSortsByTitle", listSortsByTitle},
 	{"ListSortsByDateIndependentlyOfCreationOrder", listSortsByDateIndependentlyOfCreationOrder},
 	{"ListDefaultsToNewestPublicationFirst", listDefaultsToNewestPublicationFirst},
@@ -221,6 +223,61 @@ func countsPerStatus(t *testing.T, s Stores) {
 	}
 	if _, ok := counts[content.StatusTrash]; ok {
 		t.Errorf("counts = %v, want absent statuses omitted by the store", counts)
+	}
+}
+
+// moveTo stores the item under the status.
+func moveTo(t *testing.T, store content.Store, item content.Content, status content.Status) {
+	t.Helper()
+	moved := item
+	moved.Status = status
+	if _, err := store.Update(t.Context(), moved, item.UpdatedAt, nil, 0); err != nil {
+		t.Fatalf("moving %q to %s: %v", item.Title, status, err)
+	}
+}
+
+// countsByAuthorKeepThePublishedAndPrivateItemsOfTheType counts each author's published and private items of the type.
+func countsByAuthorKeepThePublishedAndPrivateItemsOfTheType(t *testing.T, s Stores) {
+	author := s.AddAuthor(t, DefaultAuthor)
+	other := s.AddAuthor(t, "Another Writer")
+	drafting := s.AddAuthor(t, "Draft Writer")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	Publish(t, s.Content, "Published", author, now)
+	moveTo(t, s.Content, MustCreate(t, s.Content, "Private", author), content.StatusPrivate)
+	moveTo(t, s.Content, MustCreate(t, s.Content, "Pending", author), content.StatusPending)
+	Trash(t, s.Content, Publish(t, s.Content, "Trashed", author, now))
+	scheduled, later := MustPost(t, "Scheduled", author), now.Add(time.Hour)
+	scheduled.Status, scheduled.PublishedAt = content.StatusScheduled, &later
+	if _, err := s.Content.Create(t.Context(), scheduled); err != nil {
+		t.Fatalf("Create(%q) error = %v, want nil", scheduled.Title, err)
+	}
+	Publish(t, s.Content, "Another Published", other, now)
+	MustCreate(t, s.Content, "Only a Draft", drafting)
+	RegisterPageType(t, s.Types)
+	PublishItem(t, s.Content, MustNest(t, s.Content, nil, "About", drafting))
+
+	counts, err := s.Content.CountsByAuthor(t.Context(), content.TypePost)
+
+	if err != nil {
+		t.Fatalf("CountsByAuthor() error = %v, want nil", err)
+	}
+	if want := map[uuid.UUID]int{author: 2, other: 1}; !maps.Equal(counts, want) {
+		t.Errorf("counts = %v, want %v, leaving out the author of only a draft and a page", counts, want)
+	}
+}
+
+// countsByAuthorAnswerAnEmptyMapWhenNothingCounts answers an empty map when no item of the type counts.
+func countsByAuthorAnswerAnEmptyMapWhenNothingCounts(t *testing.T, s Stores) {
+	author := s.AddAuthor(t, DefaultAuthor)
+	MustCreate(t, s.Content, "Only a Draft", author)
+
+	counts, err := s.Content.CountsByAuthor(t.Context(), content.TypePost)
+
+	if err != nil {
+		t.Fatalf("CountsByAuthor() error = %v, want nil", err)
+	}
+	if counts == nil || len(counts) != 0 {
+		t.Errorf("counts = %#v, want an empty non-nil map", counts)
 	}
 }
 

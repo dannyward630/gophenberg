@@ -47,23 +47,24 @@ type userStore interface {
 
 // site is what compose builds over one PostgreSQL handle, one SQLite handle or, while describing, no database.
 type site struct {
-	pgHandle   *dbkitpg.Handle
-	users      userStore
-	content    *postgres.ContentStore
-	types      *postgres.TypeStore
-	registry   *content.Registry
-	saved      mediahost.Saved
-	library    media.Store
-	settings   update.Settings
-	readers    content.UserSettingStore
-	release    func()
-	registered []sdk.Plugin
-	failed     error
-	lane       *pluginLane
-	roles      *goncierge.Registry
-	avatars    avatar.Options
-	cronStore  cron.Store
-	major      func(context.Context) (int, error)
+	pgHandle    *dbkitpg.Handle
+	users       userStore
+	content     *postgres.ContentStore
+	types       *postgres.TypeStore
+	registry    *content.Registry
+	saved       mediahost.Saved
+	library     media.Store
+	settings    update.Settings
+	readers     content.UserSettingStore
+	release     func()
+	registered  []sdk.Plugin
+	failed      error
+	lane        *pluginLane
+	roles       *goncierge.Registry
+	defaultRole string
+	avatars     avatar.Options
+	cronStore   cron.Store
+	major       func(context.Context) (int, error)
 }
 
 // composeOf returns the values compose reads out of the server settings.

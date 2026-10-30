@@ -14,6 +14,7 @@ import (
 	"github.com/gopherium/gouncer/avatar"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/gopherium/gophenberg/internal/role"
 	"github.com/gopherium/gophenberg/sdk"
 )
 
@@ -174,7 +175,7 @@ func TestPluginsAreLentNoDatabaseAddressOnSQLite(t *testing.T) {
 func TestReadyOpensNoPluginShareOnSQLite(t *testing.T) {
 	t.Parallel()
 
-	built := site{lane: &pluginLane{sqlite: true}, roles: goncierge.New()}
+	built := site{lane: &pluginLane{sqlite: true}, roles: goncierge.New(), defaultRole: role.Member}
 
 	err := built.ready(laneSettings{conns: 4, reserve: 2, queryTimeout: time.Second, txTimeout: time.Second})
 

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"io/fs"
 	"log/slog"
@@ -90,13 +91,15 @@ type Config struct {
 	Lists ListSettings
 	// Roles holds the roles accounts take and the capabilities each carries. Nil holds the core's roles alone.
 	Roles *goncierge.Registry
+	// DefaultRole is the role Add User starts on, served with the settings. Empty serves the member role.
+	DefaultRole string
 	// Cron owns the cron runs that visits and the cron address start. Nil leaves both off.
 	Cron *CronRuns
 	// CronSecret is the bearer secret the cron address asks for. Empty leaves the address unserved.
 	CronSecret string
 	// CronOnVisits lets each answered request start the cron jobs.
 	CronOnVisits bool
-	// Avatars is how the site draws the author avatars the admin shows. A zero value draws initials.
+	// Avatars is how the site draws the author and account avatars the admin shows. A zero value draws initials.
 	Avatars avatar.Options
 	// Updates answers the update routes. Nil leaves them unhandled.
 	Updates UpdateChecks
@@ -112,6 +115,11 @@ func rolesOf(cfg Config) *goncierge.Registry {
 		return cfg.Roles
 	}
 	return role.Registry()
+}
+
+// defaultRoleOf returns the role the configuration names for Add User, or the member role when it names none.
+func defaultRoleOf(cfg Config) string {
+	return cmp.Or(cfg.DefaultRole, role.Member)
 }
 
 // registryOf returns the registry the configuration hands over, or one built over its type store.
@@ -139,7 +147,9 @@ func NewServer(cfg Config) http.Handler {
 	auth := authkit.New(authkit.Config{
 		Store: cfg.Users, CookieName: sessionCookieName, Privileged: privileged, Capabilities: roles,
 	})
-	admin := authkit.NewAdmin(authkit.AdminConfig{Store: cfg.Users, Privileged: privileged, Roles: roles})
+	admin := authkit.NewAdmin(authkit.AdminConfig{
+		Store: cfg.Users, Privileged: privileged, Roles: roles, Avatars: &cfg.Avatars, AvatarSize: usersListAvatar,
+	})
 	s := &server{
 		auth: auth, users: cfg.Users, content: cfg.Content, themes: cfg.Themes,
 		media: cfg.Media, mediaStore: cfg.MediaStore, version: cfg.Version,
@@ -151,6 +161,7 @@ func NewServer(cfg Config) http.Handler {
 		logger:         loggerOf(cfg),
 		lists:          listsOf(cfg),
 		avatars:        cfg.Avatars,
+		defaultRole:    defaultRoleOf(cfg),
 		updatesScreen:  cfg.UpdatesScreen,
 	}
 	s.addresses = content.NewResolver(cfg.Content, s.types)
@@ -183,7 +194,7 @@ func NewServer(cfg Config) http.Handler {
 	})
 	router.Group(func(privileged chi.Router) {
 		privileged.Use(readerOnly, auth.RequireSession, auth.RequirePrivilege)
-		mountAccounts(privileged, admin)
+		s.mountAccounts(privileged, admin)
 	})
 	router.Group(func(gated chi.Router) {
 		gated.Use(readerOnly, auth.RequireSession)
@@ -268,9 +279,10 @@ func (s *server) mountAdmin(r chi.Router, auth *authkit.Handlers, cfg Config) {
 }
 
 // mountAccounts registers the account routes only a privileged role reaches.
-func mountAccounts(r chi.Router, admin *authkit.AdminHandlers) {
+func (s *server) mountAccounts(r chi.Router, admin *authkit.AdminHandlers) {
 	r.Get("/api/users", admin.List)
 	r.Post("/api/users", admin.Create)
+	r.Get("/api/users/post-counts", s.handleUserPostCounts())
 	r.Patch("/api/users/{id}", admin.SetDisabled)
 	r.Put("/api/users/{id}/role", admin.SetRole)
 }
@@ -328,5 +340,6 @@ type server struct {
 	logger         *slog.Logger
 	lists          ListSettings
 	avatars        avatar.Options
+	defaultRole    string
 	updatesScreen  UpdatesScreen
 }
