@@ -230,6 +230,7 @@ func initializeRouteGate(sc *godog.ScenarioContext) {
 	sc.When(`^the account sets its locale to "([^"]*)"$`, theAdministratorSetsTheirLocaleTo)
 	sc.Then(`^the error names "([^"]*)" under "([^"]*)"$`, theErrorNamesUnder)
 	sc.When(`^the account asks for the user list$`, theAccountAsksForTheUserList)
+	sc.When(`^the account asks for the post counts$`, theAccountAsksForThePostCounts)
 	sc.When(`^the account asks for the theme list$`, theAccountAsksForTheThemeList)
 	sc.When(`^the account asks for the content list$`, theAccountAsksForTheContentList)
 	sc.When(`^the account asks for the content types$`, theAccountAsksForTheContentTypes)

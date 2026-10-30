@@ -1,8 +1,8 @@
 Feature: The content list
   The admin lists the items of one type a page at a time, narrowed by
   status, author and date and sorted by any column the list shows. It
-  names the accounts that may write, and empties the trash of one type
-  in one call.
+  names the accounts that may write, counts the posts each account
+  wrote, and empties the trash of one type in one call.
 
   Background:
     Given a running Gophenberg with the default content types
@@ -148,6 +148,19 @@ Feature: The content list
     And a signed in author
     When the account lists the authors
     Then the authors are "Ada Lovelace" and "Maria Perez"
+
+  Scenario: The post counts hold the published and private posts of each account
+    Given a signed in author
+    And the published post "Written by the author"
+    And a signed in editor
+    And the post "Drafted by the editor"
+    And a signed in administrator
+    And the published post "Morning Notes"
+    And the private post "Private Notes"
+    And the published post "Old News"
+    And the administrator trashes "Old News"
+    When the account asks for the post counts
+    Then the post counts hold 2 for "admin@example.com" and 1 for "author@example.com"
 
   Scenario: A new item keeps the content and the excerpt it was created with
     Given a signed in administrator

@@ -1010,6 +1010,22 @@ func (s *memoryContent) Counts(_ context.Context, contentType string) (map[conte
 	return counts, nil
 }
 
+// authorCounted are the statuses an author's count of items takes in.
+var authorCounted = []content.Status{content.StatusPublished, content.StatusPrivate}
+
+// CountsByAuthor returns how many published and private items of the type each author wrote.
+func (s *memoryContent) CountsByAuthor(_ context.Context, contentType string) (map[uuid.UUID]int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	counts := make(map[uuid.UUID]int)
+	for _, stored := range s.items {
+		if stored.Type == contentType && slices.Contains(authorCounted, stored.Status) {
+			counts[stored.AuthorID]++
+		}
+	}
+	return counts, nil
+}
+
 // RelatedTo returns the published items of active types pointing at the target, newest first.
 func (s *memoryContent) RelatedTo(
 	_ context.Context, target uuid.UUID, page, perPage int,
