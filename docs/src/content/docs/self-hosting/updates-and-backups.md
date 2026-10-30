@@ -835,6 +835,12 @@ have fixed what failed, run:
 sudo gophenberg update:apply -to 1.4.1 -retry
 ```
 
+On an install root you set up by hand, run it from the install root:
+
+```sh
+cd /opt/gophenberg && ./current/gophenberg update:apply -to 1.4.1 -retry
+```
+
 Once systemd gave up restarting the site,
 [the rollback unit](/self-hosting/server-install/#the-rollback-unit)
 runs `update:rollback -after-failure` and then starts the site again.
@@ -842,8 +848,10 @@ Any result but success counts, such as a start that failed its check
 with exit code 76 or a build that keeps crashing, see
 [update:rollback](/self-hosting/commands/#updaterollback). To take
 back an update that passed its check, run
-`sudo gophenberg update:rollback`, which also restarts the site. That
-version is refused from then on too.
+`sudo gophenberg update:rollback`, which also restarts the site. On an
+install root you set up by hand, run `./current/gophenberg update:rollback`
+from the install root and restart Gophenberg yourself. That version is
+refused from then on too.
 
 ### An update that raised the minimum version
 
@@ -923,6 +931,12 @@ answers again, take the update again:
 
 ```sh
 sudo gophenberg update:apply -to 1.4.1 -retry
+```
+
+On an install root you set up by hand, run it from the install root:
+
+```sh
+cd /opt/gophenberg && ./current/gophenberg update:apply -to 1.4.1 -retry
 ```
 
 This holds for an update that raised the minimum version too. Its

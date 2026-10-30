@@ -98,7 +98,8 @@ it.
 9. It makes a download folder in it, named `download.` and ten random
    characters. It downloads the archive and its `.sig` there from
    `https://github.com/gopherium/gophenberg/releases/download/`, over
-   HTTPS alone, redirects included, with TLS 1.2 or newer.
+   HTTPS alone, redirects included, with TLS 1.2 or newer. It gives up
+   on a download that sends nothing for 60 seconds.
 10. The archive's SHA-256 is the one the script names for this
     processor. So an older signed archive put up under a newer name
     stops too, which a signature alone would let through.
@@ -463,8 +464,10 @@ units and Caddy's site again, replaces the installer's own copy, and
 keeps the build `current` names.
 
 Caddy comes from Caddy's own apt repository. Its security fixes arrive
-through `unattended-upgrades` when that package is installed. Without
-it, run `sudo apt update` and then `sudo apt upgrade`, which also bring
+through `unattended-upgrades` when that package was installed before
+the install line ran. If you install it later, run the install line
+again, which adds Caddy's repository to it. Without it, run
+`sudo apt update` and then `sudo apt upgrade`, which also bring
 PostgreSQL's fixes.
 
 ## With your own web server
@@ -556,8 +559,9 @@ Nothing was installed, and no download folder is left.
   install.sh: /var/lib/gophenberg-installer, which holds the install record, must be a real folder owned by root and writable by root alone, so nothing was installed
   ```
 
-- **A failed download.** `curl` prints its own error on the line above.
-  Check the server's network and run the line again. When `curl` could
+- **A failed download.** `curl` prints its own error on the line above,
+  such as `Operation too slow` for a download that stalled. Check the
+  server's network and run the line again. When `curl` could
   not resolve or reach GitHub, the line adds that GitHub needs IPv4.
 
   ```text
