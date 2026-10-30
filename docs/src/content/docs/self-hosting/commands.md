@@ -525,7 +525,10 @@ Caddy in front for HTTPS unless you keep a web server of your own,
 and a systemd service that runs the site. With `-dry-run` it only
 checks the server and prints what it would do.
 
-Run it on the server itself as root, with the `gophenberg` binary of
+Most people run it through `install.sh`, which downloads and checks
+the archive and then runs this command, see
+[install on a Linux server](/self-hosting/server-install/). By hand,
+run it on the server itself as root, with the `gophenberg` binary of
 a Linux release archive, see
 [check a download](/self-hosting/install/#check-a-download). It is not
 a command for the container image. The archive goes in
@@ -1032,9 +1035,9 @@ server:uninstall removes:
   /etc/caddy/Caddyfile, putting back /etc/caddy/Caddyfile.before-gophenberg, the one the caddy package wrote
   /etc/systemd/system/caddy.service.d/gophenberg.conf
   /etc/caddy/gophenberg.caddy
-  /usr/local/share/gophenberg/maintenance
+  /usr/local/share/gophenberg
   /usr/local/bin/gophenberg
-  /usr/local/lib/gophenberg/gophenberg
+  /usr/local/lib/gophenberg
   /opt/gophenberg/versions
   /opt/gophenberg/downloads
   /opt/gophenberg/current
@@ -1065,6 +1068,10 @@ Add `-yes` to remove what it lists. The run then ends with
   Caddy restart that failed.
 - The builds go, and so do the `previous` link and
   `state/update.json` when they are there.
+- Each folder it empties goes too, and the list names the folder in
+  place of the last thing in it, such as `/usr/local/lib/gophenberg`
+  for the installer's own copy. A folder that holds anything else,
+  such as a file of yours, stays with what it holds.
 - Anything already gone is skipped, so a second run prints
   `server:uninstall finds nothing left to remove.` The command on the
   path is gone by then, so run it with the binary of the release
@@ -1090,14 +1097,14 @@ gophenberg: /etc/caddy/Caddyfile is a link, and the line "import /etc/caddy/goph
 
 `-delete-data` also drops the database and its role. It removes the
 install root with everything in it, `backups` included, then
-`server.env` and the system user `gophenberg`. Nothing brings that
-data back, so copy a backup off the server first. It removes an
-install root only when the install record shows that `server:install`
-made it, and otherwise lists the folder as kept and says why. An
-install root the install made that `server.env` no longer names stays
-too, listed as kept. The install record then holds only the packages
-the install put there and the domain. The
-kept Caddy still holds TCP port 80, so a later install
+`server.env`, with `/etc/gophenberg` when nothing else is in it, and
+the system user `gophenberg`. Nothing brings that data back, so copy a
+backup off the server first. It removes an install root only when the
+install record shows that `server:install` made it, and otherwise
+lists the folder as kept and says why. An install root the install
+made that `server.env` no longer names stays too, listed as kept. The
+install record then holds only the packages the install put there and
+the domain. The kept Caddy still holds TCP port 80, so a later install
 for that domain skips the domain check. When a Caddyfile you changed
 stays, the record also keeps the SHA-256 of the Caddyfile the install
 wrote, even after a first run that stopped in its caddy step, so a
@@ -1108,10 +1115,16 @@ again.
 
 #### Installing again
 
-A later `server:install` reuses what was kept. It unpacks the build
-again from `-archive`, writes the files and starts the site. It
+A later install reuses what was kept. The `gophenberg` command is gone
+after an uninstall, so run the install line again:
+
+```sh
+curl -fsSL https://updates.gophenberg.org/install.sh | sudo sh -s -- --domain example.com
+```
+
+It unpacks the build again, writes the files and starts the site. It
 reuses the database and asks nothing, since the first administrator
-exists:
+exists. By hand, give `server:install` the release archive instead:
 
 ```sh
 sudo ./gophenberg server:install -archive /var/lib/gophenberg-installer/gophenberg_%VERSION%_linux_amd64.tar.gz

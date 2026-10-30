@@ -45,6 +45,7 @@ export default defineConfig({
 				{
 					label: 'Self-hosting',
 					items: [
+						{ slug: 'self-hosting/server-install' },
 						{ slug: 'self-hosting/install' },
 						{ slug: 'self-hosting/configuration' },
 						{ slug: 'self-hosting/cron' },
