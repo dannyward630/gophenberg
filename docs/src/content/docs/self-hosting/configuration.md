@@ -53,6 +53,7 @@ so it takes the default.
 | `GOPHENBERG_TOAST_DURATION` | No | `6s` | How long a confirmation message with no button stays on screen, in whole milliseconds from `1ms` to `2147483647ms` |
 | `GOPHENBERG_TOAST_ACTION_DURATION` | No | `10s` | How long a confirmation message with a button stays on screen, in whole milliseconds from `1ms` to `2147483647ms` |
 | `GOPHENBERG_FORMAT_LOCALE` | No | `es-ES` | The locale the admin writes dates, times and numbers in, whatever language its screens are in |
+| `GOPHENBERG_DEFAULT_ROLE` | No | `member` | The role the Add User screen starts on, as WordPress's New User Default Role does. It must be a role the core or a plugin declares, see [roles](/guides/users/#roles) |
 | `GOPHENBERG_THEME_READY_TIMEOUT` | No | `30s` | How long a starting theme has to answer before it is given up on |
 | `GOPHENBERG_THEME_START_ATTEMPTS` | No | `5` | How many times in a row a theme that will not start is started before it is given up on, from 1 to 1000 |
 | `GOPHENBERG_THEME_BACKOFF` | No | `500ms` | How long to wait before the first retry, doubling after each one |
@@ -413,8 +414,8 @@ change them. They shape every list the same way:
 An avatar is the small round picture beside a person's name. The
 three avatar settings copy the Avatars part of WordPress's Discussion
 settings. The server reads them when it starts. The author column of
-the admin's content and media lists follows them, and so does every
-plugin that shows who wrote something.
+the admin's content and media lists follows them, and so do the Users
+list and every plugin that shows who wrote something.
 
 - **`initials`**, the default, draws the first letter of the name in
   a coloured circle. The site draws it, so nothing is sent to another
@@ -786,6 +787,8 @@ The server refuses to start, and says why, when:
 - `GOPHENBERG_AVATARS`, `GOPHENBERG_AVATAR_DEFAULT` or
   `GOPHENBERG_AVATAR_RATING` names a value outside its list. The
   message names the setting and the value.
+- `GOPHENBERG_DEFAULT_ROLE` names a role neither the core nor a plugin
+  declares. The message names the setting and the value.
 - `GOPHENBERG_THEME` pins a theme that fails to load, see
   [installing a theme](/themes/installing-a-theme/). A theme chosen
   in the admin does not stop startup.
