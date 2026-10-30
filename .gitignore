@@ -24,7 +24,9 @@ node_modules/
 /pluginwire
 go.work
 go.work.sum
-/deploy/
+/deploy/*
+!/deploy/install.sh
+!/deploy/publish-install.sh
 /.spec/
 .claude/
 .mcp.json
