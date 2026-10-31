@@ -8,7 +8,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -61,11 +60,6 @@ func (r *Resolver) Resolve(ctx context.Context, raw string) (Address, error) {
 		return Address{}, ErrNotFound
 	}
 	address := tidy(raw)
-	if _, rawPageNumber, numbered := cutPageNumber(address); numbered && pageNumberLike(rawPageNumber) {
-		if _, _, err := listingAt(address); err != nil {
-			return Address{}, err
-		}
-	}
 	if RootPagination(address) {
 		return r.archiveAt(ctx, address)
 	}
@@ -164,23 +158,6 @@ func listingAt(address string) (string, int, error) {
 		return "", 0, ErrNotFound
 	}
 	return root, page, nil
-}
-
-// pageNumberLike reports whether a suffix looks like a signed or unsigned numeral.
-func pageNumberLike(raw string) bool {
-	signed := strings.HasPrefix(raw, "+") || strings.HasPrefix(raw, "-")
-	if signed {
-		raw = raw[1:]
-	}
-	if raw == "" {
-		return signed
-	}
-	for _, digit := range raw {
-		if !unicode.IsNumber(digit) {
-			return false
-		}
-	}
-	return true
 }
 
 // RootPagination reports whether the address names a positive page of the root listing.

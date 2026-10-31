@@ -158,15 +158,22 @@ func TestResolveLetsContentBeatPagination(t *testing.T) {
 	}
 }
 
-func TestResolveLetsContentBeatNonNumericPageSuffixes(t *testing.T) {
+func TestResolveLetsContentBeatARefusedPageNumber(t *testing.T) {
 	t.Parallel()
 
 	for name, storedPath := range map[string]string{
-		"root page word":      "page/about",
-		"nested page word":    "chapter/page/intro",
-		"ordinal-like suffix": "page/2nd",
+		"a word":             "page/about",
+		"a nested word":      "chapter/page/intro",
+		"an ordinal":         "page/2nd",
+		"zero":               "pages/page/0",
+		"negative":           "pages/page/-2",
+		"signed":             "pages/page/+2",
+		"a plus sign alone":  "pages/page/+",
+		"a minus sign alone": "pages/page/-",
+		"a fullwidth two":    "pages/page/\U0000FF12",
+		"a superscript two":  "pages/page/\U000000B2",
+		"too long to read":   "pages/page/99999999999999999999",
 	} {
-		storedPath := storedPath
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -178,8 +185,9 @@ func TestResolveLetsContentBeatNonNumericPageSuffixes(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Resolve error = %v, want nil", err)
 			}
+
 			if answer.Kind != content.KindItem || answer.Item.ID != held.ID {
-				t.Errorf("answer = %q with item %q, want stored item %q", answer.Kind, answer.Item.ID, held.ID)
+				t.Errorf("answer = %q %v, want the item stored at the address", answer.Kind, answer.Item.ID)
 			}
 		})
 	}
@@ -207,37 +215,6 @@ func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
 		if !errors.Is(err, content.ErrNotFound) {
 			t.Errorf("%s page error = %v, want %v", name, err, content.ErrNotFound)
 		}
-	}
-}
-
-func TestResolveRefusesInvalidPageSuffixesBeforeLookingUpContent(t *testing.T) {
-	t.Parallel()
-
-	for name, suffix := range map[string]string{
-		"zero":        "0",
-		"negative":    "-2",
-		"signed":      "+2",
-		"sign only +": "+",
-		"sign only -": "-",
-		"non-ASCII":   "２",
-		"superscript": "²",
-		"overflow":    "999999999999999999999999999999999999",
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			store := newFakeAddresses()
-			store.hold("page", "pages/page/"+suffix)
-			resolver := newResolver(t, store)
-
-			_, err := resolver.Resolve(t.Context(), "/pages/page/"+suffix)
-			if !errors.Is(err, content.ErrNotFound) {
-				t.Errorf("Resolve error = %v, want %v", err, content.ErrNotFound)
-			}
-			if store.lookups != 0 {
-				t.Errorf("content lookups = %d, want none for an invalid page suffix", store.lookups)
-			}
-		})
 	}
 }
 
