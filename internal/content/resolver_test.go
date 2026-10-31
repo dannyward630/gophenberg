@@ -193,28 +193,53 @@ func TestResolveLetsContentBeatARefusedPageNumber(t *testing.T) {
 	}
 }
 
-func TestResolveRefusesPageNumbersThatAreNotPositiveASCIIDigits(t *testing.T) {
+func TestResolveRefusesAPageNumberBelowTheFirst(t *testing.T) {
 	t.Parallel()
 
 	resolver := newResolver(t, newFakeAddresses())
 
 	_, zero := resolver.Resolve(t.Context(), "/page/0")
 	_, negative := resolver.Resolve(t.Context(), "/pages/page/-2")
-	_, signed := resolver.Resolve(t.Context(), "/page/+2")
-	_, plusOnly := resolver.Resolve(t.Context(), "/page/+")
-	_, minusOnly := resolver.Resolve(t.Context(), "/page/-")
-	_, nonASCIIDigits := resolver.Resolve(t.Context(), "/page/２")
-	_, superscriptNumber := resolver.Resolve(t.Context(), "/page/²")
 	_, words := resolver.Resolve(t.Context(), "/page/last")
 
+	for name, err := range map[string]error{"zero": zero, "negative": negative, "words": words} {
+		if !errors.Is(err, content.ErrNotFound) {
+			t.Errorf("%s page error = %v, want %v", name, err, content.ErrNotFound)
+		}
+	}
+}
+
+func TestResolveReadsAPageNumberOnlyFromPlainDigits(t *testing.T) {
+	t.Parallel()
+
+	resolver := newResolver(t, newFakeAddresses())
+
+	_, signed := resolver.Resolve(t.Context(), "/page/+2")
+	_, plusAlone := resolver.Resolve(t.Context(), "/page/+")
+	_, minusAlone := resolver.Resolve(t.Context(), "/page/-")
+	_, fullwidth := resolver.Resolve(t.Context(), "/page/\U0000FF12")
+	_, superscript := resolver.Resolve(t.Context(), "/page/\U000000B2")
+
 	for name, err := range map[string]error{
-		"zero": zero, "negative": negative, "signed": signed,
-		"sign only +": plusOnly, "sign only -": minusOnly,
-		"non-ASCII digits": nonASCIIDigits, "superscript": superscriptNumber, "words": words,
+		"signed": signed, "a plus sign alone": plusAlone, "a minus sign alone": minusAlone,
+		"a fullwidth two": fullwidth, "a superscript two": superscript,
 	} {
 		if !errors.Is(err, content.ErrNotFound) {
 			t.Errorf("%s page error = %v, want %v", name, err, content.ErrNotFound)
 		}
+	}
+}
+
+func TestResolveReadsEveryDigitOfAPageNumber(t *testing.T) {
+	t.Parallel()
+
+	answer, err := newResolver(t, newFakeAddresses()).Resolve(t.Context(), "/pages/page/1234567890")
+	if err != nil {
+		t.Fatalf("Resolve error = %v, want nil", err)
+	}
+
+	if answer.Kind != content.KindArchive || answer.Page != 1234567890 {
+		t.Errorf("answer = %q page %d, want the page archive at page 1234567890", answer.Kind, answer.Page)
 	}
 }
 
