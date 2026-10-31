@@ -938,15 +938,24 @@ func TestResolveKeepsASingleItemOffThePageWord(t *testing.T) {
 	}
 }
 
-func TestResolveRefusesASignedPageNumber(t *testing.T) {
+func TestResolveReadsAPageNumberOnlyFromPlainDigits(t *testing.T) {
 	t.Parallel()
 
 	handler := termTypeServer(t)
-	recorder := doRequest(t, handler, http.MethodGet,
-		"/api/content/v1/resolve?path=%2Fpage%2F%2B2", "")
+	publishItemAt(t, handler, storedCategoryItem(t, handler))
 
-	if recorder.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d for a signed page number", recorder.Code, http.StatusNotFound)
+	for path, want := range map[string]int{
+		"page/%2B2":                 http.StatusNotFound,
+		"categories/page/%2B2":      http.StatusNotFound,
+		"categories/news/page/%2B2": http.StatusNotFound,
+		"categories/page/02":        http.StatusOK,
+		"categories/news/page/02":   http.StatusOK,
+	} {
+		recorder := doRequest(t, handler, http.MethodGet, "/api/content/v1/resolve?path="+path, "")
+
+		if recorder.Code != want {
+			t.Errorf("resolve %s status = %d, want %d", path, recorder.Code, want)
+		}
 	}
 }
 
