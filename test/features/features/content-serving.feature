@@ -45,6 +45,11 @@ Feature: Serving content by address
     And the published page "2" filed under "Page"
     Then "/pages/page/2" answers with "2"
 
+  Scenario: Exact content beats a number that is no page number
+    Given the published page "Page"
+    And the published page "٢" filed under "Page"
+    Then "/pages/page/٢" answers with "٢"
+
   Scenario: A padded page number stays where content holds the plain number
     Given the published page "Page"
     And the published page "2" filed under "Page"
