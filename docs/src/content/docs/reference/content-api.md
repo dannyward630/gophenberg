@@ -389,12 +389,10 @@ genuinely filed at `pages/page/2` is served instead of the second
 archive page. The front page is the exception: `/page/{n}` always
 answers the front page listing, and no item can be stored at
 `page/{n}`. Nothing published at an address answers
-`404 {"error":"content: not found"}`. Page numbers must be positive ASCII
-digits; zero, signed, or non-ASCII numeral aliases return the same 404 even
-when content is stored at that address. Other suffixes can still name
-stored content. The resolver reads
-`/page/1` and `/page/02` as pages 1 and 2, while the built-in renderer
-redirects them to `/` and `/page/2`, as
+`404 {"error":"content: not found"}`, and so does a page number below
+one or holding a sign other than the digits 0 to 9, such as `/page/+2`.
+The resolver reads `/page/1` and `/page/02` as pages 1 and 2,
+while the built-in renderer redirects them to `/` and `/page/2`, as
 [what the binary serves where](/self-hosting/configuration/#what-the-binary-serves-where)
 describes.
 
