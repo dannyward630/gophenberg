@@ -148,13 +148,8 @@ func listingAt(address string) (string, int, error) {
 	if !numbered {
 		return address, 1, nil
 	}
-	for i := 0; i < len(raw); i++ {
-		if raw[i] < '0' || raw[i] > '9' {
-			return "", 0, ErrNotFound
-		}
-	}
 	page, err := strconv.Atoi(raw)
-	if err != nil || page < 1 {
+	if err != nil || page < 1 || strings.Trim(raw, "0123456789") != "" {
 		return "", 0, ErrNotFound
 	}
 	return root, page, nil
