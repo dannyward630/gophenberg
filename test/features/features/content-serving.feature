@@ -77,6 +77,10 @@ Feature: Serving content by address
   Scenario: A page number below the first answers not found
     Then "/page/0" answers not found
 
+  Scenario: A signed page number answers not found
+    Then "/page/+2" answers not found
+    And "/pages/page/+2" answers not found
+
   Scenario: An archive of an inactive type answers not found
     Given the type "page" is deactivated
     Then "/pages" answers not found
